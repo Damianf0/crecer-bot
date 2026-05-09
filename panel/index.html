@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crecer Bot — Panel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ── Sidebar ─────────────────────────── -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-title">Crecer Bot</div>
+      <div class="logo-sub">Panel de control</div>
+    </div>
+
+    <nav>
+      <div class="nav-item active" data-tab="dashboard">
+        <span class="nav-icon">◈</span> Dashboard
+      </div>
+      <div class="nav-item" data-tab="qr">
+        <span class="nav-icon">⊡</span> QR / Conexión
+      </div>
+      <div class="nav-item" data-tab="config">
+        <span class="nav-icon">⚙</span> Configuración
+      </div>
+      <div class="nav-item" data-tab="textos">
+        <span class="nav-icon">✎</span> Textos del bot
+      </div>
+      <div class="nav-item" data-tab="usuarios">
+        <span class="nav-icon">👤</span> Usuarios
+      </div>
+      <div class="nav-item" data-tab="pruebas">
+        <span class="nav-icon">⬡</span> Pruebas
+      </div>
+      <div class="nav-item" data-tab="logs">
+        <span class="nav-icon">≡</span> Logs
+      </div>
+      <div class="nav-item" data-tab="sistema">
+        <span class="nav-icon">◉</span> Sistema
+      </div>
+    </nav>
+
+    <div class="sidebar-status">
+      <div class="status-dot" id="sidebarDot"></div>
+      <span id="sidebarStatusText">Conectando...</span>
+    </div>
+  </aside>
+
+  <!-- ── Main ────────────────────────────── -->
+  <main>
+
+    <!-- Dashboard -->
+    <div class="tab-content" id="tab-dashboard">
+      <div class="card" style="border-color:var(--accent, #C0273A);background:color-mix(in srgb, var(--accent, #C0273A) 6%, transparent);margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px;">★ Panel Admin Web disponible</div>
+        <div style="font-size:13px;color:var(--text-muted);line-height:1.5;">
+          Las funciones de <b>Estado bot, Textos, Pruebas, Logs y Usuarios</b> ahora también están en
+          <a href="#" id="lnkAdminBanner" style="color:var(--accent,#C0273A);font-weight:600;">http://localhost/admin</a>
+          — accesibles desde cualquier PC de la red. Este Electron sirve para operaciones que requieren acceso al servidor
+          (Docker, Ollama, edición del .env del bot).
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="stat-card">
+          <div class="stat-label">Estado</div>
+          <div id="statStatus">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Número conectado</div>
+          <div class="stat-value" id="statPhone">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Uptime del bot</div>
+          <div class="stat-value" id="statUptime">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin:0;">Accesos rápidos</div>
+          <button class="btn btn-secondary" id="btnRefreshAccesos" style="padding:4px 12px;font-size:12px;">↻</button>
+        </div>
+        <div id="accesosGrid" class="accesos-grid">
+          <!-- llenado por JS -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Información</div>
+        <p style="font-size:13px; color:var(--text-muted); line-height:1.6;">
+          El panel se actualiza automáticamente cada 3 segundos.<br>
+          Si el bot está desconectado, andá a <strong>QR / Conexión</strong> para escanearlo.<br>
+          Los cambios de configuración requieren reiniciar el bot desde Docker.
+        </p>
+      </div>
+    </div>
+
+    <!-- QR -->
+    <div class="tab-content hidden" id="tab-qr">
+      <div class="card">
+        <div class="card-title">QR / Estado de conexión WhatsApp</div>
+        <div class="qr-container" id="qrContainer">
+          <div style="color:var(--text-muted)">Cargando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div class="tab-content hidden" id="tab-config">
+      <div class="card">
+        <div class="card-title">Configuración del bot</div>
+
+        <div class="form-section">
+          <div class="form-section-title">Inteligencia artificial</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Modelo IA</label>
+              <div style="display:flex;gap:8px;">
+                <select id="cfg-OLLAMA_MODEL" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;">
+                  <option value="">Cargando modelos...</option>
+                </select>
+                <button type="button" id="btnRefreshModelos" class="btn btn-secondary" style="padding:8px 12px;font-size:13px;" title="Actualizar lista de modelos">↻</button>
+              </div>
+              <span class="form-help">Modelos instalados en Ollama — actualizá si bajaste uno nuevo</span>
+            </div>
+            <div class="form-group">
+              <label>URL Ollama</label>
+              <input type="text" id="cfg-OLLAMA_URL" placeholder="http://host.docker.internal:11434">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">API Laravel</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>URL API</label>
+              <input type="text" id="cfg-LARAVEL_URL" placeholder="http://web/api">
+            </div>
+            <div class="form-group">
+              <label>Token</label>
+              <input type="password" id="cfg-LARAVEL_TOKEN" placeholder="••••••••">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">Tiempos de mensajes (milisegundos)</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Espera entre mensajes</label>
+              <input type="number" id="cfg-ESPERA_MENSAJES" min="1000" max="30000">
+              <span class="form-help">Default: 8000 ms (8 seg)</span>
+            </div>
+            <div class="form-group">
+              <label>Espera máxima</label>
+              <input type="number" id="cfg-ESPERA_MAXIMA" min="10000" max="120000">
+              <span class="form-help">Default: 45000 ms (45 seg)</span>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Reset conversación</label>
+              <input type="number" id="cfg-RESET_CONVERSACION" min="60000">
+              <span class="form-help">Default: 1800000 ms (30 min)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">Horario de atención</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Hora de apertura</label>
+              <input type="number" id="cfg-HORARIO_INICIO" min="0" max="23">
+              <span class="form-help">Lun–Sáb</span>
+            </div>
+            <div class="form-group">
+              <label>Hora de cierre Lun–Vie</label>
+              <input type="number" id="cfg-HORARIO_FIN" min="0" max="23">
+            </div>
+            <div class="form-group">
+              <label>Hora de cierre Sábado</label>
+              <input type="number" id="cfg-HORARIO_SAB_FIN" min="0" max="23">
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnSaveConfig">Guardar configuración</button>
+          <span class="toast" id="toastConfig"></span>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+          ⚠ Los cambios requieren reiniciar el bot desde Docker para aplicarse.
+        </p>
+      </div>
+    </div>
+
+    <!-- Textos -->
+    <div class="tab-content hidden" id="tab-textos">
+      <div class="card">
+        <div class="card-title">Textos del bot — editables por la clínica</div>
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:20px;">
+          Usá <strong>\n</strong> para saltos de línea. <strong>{{FUERA_HORARIO}}</strong> se reemplaza automáticamente cuando es fuera de horario.
+          Los cambios se aplican de inmediato, sin reiniciar.
+        </p>
+        <div id="textosForm">Cargando...</div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnSaveTextos">Guardar textos</button>
+          <span class="toast" id="toastTextos"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Usuarios -->
+    <div class="tab-content hidden" id="tab-usuarios">
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Alta de usuario</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Nombre completo</label>
+            <input type="text" id="usr-nombre" placeholder="Ej: María González">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="usr-email" placeholder="maria@crecer.com">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Contraseña</label>
+            <input type="password" id="usr-password" placeholder="Mínimo 8 caracteres">
+          </div>
+          <div class="form-group">
+            <label>Rol</label>
+            <select id="usr-rol" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:13px;width:100%;">
+              <option value="secretaria">Secretaria</option>
+              <option value="supervisora">Supervisora</option>
+              <option value="admin">Administrativo</option>
+              <option value="tecnico">Técnico WORKBENCH IT</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnCrearUsuario">Crear usuario</button>
+          <span class="toast" id="toastUsuarios"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Usuarios registrados</div>
+        <div id="usuariosList" style="font-size:13px;">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- Pruebas -->
+    <div class="tab-content hidden" id="tab-pruebas">
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Modo de operación</div>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <div id="pruebasModoLabel" style="font-size:13px;color:var(--text-muted);">Cargando...</div>
+          <button class="btn btn-primary" id="btnToggleModo">—</button>
+          <span class="toast" id="toastPruebas"></span>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+          En <strong>modo prueba</strong>: el bot recibe y clasifica mensajes pero <strong>no envía respuestas</strong> ni registra derivaciones.<br>
+          En <strong>modo normal</strong>: responde automáticamente como de costumbre.
+        </p>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div class="card-title" style="margin:0;">Clasificaciones en vivo</div>
+          <button class="btn btn-secondary" id="btnLimpiarPruebas" style="padding:4px 12px;font-size:11px;">Limpiar vista</button>
+        </div>
+        <div id="pruebasTabla" style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;" id="pruebasTable">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border);color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">
+                <th style="text-align:left;padding:6px 4px;">Hora</th>
+                <th style="text-align:left;padding:6px 4px;">Contacto</th>
+                <th style="text-align:left;padding:6px 4px;">Mensaje</th>
+                <th style="text-align:left;padding:6px 4px;">Código</th>
+                <th style="text-align:left;padding:6px 4px;">Confianza</th>
+                <th style="text-align:left;padding:6px 4px;">Horario</th>
+                <th style="text-align:left;padding:6px 4px;">Enviado</th>
+              </tr>
+            </thead>
+            <tbody id="pruebasTbody">
+              <tr><td colspan="7" style="padding:20px 4px;color:var(--text-muted);text-align:center;">Esperando clasificaciones...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="tab-content hidden" id="tab-logs">
+      <div class="logs-toolbar">
+        <button class="btn btn-secondary" id="btnClearLogs">Limpiar</button>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-muted);">
+          <input type="checkbox" id="autoScroll" checked> Auto-scroll
+        </label>
+      </div>
+      <div class="logs-box" id="logsBox"></div>
+    </div>
+
+  </main>
+
+    <!-- Sistema -->
+    <div class="tab-content hidden" id="tab-sistema">
+
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div class="card-title" style="margin:0;">Estado de servicios</div>
+          <button class="btn btn-secondary" id="btnRefreshSistema" style="padding:5px 14px;font-size:12px;">↻ Actualizar</button>
+        </div>
+        <div id="sistemaGrid" class="sistema-grid">
+          <div style="color:var(--text-muted);font-size:13px;padding:12px 0;">Cargando...</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Acciones globales</div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-success" id="btnIniciarTodo">▶ Iniciar todo</button>
+          <button class="btn btn-danger" id="btnDetenerTodo">■ Detener todo</button>
+          <span class="toast" id="toastSistema"></span>
+        </div>
+        <div id="sistemaConfirm" class="hidden" style="margin-top:14px;padding:14px;background:rgba(248,81,73,0.06);border:1px solid rgba(248,81,73,0.25);border-radius:6px;">
+          <p style="font-size:13px;color:var(--error);margin-bottom:12px;">
+            ⚠ Esto detiene <strong>todos los servicios</strong>: bot, web, base de datos y Ollama.<br>
+            Los usuarios activos perderán conexión.
+          </p>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-danger" id="btnConfirmarDetener">Sí, detener todo</button>
+            <button class="btn btn-secondary" id="btnCancelarDetener">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Modelos Ollama</div>
+
+        <div id="modelosList" style="margin-bottom:16px;">
+          <div style="color:var(--text-muted);font-size:13px;">Cargando...</div>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:14px;">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Bajar nuevo modelo</div>
+          <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+            <div style="flex:1;min-width:200px;">
+              <input type="text" id="pullModeloInput" placeholder="Ej: gemma3:4b, qwen3:4b, llama3.2:3b" style="width:100%;">
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                Nombre exacto del modelo en
+                <a href="#" onclick="return false;" style="color:var(--info);">ollama.com/library</a>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="btnPullModelo" style="white-space:nowrap;">↓ Bajar modelo</button>
+          </div>
+          <div id="pullStatus" style="display:none;margin-top:10px;padding:10px 14px;border-radius:6px;background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2);font-size:12px;color:var(--info);">
+            Bajando modelo... puede tardar varios minutos según el tamaño y la conexión.
+          </div>
+          <span class="toast" id="toastModelos" style="margin-top:8px;display:block;"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Salida del último comando</div>
+        <pre id="sistemaOutput" style="font-family:'Consolas','Courier New',monospace;font-size:11px;color:var(--text-muted);white-space:pre-wrap;word-break:break-all;max-height:220px;overflow-y:auto;background:#010409;padding:12px;border-radius:6px;min-height:44px;margin:0;">—</pre>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

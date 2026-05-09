@@ -1,0 +1,35 @@
+{
+  "BIENVENIDA": "¡Hola! 👋 Soy el asistente de *Crecer Reproducción*.\n\nEstoy aquí para ayudarte. Contame, ¿en qué puedo orientarte hoy?",
+
+  "PRIMERA_CONSULTA": "¡Gracias por comunicarte con nosotros! 🌸\n\nPara una *primera consulta*, te pedimos que te comuniques directamente por teléfono con nuestra secretaría:\n\n📞 *[NÚMERO DE TELÉFONO]*\n🕐 Lunes a viernes de 8 a 18 hs | Sábados de 8 a 13 hs\n\nTe van a orientar con mucho gusto. 💙",
+
+  "TURNO_PORTAL": "Para sacar un turno podés ingresar directamente a nuestro portal de turnos:\n\n🔗 *[LINK AL PORTAL]*\n\nSi ya tenés cuenta, iniciá sesión y elegí el día y horario que te quede mejor. Si tenés algún inconveniente, escribinos y te ayudamos.",
+
+  "TURNO_ECO_CON_CUENTA": "Para sacar turno de ecografía:\n\n1️⃣ Ingresá al portal: *[LINK AL PORTAL]*\n2️⃣ Iniciá sesión con tu usuario y contraseña\n3️⃣ Seleccioná *Ecografía* como tipo de estudio\n4️⃣ Elegí el día y horario disponible\n5️⃣ Confirmá el turno\n\n¿Necesitás ayuda con algún paso?",
+
+  "TURNO_ECO_SIN_CUENTA": "Para sacar turno de ecografía primero necesitás crear tu cuenta en el portal.\n\nTe mando el instructivo paso a paso 📄",
+
+  "TURNO_DGP": "El *Diagnóstico Genético Preimplantatorio (DGP)* requiere una indicación médica.\n\nPor favor, envianos la orden de tu médico tratante y una de nuestras secretarias te va a contactar para coordinar. 📋\n\n{{FUERA_HORARIO}}",
+
+  "TURNO_PRESERVACION": "La *preservación de fertilidad* es una consulta que merece atención personalizada. 🌷\n\nUna de nuestras secretarias se va a comunicar con vos para darte toda la información y coordinar una consulta con el especialista.\n\n{{FUERA_HORARIO}}",
+
+  "TURNO_PRESUPUESTO": "Para consultas sobre presupuestos, una de nuestras secretarias se va a comunicar con vos.\n\n{{FUERA_HORARIO}}",
+
+  "RESULTADO_BETA": "Para entregarte el resultado de la *beta hCG*, necesito verificar algunos datos.\n\nPor favor indicame:\n👤 *Nombre y apellido completo*\n📅 *Fecha de nacimiento*\n🔢 *DNI*",
+
+  "RESULTADO_OTROS": "Los resultados de estudios se gestionan a través del portal de pacientes.\n\n🔗 *[LINK AL PORTAL]*\n\nUna vez que los tengas disponibles, podés solicitar turno para hablar con tu médico si tenés dudas. Si necesitás ayuda, escribinos.",
+
+  "MEDICACION_INSTRUCTIVO": "Aquí tenés el instructivo de aplicación de medicación 💊\n\nSi tenés dudas puntuales sobre tu medicación o dosis, por favor consultá con tu médico tratante.",
+
+  "ORDEN_MDP": "Las órdenes y recetas se retiran de forma *presencial* en nuestra clínica.\n\n📍 *[DIRECCIÓN]*\n🕐 Lunes a viernes de 8 a 18 hs | Sábados de 8 a 13 hs\n\n¿Necesitás algo más?",
+
+  "ORDEN_OTRA_CIUDAD": "Si estás en otra ciudad, podemos enviarte la orden o receta por correo electrónico.\n\nEscribinos a: 📧 *[EMAIL DE LA CLÍNICA]*\n\nIndicá tu nombre completo, DNI y el médico que te atendió.",
+
+  "CONSULTA_CLINICA": "Gracias por escribirnos. Para consultas médicas o sobre tu tratamiento, es necesario que hables directamente con tu médico tratante. 🩺\n\nUna de nuestras secretarias se va a comunicar con vos para coordinar.\n\n{{FUERA_HORARIO}}",
+
+  "DERIVAR_SECRETARIA": "Enseguida te comunico con una de nuestras secretarias. ✨\n\n{{FUERA_HORARIO}}",
+
+  "FALLBACK": "Disculpá, no pude entender bien tu consulta. 😊\n\nUna de nuestras secretarias se va a comunicar con vos para ayudarte.\n\n{{FUERA_HORARIO}}",
+
+  "FUERA_HORARIO": "⏰ En este momento estamos fuera del horario de atención (Lunes a viernes 8-18 hs | Sábados 8-13 hs). Tu consulta quedó registrada y te contactamos al primer horario disponible."
+}

@@ -1,0 +1,60 @@
+# ── Secrets / config local ────────────────────────────────────────
+.env
+.env.*
+!.env.example
+panel/preload.js
+
+# ── Dependencias ─────────────────────────────────────────────────
+node_modules/
+vendor/
+
+# ── Sesiones y media ─────────────────────────────────────────────
+bot/.wwebjs_auth/
+bot/.wwebjs_cache/
+bot/media/
+
+# ── Storage Laravel ──────────────────────────────────────────────
+app/storage/logs/
+app/storage/framework/cache/
+app/storage/framework/sessions/
+app/storage/framework/views/
+app/storage/framework/testing/
+app/storage/app/private/
+app/storage/app/public/
+app/bootstrap/cache/*.php
+
+# ── Backups y datos del cliente ──────────────────────────────────
+backups/
+contactos.csv
+*.sql
+*.sql.gz
+*.tar.gz
+
+# ── Logs y artefactos ────────────────────────────────────────────
+*.log
+watchdog.log
+storage/*.log
+
+# ── Build / dist ─────────────────────────────────────────────────
+panel/dist/
+public/build/
+public/hot
+
+# ── Reportes/PDFs/imágenes con datos del cliente ─────────────────
+*.pdf
+captura.png
+oscuro.png
+audio error.jpg
+legajo-error.jpg
+
+# ── IDE / OS ─────────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ── Claude / herramientas ────────────────────────────────────────
+.claude/
+.phpunit.result.cache
+.phpunit.cache/
