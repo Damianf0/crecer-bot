@@ -80,17 +80,17 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: crecer_root_2024
-      MYSQL_DATABASE: clinica
-      MYSQL_USER: crecer
-      MYSQL_PASSWORD: crecer_2024
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD requerido — copiar .env.example a .env y completar}
+      MYSQL_DATABASE: ${DB_DATABASE:-clinica}
+      MYSQL_USER: ${DB_USERNAME:-crecer}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD requerido — copiar .env.example a .env y completar}
       TZ: America/Argentina/Buenos_Aires
     volumes:
       - mysql-data:/var/lib/mysql
     # Puerto 3306 NO publicado al host: la DB queda accesible solo desde la red docker.
-    # Acceso administrativo: docker exec crecer-mysql-1 mysql -ucrecer -pcrecer_2024 clinica
+    # Acceso administrativo: docker exec crecer-mysql-1 mysql -u${DB_USERNAME} -p${DB_PASSWORD} clinica
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ucrecer", "-pcrecer_2024"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u\"$$MYSQL_USER\" -p\"$$MYSQL_PASSWORD\""]
       interval: 10s
       timeout: 3s
       retries: 5

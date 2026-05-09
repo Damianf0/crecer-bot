@@ -77,10 +77,10 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: crecer_root_2024
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: clinica
       MYSQL_USER: crecer
-      MYSQL_PASSWORD: crecer_2024
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     volumes:
       - mysql-data:/var/lib/mysql
     ports:
@@ -124,7 +124,7 @@ networks:
 ```
 
 ### Credenciales de desarrollo
-- **MySQL:** host=mysql, db=clinica, user=crecer, password=crecer_2024
+- **MySQL:** host=mysql, db=clinica, user=crecer, password=${DB_PASSWORD}
 - **Ollama:** http://host.docker.internal:11434 (desde contenedores) / http://localhost:11434 (desde Windows)
 - **Laravel:** http://localhost (desde el servidor)
 
@@ -234,7 +234,7 @@ Bot procesa todo junto
 OLLAMA_URL=http://host.docker.internal:11434
 OLLAMA_MODEL=qwen3:8b
 LARAVEL_URL=http://web/api
-LARAVEL_TOKEN=crecer_bot_token_2024
+LARAVEL_TOKEN=${LARAVEL_TOKEN}
 ESPERA_MENSAJES=8000
 ESPERA_MAXIMA=45000
 RESET_CONVERSACION=1800000
@@ -627,8 +627,8 @@ DB_HOST=mysql
 DB_PORT=3306
 DB_DATABASE=clinica
 DB_USER=crecer
-DB_PASSWORD=crecer_2024
-DB_ROOT_PASSWORD=crecer_root_2024
+DB_PASSWORD=${DB_PASSWORD}
+DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
 ```
 
 ### Estructura de carpetas en el servidor

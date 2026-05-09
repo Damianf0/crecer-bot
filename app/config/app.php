@@ -67,7 +67,7 @@ return [
 
     'timezone' => 'America/Argentina/Buenos_Aires',
 
-    'bot_token' => env('BOT_TOKEN', 'crecer_bot_token_2024'),
+    'bot_token' => env('BOT_TOKEN', ''),
 
     'bot_url' => env('BOT_URL', 'http://bot:3001'),
     'bot_ingress_token' => env('BOT_INGRESS_TOKEN', ''),

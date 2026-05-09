@@ -137,7 +137,7 @@ $bk = "C:\crecer\backups\$ts"
 mkdir "$bk\db", "$bk\volumes" -Force
 
 # DB
-docker exec crecer-mysql-1 sh -c 'mysqldump --single-transaction -uroot -pcrecer_root_2024 clinica' > "$bk\db\clinica.sql"
+docker exec crecer-mysql-1 sh -c 'mysqldump --single-transaction -uroot -p${DB_ROOT_PASSWORD} clinica' > "$bk\db\clinica.sql"
 
 # Volumen sesión WA (si vas a tocar el bot a fondo)
 docker run --rm -v crecer_wa-session:/data -v "$bk\volumes:/backup" alpine tar czf /backup/wa-session.tar.gz -C /data .
@@ -167,7 +167,7 @@ docker exec    crecer-web-1 php /var/www/html/artisan contactos:auditar-telefono
 
 El puerto 3306 está cerrado al host por seguridad. Acceso administrativo:
 ```bash
-docker exec -it crecer-mysql-1 mysql -ucrecer -pcrecer_2024 clinica
+docker exec -it crecer-mysql-1 mysql -ucrecer -p${DB_PASSWORD} clinica
 ```
 
 ---
