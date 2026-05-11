@@ -177,7 +177,17 @@
 <script>
 const $ = (id) => document.getElementById(id);
 
+function getCookie(name) {
+    return document.cookie.split('; ').reduce((acc, c) => {
+        const [k, v] = c.split('=');
+        return k === name ? decodeURIComponent(v) : acc;
+    }, null);
+}
+
 async function call(url, opts = {}) {
+    // El XSRF-TOKEN cookie se renueva en cada response de Laravel — siempre vigente.
+    // El meta name="csrf-token" se serializa una vez al cargar la página y se queda viejo.
+    const xsrf = getCookie('XSRF-TOKEN');
     const csrf = document.querySelector('meta[name=csrf-token]')?.content
         ?? document.querySelector('input[name=_token]')?.value ?? '';
     const r = await fetch(url, {
@@ -185,12 +195,23 @@ async function call(url, opts = {}) {
         headers: {
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
+            'X-XSRF-TOKEN': xsrf || csrf,
             'X-CSRF-TOKEN': csrf,
             ...(opts.headers || {}),
         },
         ...opts,
     });
-    return r.json().catch(() => ({ ok: false }));
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 419) return { ok: false, _err: 'Sesión expirada — recargá la página (F5).' };
+    if (r.status === 422) {
+        const detalle = d.errors ? Object.values(d.errors).flat().join('\n') : (d.message || '');
+        return { ok: false, _err: 'Datos inválidos:\n' + detalle };
+    }
+    if (r.status === 403) {
+        return { ok: false, _err: 'No tenés permiso: ' + (d.error || d.message || '403') };
+    }
+    if (!r.ok) return { ok: false, _err: d.error || d.message || ('HTTP ' + r.status) };
+    return d;
 }
 
 function renderListaSala(items) {
@@ -273,20 +294,20 @@ async function llamar(id) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ consultorio }),
     });
-    if (!j.ok) { alert('No se pudo llamar al paciente.'); return; }
+    if (!j.ok) { alert('No se pudo llamar al paciente:\n' + (j._err || j.error || 'Error desconocido')); return; }
     await refrescar();
 }
 
 async function rellamar(id) {
     const j = await call(`/medico/${id}/rellamar`, { method: 'POST' });
-    if (!j.ok) { alert('No se pudo re-llamar.'); return; }
+    if (!j.ok) { alert('No se pudo re-llamar:\n' + (j._err || j.error || 'Error desconocido')); return; }
     await refrescar();
 }
 
 async function atendido(id) {
     if (!confirm('Marcar este paciente como atendido?')) return;
     const j = await call(`/medico/${id}/atendido`, { method: 'POST' });
-    if (!j.ok) { alert('No se pudo marcar como atendido.'); return; }
+    if (!j.ok) { alert('No se pudo marcar como atendido:\n' + (j._err || j.error || 'Error desconocido')); return; }
     await refrescar();
 }
 

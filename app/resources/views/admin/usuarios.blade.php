@@ -94,7 +94,20 @@
 </div>
 
 <script>
-const CSRF = '{{ csrf_token() }}';
+// CSRF: leemos XSRF-TOKEN cookie (renovada por Laravel en cada response) para que
+// nunca se vuelva stale aunque la pestaña esté abierta hace rato.
+function _getCookie(name) {
+    return document.cookie.split('; ').reduce((acc, c) => {
+        const [k, v] = c.split('=');
+        return k === name ? decodeURIComponent(v) : acc;
+    }, null);
+}
+function getCsrf() {
+    return _getCookie('XSRF-TOKEN')
+        || document.querySelector('meta[name=csrf-token]')?.content
+        || '{{ csrf_token() }}';
+}
+const CSRF = getCsrf();   // legacy
 let _editId = null;
 let _meta = { roles: {}, permisos_labels: {}, permisos_default: {} };
 
@@ -195,9 +208,11 @@ async function guardar() {
     btn.disabled = true; btn.textContent = 'Guardando…';
 
     try {
+        const tok = getCsrf();
         const r = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': tok, 'X-CSRF-TOKEN': tok, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
             body: JSON.stringify(data),
         });
         const d = await r.json().catch(() => ({}));

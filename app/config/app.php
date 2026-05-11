@@ -76,6 +76,9 @@ return [
     'tunnel_broker_url'   => env('TUNNEL_BROKER_URL',   'http://host.docker.internal:9091'),
     'tunnel_broker_token' => env('TUNNEL_BROKER_TOKEN', ''),
 
+    // Token para acceso al panel llamador (/llamador?token=...). Sin login Laravel.
+    'llamador_token' => env('LLAMADOR_TOKEN', ''),
+
     /*
      * Path absoluto donde se almacena el legajo de documentos por paciente.
      * Si está vacío, default es storage/app/private/documentos.

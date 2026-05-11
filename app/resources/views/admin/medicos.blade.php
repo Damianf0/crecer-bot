@@ -158,13 +158,23 @@
 const $ = (id) => document.getElementById(id);
 let state = { medicos: [], detectados: [], users: [] };
 
+function _getCookie(name) {
+    return document.cookie.split('; ').reduce((acc, c) => {
+        const [k, v] = c.split('=');
+        return k === name ? decodeURIComponent(v) : acc;
+    }, null);
+}
+
 async function api(method, url, body) {
+    // Cookie XSRF-TOKEN renovada en cada response — no se vuelve stale.
+    const xsrf = _getCookie('XSRF-TOKEN');
     const csrf = document.querySelector('meta[name=csrf-token]')?.content
         ?? document.querySelector('input[name=_token]')?.value ?? '';
+    const tok = xsrf || csrf;
     const opts = {
         method,
         credentials: 'same-origin',
-        headers: { 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+        headers: { 'X-XSRF-TOKEN': tok, 'X-CSRF-TOKEN': tok, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
     };
     if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
     const r = await fetch(url, opts);

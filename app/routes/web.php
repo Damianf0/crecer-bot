@@ -11,6 +11,7 @@ use App\Http\Controllers\ContactoController;
 use App\Http\Controllers\TareaController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\MedicoController;
+use App\Http\Controllers\LlamadorController;
 use App\Http\Controllers\EstadisticasController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DocumentoController;
@@ -50,6 +51,10 @@ Route::get('/declarar-colas', DeclaracionColas::class)
 
 // Tablet — sin auth (pantalla pública en la sala)
 Route::get('/tablet', Tablet::class);
+
+// Llamador — pantalla pública para TV de sala de espera. Acceso por token en URL.
+Route::get('/llamador',      [LlamadorController::class, 'index']);
+Route::get('/llamador/data', [LlamadorController::class, 'data']);
 
 // Panel médico — auth + permiso:medico, sin requerir declaración de colas.
 Route::middleware(['auth', 'permiso:medico'])->prefix('medico')->group(function () {

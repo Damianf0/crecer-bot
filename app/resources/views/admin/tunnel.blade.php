@@ -139,14 +139,23 @@
 <script>
 const $ = (id) => document.getElementById(id);
 
+function _getCookie(name) {
+    return document.cookie.split('; ').reduce((acc, c) => {
+        const [k, v] = c.split('=');
+        return k === name ? decodeURIComponent(v) : acc;
+    }, null);
+}
 async function call(url, opts = {}) {
-    const csrf = document.querySelector('meta[name=csrf-token]')?.content;
+    const xsrf = _getCookie('XSRF-TOKEN');
+    const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
+    const tok = xsrf || csrf;
     return fetch(url, {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRF-TOKEN': csrf || '',
+            'X-XSRF-TOKEN': tok,
+            'X-CSRF-TOKEN': tok,
             ...(opts.headers || {}),
         },
         ...opts,
