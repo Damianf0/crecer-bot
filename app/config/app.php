@@ -69,7 +69,12 @@ return [
 
     'bot_token' => env('BOT_TOKEN', ''),
 
+    // Bot WhatsApp. Hay un contenedor por área; cada conversación contesta por el suyo.
+    // `bot_url` queda como alias del de atención (compat con código viejo).
     'bot_url' => env('BOT_URL', 'http://bot:3001'),
+    'bot_url_atencion'       => env('BOT_URL',                'http://bot:3001'),
+    'bot_url_administracion' => env('BOT_URL_ADMINISTRACION', 'http://bot-administracion:3002'),
+    'bot_url_ovodonacion'    => env('BOT_URL_OVODONACION',    'http://bot-ovodonacion:3003'),
     'bot_ingress_token' => env('BOT_INGRESS_TOKEN', ''),
 
     // Broker del Quick Tunnel de Cloudflare (corre en la host).

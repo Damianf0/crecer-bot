@@ -2,11 +2,13 @@
 
 namespace App\Livewire;
 
+use App\Models\ConversacionEvento;
 use App\Models\ConversacionWA;
 use App\Models\Derivacion;
 use App\Models\MensajeWA;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -30,6 +32,11 @@ class GestionAtencion extends Component
     public ?int   $delegarId       = null;
     public string $delegarTipo     = '';
     public ?int   $delegarUsuario  = null;
+
+    // Derivar a otra área (otro número de WhatsApp)
+    public bool   $mostrarDerivarArea = false;
+    public ?int   $derivarAreaConvId  = null;
+    public string $derivarAreaDestino = '';
 
     // Toast
     public string $toast    = '';
@@ -60,7 +67,10 @@ class GestionAtencion extends Component
         }
 
         if (in_array($this->filtro, ['todos', 'wa'])) {
+            $areasSesion = ConversacionWA::areasDeLaSesion();
+
             $nuevasWA = ConversacionWA::where('estado', 'activa')
+                ->whereIn('area', $areasSesion)
                 ->whereNull('asignada_a')
                 ->with(['ultimoMensaje', 'asignadaA'])
                 ->orderByDesc('urgente')
@@ -68,6 +78,7 @@ class GestionAtencion extends Component
                 ->get();
 
             $procesoWA = ConversacionWA::where('estado', 'activa')
+                ->whereIn('area', $areasSesion)
                 ->whereNotNull('asignada_a')
                 ->with(['ultimoMensaje', 'asignadaA'])
                 ->orderByDesc('urgente')
@@ -202,6 +213,123 @@ class GestionAtencion extends Component
         $this->mostrarDelegar = false;
     }
 
+    // ── Derivar a otra área (otro número de WhatsApp) ──────
+
+    public function abrirDerivarArea(int $convId): void
+    {
+        $this->derivarAreaConvId  = $convId;
+        $this->derivarAreaDestino = '';
+        $this->mostrarDerivarArea = true;
+    }
+
+    public function cancelarDerivarArea(): void
+    {
+        $this->mostrarDerivarArea = false;
+    }
+
+    public function confirmarDerivarArea(): void
+    {
+        $conv = ConversacionWA::find($this->derivarAreaConvId);
+        if (!$conv) { $this->mostrarDerivarArea = false; return; }
+
+        $destino = $this->derivarAreaDestino;
+        if (!isset(ConversacionWA::AREAS[$destino]) || $destino === $conv->area) {
+            $this->toast = 'Elegí un área distinta a la actual.';
+            $this->toastTipo = 'error';
+            $this->dispatch('toast');
+            return;
+        }
+
+        $origenLabel  = ConversacionWA::AREAS[$conv->area] ?? $conv->area;
+        $destinoLabel = ConversacionWA::AREAS[$destino];
+        $botTok       = config('app.bot_ingress_token');
+
+        // Teléfono del bot destino, en vivo. Si no responde, mensaje genérico sin número.
+        $telDestino = null;
+        try {
+            $r = Http::timeout(8)->withToken($botTok)->get(ConversacionWA::botUrlPara($destino) . '/status');
+            if ($r->ok() && $r->json('phone')) $telDestino = $r->json('phone');
+        } catch (\Throwable) {}
+
+        $texto = $telDestino
+            ? "Hola 👋 Tu consulta corresponde al área de *{$destinoLabel}*. Te derivamos con ese equipo — te van a responder desde el número +{$telDestino}. ¡Gracias!"
+            : "Hola 👋 Tu consulta corresponde al área de *{$destinoLabel}*. Te derivamos con ese equipo y te van a responder a la brevedad. ¡Gracias!";
+
+        // Avisar al paciente POR EL NÚMERO ACTUAL. Si esto falla, no movemos nada.
+        $waId = null;
+        try {
+            $resp = Http::timeout(12)->withToken($botTok)->post($conv->botUrl() . '/enviar', [
+                'contacto' => $conv->contacto,
+                'texto'    => $texto,
+            ]);
+            if (!$resp->ok() || $resp->json('ok') !== true) {
+                $this->toast = "No se pudo avisar al paciente (el bot de {$origenLabel} no respondió). No se derivó.";
+                $this->toastTipo = 'error';
+                $this->dispatch('toast');
+                return;
+            }
+            $waId = $resp->json('wa_id');
+        } catch (\Throwable) {
+            $this->toast = "No se pudo contactar al bot de {$origenLabel}. No se derivó.";
+            $this->toastTipo = 'error';
+            $this->dispatch('toast');
+            return;
+        }
+
+        // Registrar el aviso como saliente (la conv todavía está en su área original).
+        MensajeWA::create([
+            'conversacion_id' => $conv->id,
+            'direccion'       => 'saliente',
+            'tipo'            => 'texto',
+            'contenido'       => $texto,
+            'wa_id'           => $waId,
+            'usuario_id'      => Auth::id(),
+            'leido'           => true,
+        ]);
+
+        // Mover al área destino. Si ya existe una conv (contacto, destino), fusionar.
+        $existente = ConversacionWA::where('contacto', $conv->contacto)
+            ->where('area', $destino)
+            ->where('id', '!=', $conv->id)
+            ->first();
+
+        if ($existente) {
+            MensajeWA::where('conversacion_id', $conv->id)->update(['conversacion_id' => $existente->id]);
+            \App\Models\TareaWA::where('conversacion_id', $conv->id)->update(['conversacion_id' => $existente->id]);
+            ConversacionEvento::where('conversacion_id', $conv->id)->update(['conversacion_id' => $existente->id]);
+            $existente->update([
+                'estado'           => 'activa',
+                'no_leidos'        => $existente->no_leidos + $conv->no_leidos,
+                'ultima_actividad' => now(),
+                'asignada_a'       => null,
+            ]);
+            $conv->delete();
+            $destinoConvId = $existente->id;
+        } else {
+            $conv->update([
+                'area'             => $destino,
+                'asignada_a'       => null,
+                'estado'           => 'activa',
+                'ultima_actividad' => now(),
+            ]);
+            $destinoConvId = $conv->id;
+        }
+
+        ConversacionEvento::create([
+            'conversacion_id' => $destinoConvId,
+            'tipo'            => 'derivada_area',
+            'usuario_id'      => Auth::id(),
+        ]);
+
+        Cache::forget('atencion.items');
+
+        $this->mostrarDerivarArea = false;
+        $this->convAbiertaId      = null;
+        $this->toast    = "Derivada a {$destinoLabel} ✓";
+        $this->toastTipo = 'ok';
+        $this->dispatch('toast');
+    }
+
     public function toggleUrgente(int $id, string $tipo): void
     {
         if ($tipo === 'bot') {
@@ -263,8 +391,8 @@ class GestionAtencion extends Component
                 'leido'           => true,
             ]);
         } else {
-            // Enviar por WhatsApp
-            $botUrl = config('app.bot_url');
+            // Enviar por WhatsApp — bot del área de la conversación
+            $botUrl = $conv->botUrl();
             $botTok = config('app.bot_ingress_token');
             try {
                 Http::timeout(10)
@@ -330,8 +458,8 @@ class GestionAtencion extends Component
         $archivo->storeAs('public/wa-media', $localName);
         $archivoUrl  = asset("storage/wa-media/{$localName}");
 
-        // Enviar por WhatsApp vía bot
-        $botUrl = config('app.bot_url');
+        // Enviar por WhatsApp vía bot del área de la conversación
+        $botUrl = $conv->botUrl();
         $botTok = config('app.bot_ingress_token');
         try {
             Http::timeout(30)

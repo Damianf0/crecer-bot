@@ -94,11 +94,15 @@
 </style>
 
 <div class="tun-wrap">
-    <h2 style="font-size:18px;font-weight:700;margin-bottom:6px;">Acceso remoto (Cloudflare Quick Tunnel)</h2>
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:6px;">
+        Acceso remoto <span id="tun-backend-badge" style="font-size:11px;font-weight:600;vertical-align:middle;padding:2px 8px;border-radius:10px;background:color-mix(in srgb, var(--info) 12%, transparent);color:var(--info);">túnel</span>
+    </h2>
     <div class="tun-info">
-        Expone temporalmente el panel a internet a través de Cloudflare. Generamos una URL pública
-        del tipo <code>https://*.trycloudflare.com</code> que el equipo remoto puede abrir desde cualquier lugar.
-        La URL cambia cada vez que se reinicia el túnel. El login de Laravel sigue siendo obligatorio.
+        Expone temporalmente el panel a internet a través de un túnel (ngrok o Cloudflare, según
+        configuración). Generamos una URL pública que el equipo remoto puede abrir desde cualquier lugar.
+        El login de Laravel sigue siendo obligatorio. El backend se elige en <code>bot/.env</code>
+        (<code>TUNNEL_BACKEND</code> / <code>NGROK_AUTHTOKEN</code>); el broker corre en la host como
+        tarea programada <code>Crecer\TunnelBroker</code>.
     </div>
 
     <div class="tun-warn">
@@ -129,8 +133,8 @@
     </div>
 
     <div class="tun-card">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;">
-            Log de cloudflared
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;margin-bottom:10px;" id="tun-log-titulo">
+            Log del túnel
         </div>
         <div class="tun-log" id="tun-log"><span class="tun-log-empty">Sin actividad reciente.</span></div>
     </div>
@@ -166,6 +170,12 @@ function pintarEstado(j) {
     const running = !!j.running;
     const url     = j.url || null;
     const error   = j.error || null;
+    const backend = j.backend || '—';
+
+    const badge = $('tun-backend-badge');
+    if (badge) badge.textContent = backend === '—' ? 'túnel' : backend;
+    const logTit = $('tun-log-titulo');
+    if (logTit) logTit.textContent = backend === '—' ? 'Log del túnel' : ('Log de ' + backend);
 
     $('tun-light').classList.toggle('on',  running && !error);
     $('tun-light').classList.toggle('err', !!error);
@@ -221,12 +231,12 @@ async function refrescar() {
 async function iniciar() {
     $('btn-start').disabled = true;
     $('tun-state').textContent = 'Iniciando túnel...';
-    $('tun-sub').textContent   = 'Esperando respuesta de Cloudflare (puede tardar hasta 30s)…';
+    $('tun-sub').textContent   = 'Esperando que el túnel levante (puede tardar hasta 30s)…';
     try {
         const j = await call('/admin/tunnel/start', { method: 'POST' });
         pintarEstado(j);
         if (!j.url && !j.running) {
-            alert('No se pudo levantar el túnel.\n\n' + (j.error || 'Cloudflare no respondió con una URL. Ver el log abajo.'));
+            alert('No se pudo levantar el túnel.\n\n' + (j.error || 'El túnel no devolvió una URL. Ver el log abajo.'));
         }
     } finally {
         $('btn-start').disabled = false;

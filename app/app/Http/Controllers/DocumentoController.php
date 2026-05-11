@@ -203,7 +203,8 @@ class DocumentoController extends Controller
         }
 
         // Indexar el envío también para que quede en el historial como saliente.
-        $conv = ConversacionWA::where('contacto', $contacto->wa_id)->first();
+        // Los docs del legajo se mandan por el número de ATENCIÓN.
+        $conv = ConversacionWA::where('contacto', $contacto->wa_id)->where('area', 'atencion')->first();
         if ($conv) {
             \App\Models\MensajeWA::create([
                 'conversacion_id' => $conv->id,

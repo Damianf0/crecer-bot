@@ -14,13 +14,36 @@
 
 @php
     $iconos = [
-        'recepcion'    => '🏥',
-        'turnos'       => '📅',
-        'ordenes'      => '📋',
-        'facturacion'  => '💳',
-        'coordinacion' => '🤝',
+        'recepcion'      => '🏥',
+        'turnos'         => '📅',
+        'ordenes'        => '📋',
+        'facturacion'    => '💳',
+        'coordinacion'   => '🤝',
+        'atencion'       => '💬',
+        'administracion' => '🗂️',
+        'ovodonacion'    => '🥚',
     ];
 @endphp
+
+@if (!empty($areas ?? []))
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:4px 0 8px;">
+        Números / áreas que atendés
+    </div>
+    <div class="colas-grid">
+        @foreach ($areas as $key => $label)
+            <div class="cola-item {{ in_array($key, $colasSeleccionadas) ? 'selected' : '' }}"
+                 wire:click="toggleCola('{{ $key }}')">
+                <span class="cola-icon">{{ $iconos[$key] ?? '•' }}</span>
+                {{ $label }}
+            </div>
+        @endforeach
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin:8px 0 16px;">Si no marcás ninguna, ves las conversaciones de todas las áreas.</div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:4px 0 8px;">
+        Tipo de consulta
+    </div>
+@endif
 
 <div class="colas-grid">
     @foreach ($todasLasColas as $key => $label)

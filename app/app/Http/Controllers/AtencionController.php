@@ -54,16 +54,19 @@ class AtencionController extends Controller
         return in_array($ext, self::EXTENSIONES_BLOQUEADAS, true) ? $ext : null;
     }
 
-    public function index()
+    public function index(string $area = 'atencion')
     {
+        $area = isset(ConversacionWA::AREAS[$area]) ? $area : 'atencion';
         $usuarios  = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
-        $itemsData = $this->buildItems();
-        return view('atencion.index', compact('usuarios', 'itemsData'));
+        $itemsData = $this->buildItems($area);
+        $areaLabel = ConversacionWA::AREAS[$area];
+        return view('atencion.index', compact('usuarios', 'itemsData', 'area', 'areaLabel'));
     }
 
-    public function items(Request $request)
+    public function items(Request $request, string $area = 'atencion')
     {
-        $payload = $this->buildItems();
+        $area    = isset(ConversacionWA::AREAS[$area]) ? $area : 'atencion';
+        $payload = $this->buildItems($area);
         $json    = json_encode($payload);
         $etag    = '"' . substr(md5($json), 0, 16) . '"';
 
@@ -79,23 +82,25 @@ class AtencionController extends Controller
         ]);
     }
 
-    private function buildItems(): array
+    private function buildItems(string $area = 'atencion'): array
     {
         // Cache 3s del payload completo: con N secretarias polleando cada 8s,
         // amortiza ~70% de las queries sin que se note la latencia.
-        // Clave global (no per-user) porque la cola es la misma para todas.
-        return \Illuminate\Support\Facades\Cache::remember('atencion.items', 3, function () {
-            return $this->buildItemsRaw();
+        // Clave por área (la cola de cada número es independiente).
+        return \Illuminate\Support\Facades\Cache::remember("atencion.items.{$area}", 3, function () use ($area) {
+            return $this->buildItemsRaw($area);
         });
     }
 
-    private function buildItemsRaw(): array
+    private function buildItemsRaw(string $area = 'atencion'): array
     {
         $qNuevas = ConversacionWA::where('estado', 'activa')
+            ->where('area', $area)
             ->whereNull('asignada_a')
             ->where('no_leidos', '>', 0);
 
         $qProceso = ConversacionWA::where('estado', 'activa')
+            ->where('area', $area)
             ->whereNotNull('asignada_a');
 
         $totalNuevas  = (clone $qNuevas)->count();
@@ -302,7 +307,7 @@ class AtencionController extends Controller
         // Vincular la conversación: poblar el nombre para que deje de ser huérfana
         $conv->update(['nombre' => $contacto->nombre]);
 
-        \Illuminate\Support\Facades\Cache::forget('atencion.items');
+        ConversacionWA::invalidarColaCache();
 
         return response()->json(['ok' => true, 'contacto_id' => $contacto->id]);
     }
@@ -583,7 +588,9 @@ class AtencionController extends Controller
             'telefono'    => 'nullable|string|max:30',
             'contacto_id' => 'nullable|integer|exists:contactos,id',
             'texto'       => 'required|string|max:5000',
+            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
         ]);
+        $area = $data['area'] ?? 'atencion';
 
         if (!($data['telefono'] ?? null) && !($data['contacto_id'] ?? null)) {
             return response()->json(['ok' => false, 'error' => 'Indicá teléfono o contacto'], 422);
@@ -603,8 +610,8 @@ class AtencionController extends Controller
             return response()->json(['ok' => false, 'error' => 'Número inválido — debe ser argentino con 10 dígitos (ej: 1123456789 o 549...)'], 422);
         }
 
-        // Verificar con el bot que el número tiene WhatsApp y obtener el ID normalizado.
-        $botUrl = config('app.bot_url');
+        // Verificar con el bot del área que el número tiene WhatsApp y obtener el ID normalizado.
+        $botUrl = ConversacionWA::botUrlPara($area);
         $botTok = config('app.bot_ingress_token');
         try {
             $check = Http::timeout(15)
@@ -621,8 +628,8 @@ class AtencionController extends Controller
             return response()->json(['ok' => false, 'error' => 'No se pudo contactar al bot. Reintentá en unos segundos.'], 502);
         }
 
-        // Reusar o crear conversación
-        $conv = ConversacionWA::firstOrNew(['contacto' => $contactoWA]);
+        // Reusar o crear conversación en el área desde la que se inicia (cada área = su número).
+        $conv = ConversacionWA::firstOrNew(['contacto' => $contactoWA, 'area' => $area]);
         $esNueva = !$conv->exists;
         $conv->fill([
             'estado'           => 'activa',
@@ -678,6 +685,105 @@ class AtencionController extends Controller
         ]);
     }
 
+    /**
+     * Deriva una conversación a otra área (otro número de WhatsApp).
+     * Avisa al paciente por el número actual ("te van a responder desde +X"),
+     * mueve la conversación a la cola del área destino (fusionando si ya existía
+     * una conversación de ese contacto en esa área).
+     * POST /atencion/conversacion/{id}/derivar-area  { area }
+     */
+    public function derivarArea(int $id, Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'area' => 'required|in:atencion,administracion,ovodonacion',
+        ]);
+        $destino = $data['area'];
+        $conv = ConversacionWA::findOrFail($id);
+
+        if ($destino === $conv->area) {
+            return response()->json(['ok' => false, 'error' => 'La conversación ya está en esa área.'], 422);
+        }
+
+        $origenLabel  = ConversacionWA::AREAS[$conv->area] ?? $conv->area;
+        $destinoLabel = ConversacionWA::AREAS[$destino];
+        $botTok       = config('app.bot_ingress_token');
+
+        // Teléfono del bot destino, en vivo. Si no responde → mensaje genérico sin número.
+        $telDestino = null;
+        try {
+            $r = Http::timeout(8)->withToken($botTok)->get(ConversacionWA::botUrlPara($destino) . '/status');
+            if ($r->ok() && $r->json('phone')) $telDestino = $r->json('phone');
+        } catch (\Throwable) {}
+
+        $texto = $telDestino
+            ? "Hola 👋 Tu consulta corresponde al área de *{$destinoLabel}*. Te derivamos con ese equipo — te van a responder desde el número +{$telDestino}. ¡Gracias!"
+            : "Hola 👋 Tu consulta corresponde al área de *{$destinoLabel}*. Te derivamos con ese equipo y te van a responder a la brevedad. ¡Gracias!";
+
+        // Avisar al paciente POR EL NÚMERO ACTUAL. Si esto falla, no movemos nada.
+        $waId = null;
+        try {
+            $resp = Http::timeout(12)->withToken($botTok)->post($conv->botUrl() . '/enviar', [
+                'contacto' => $conv->contacto,
+                'texto'    => $texto,
+            ]);
+            if (!$resp->ok() || $resp->json('ok') !== true) {
+                return response()->json(['ok' => false, 'error' => "No se pudo avisar al paciente (el bot de {$origenLabel} no respondió). No se derivó."], 502);
+            }
+            $waId = $resp->json('wa_id');
+        } catch (\Throwable) {
+            return response()->json(['ok' => false, 'error' => "No se pudo contactar al bot de {$origenLabel}. No se derivó."], 502);
+        }
+
+        // Registrar el aviso como saliente (la conv todavía está en su área original).
+        MensajeWA::create([
+            'conversacion_id' => $conv->id,
+            'direccion'       => 'saliente',
+            'tipo'            => 'texto',
+            'contenido'       => $texto,
+            'wa_id'           => $waId,
+            'usuario_id'      => Auth::id(),
+            'leido'           => true,
+        ]);
+
+        // Mover al área destino. Si ya existe una conv (contacto, destino), fusionar.
+        $existente = ConversacionWA::where('contacto', $conv->contacto)
+            ->where('area', $destino)
+            ->where('id', '!=', $conv->id)
+            ->first();
+
+        if ($existente) {
+            MensajeWA::where('conversacion_id', $conv->id)->update(['conversacion_id' => $existente->id]);
+            \App\Models\TareaWA::where('conversacion_id', $conv->id)->update(['conversacion_id' => $existente->id]);
+            ConversacionEvento::where('conversacion_id', $conv->id)->update(['conversacion_id' => $existente->id]);
+            $existente->update([
+                'estado'           => 'activa',
+                'no_leidos'        => $existente->no_leidos + $conv->no_leidos,
+                'ultima_actividad' => now(),
+                'asignada_a'       => null,
+            ]);
+            $conv->delete();
+            $destinoConvId = $existente->id;
+        } else {
+            $conv->update([
+                'area'             => $destino,
+                'asignada_a'       => null,
+                'estado'           => 'activa',
+                'ultima_actividad' => now(),
+            ]);
+            $destinoConvId = $conv->id;
+        }
+
+        $this->logEvento($destinoConvId, 'derivada_area');
+        ConversacionWA::invalidarColaCache();
+
+        return response()->json([
+            'ok'      => true,
+            'destino' => $destino,
+            'destino_label' => $destinoLabel,
+            'mensaje' => "Derivada a {$destinoLabel}",
+        ]);
+    }
+
     public function enviarMensaje(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -698,9 +804,9 @@ class AtencionController extends Controller
                 'leido'           => true,
             ]);
         } else {
-            // Enviar al bot — si falla, no guardamos el mensaje para que el usuario
-            // sepa que no llegó y pueda reintentar.
-            $botUrl = config('app.bot_url');
+            // Enviar al bot del área de la conversación — si falla, no guardamos el
+            // mensaje para que el usuario sepa que no llegó y pueda reintentar.
+            $botUrl = $conv->botUrl();
             $botTok = config('app.bot_ingress_token');
             $waIdEnviado = null;
             try {
@@ -778,7 +884,7 @@ class AtencionController extends Controller
         $archivo->storeAs('public/wa-media', $localName);
         $archivoUrl = asset("storage/wa-media/{$localName}");
 
-        $botUrl = config('app.bot_url');
+        $botUrl = $conv->botUrl();
         $botTok = config('app.bot_ingress_token');
         try {
             $resp = Http::timeout(30)
@@ -848,7 +954,7 @@ class AtencionController extends Controller
         ]);
         // Cualquier evento sobre conversación → invalidar cache para que las demás
         // secretarias vean el cambio en su próximo poll (en lugar de esperar 3s).
-        \Illuminate\Support\Facades\Cache::forget('atencion.items');
+        ConversacionWA::invalidarColaCache();
     }
 
     private function mapDer(Derivacion $d): array
@@ -905,12 +1011,11 @@ class AtencionController extends Controller
             if ($tipo === 'bot') {
                 $texto = $item->texto;
             } else {
+                // Solo mensajes entrantes del paciente — el resumen no incluye salientes.
                 $msgs  = MensajeWA::where('conversacion_id', $item->id)
-                    ->whereIn('direccion', ['entrante', 'saliente'])
+                    ->where('direccion', 'entrante')
                     ->orderBy('created_at')->take(20)->get();
-                $texto = $msgs->map(fn($m) =>
-                    ($m->direccion === 'entrante' ? 'Paciente: ' : 'Bot: ') . ($m->contenido ?? '[audio]')
-                )->implode("\n");
+                $texto = $msgs->map(fn($m) => 'Paciente: ' . ($m->contenido ?? '[audio]'))->implode("\n");
             }
             if (!trim($texto)) return;
             $resp = Http::timeout(15)

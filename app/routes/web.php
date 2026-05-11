@@ -99,10 +99,12 @@ Route::middleware([SecretariaAuth::class])->group(function () {
 
     // Atención y mis tareas
     Route::middleware('permiso:atencion')->group(function () {
-        Route::get('/atencion',                   [AtencionController::class, 'index']);
-        Route::get('/atencion/items',             [AtencionController::class, 'items']);
+        // Una cola por área (= número de WhatsApp). /atencion redirige a la de la clínica.
+        Route::get('/atencion', fn() => redirect('/atencion/atencion'));
+        Route::get('/atencion/items',             [AtencionController::class, 'items']); // legacy → área atención por default
         Route::get('/atencion/conversacion/{id}', [AtencionController::class, 'conversacion']);
         Route::post('/atencion/conversacion/{id}/agregar-contacto', [AtencionController::class, 'agregarContactoDesdeConv']);
+        Route::post('/atencion/conversacion/{id}/derivar-area',     [AtencionController::class, 'derivarArea']);
         Route::get('/atencion/derivacion/{id}',   [AtencionController::class, 'derivacion']);
         Route::post('/atencion/tomar',            [AtencionController::class, 'tomar']);
         Route::post('/atencion/delegar',          [AtencionController::class, 'delegar']);
@@ -112,6 +114,9 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/atencion/enviar-archivo',   [AtencionController::class, 'enviarArchivo']);
         Route::post('/atencion/iniciar',          [AtencionController::class, 'iniciarConversacion']);
         Route::post('/atencion/reabrir',          [AtencionController::class, 'reabrir']);
+        // Cola y polling por área (constraint para no chocar con las rutas de arriba).
+        Route::get('/atencion/{area}',            [AtencionController::class, 'index'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+        Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
         Route::get('/mis-tareas',                 [AtencionController::class, 'misTareas']);
         Route::get('/mis-tareas/data',            [AtencionController::class, 'misTareasData']);
 

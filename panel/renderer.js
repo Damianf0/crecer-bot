@@ -39,12 +39,14 @@ const STATUS_LABELS = {
 
 async function refreshStatus() {
   try {
-    const { status, phone, uptime, qrDataUrl } = await window.bot.getStatus();
+    const { status, phone, uptime } = await window.bot.getStatus();
     updateSidebarStatus(status);
     updateDashboard(status, phone, uptime);
-    if (currentTab === 'qr') updateQR(status, phone, qrDataUrl);
   } catch (_) {
     updateSidebarStatus('desconectado');
+  }
+  if (currentTab === 'qr') {
+    try { updateQR(await window.bot.statusAll()); } catch (_) {}
   }
 }
 
@@ -63,30 +65,50 @@ function updateDashboard(status, phone, uptime) {
   document.getElementById('statUptime').textContent = uptime || '—';
 }
 
-function updateQR(status, phone, qrDataUrl) {
+// Renderiza una tarjeta de QR/estado por cada bot (área). allStatus = { area: {...}|null }
+function updateQR(allStatus) {
   const container = document.getElementById('qrContainer');
-  if (status === 'esperando_qr' && qrDataUrl) {
-    container.innerHTML = `
-      <img src="${qrDataUrl}" width="280" height="280" alt="QR WhatsApp">
-      <p class="qr-hint">
-        Abrí WhatsApp en el celular del número de la clínica.<br>
-        <strong>Ajustes → Dispositivos vinculados → Vincular un dispositivo</strong><br>
-        Apuntá la cámara a este código.
-      </p>`;
-  } else if (status === 'listo') {
-    container.innerHTML = `
-      <div class="connected-badge">
-        <div class="connected-icon">✓</div>
+  const labels   = window.bot.AREA_LABELS  || {};
+  const services = window.bot.AREA_SERVICE  || {};
+  const areas    = window.bot.areas || ['atencion'];
+  container.style.display        = 'flex';
+  container.style.flexWrap        = 'wrap';
+  container.style.gap             = '16px';
+  container.style.justifyContent  = 'center';
+  container.style.alignItems      = 'flex-start';
+
+  container.innerHTML = areas.map((area) => {
+    const st    = allStatus ? allStatus[area] : null;
+    const label = labels[area] || area;
+    let body;
+    if (!st) {
+      body = `<div style="color:var(--text-muted);text-align:center;font-size:13px;padding:28px 8px;">
+        <div style="font-size:30px;margin-bottom:8px;">○</div>Bot apagado o no responde</div>`;
+    } else if (st.status === 'esperando_qr' && st.qrDataUrl) {
+      body = `<img src="${st.qrDataUrl}" width="220" height="220" alt="QR ${label}">
+        <p class="qr-hint" style="font-size:11px;margin-top:8px;">Escaneá con el celular de este número.<br>WhatsApp → Dispositivos vinculados → Vincular un dispositivo</p>`;
+    } else if (st.status === 'listo') {
+      body = `<div class="connected-badge"><div class="connected-icon">✓</div>
         <div class="connected-text">WhatsApp conectado</div>
-        <div class="connected-phone">${phone ? '+' + phone : ''}</div>
-      </div>`;
-  } else {
-    container.innerHTML = `
-      <div style="color:var(--text-muted);text-align:center;font-size:14px;">
-        <div style="font-size:36px;margin-bottom:12px;">○</div>
-        ${STATUS_LABELS[status] || status}…
-      </div>`;
-  }
+        <div class="connected-phone">${st.phone ? '+' + st.phone : ''}</div></div>`;
+    } else {
+      body = `<div style="color:var(--text-muted);text-align:center;font-size:13px;padding:28px 8px;">
+        <div style="font-size:30px;margin-bottom:8px;">○</div>${STATUS_LABELS[st.status] || st.status}…</div>`;
+    }
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:16px;min-width:260px;max-width:300px;text-align:center;">
+      <div style="font-weight:600;font-size:14px;margin-bottom:10px;">${label}</div>
+      ${body}
+      <button onclick="reiniciarBot('${services[area] || 'bot'}','${label.replace(/'/g, '')}')"
+        style="margin-top:14px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text-muted);padding:5px 12px;font-size:12px;cursor:pointer;">↻ Reiniciar este bot</button>
+    </div>`;
+  }).join('');
+}
+
+async function reiniciarBot(service, label) {
+  if (!confirm(`¿Reiniciar el bot de ${label}? Tarda ~30s en reconectar — no pierde la sesión de WhatsApp.`)) return;
+  const res = await window.sistema.reiniciarServicio(service);
+  alert(res.ok ? `${label}: reiniciado` : `${label}: error — ${res.stderr || 'ver consola'}`);
+  setTimeout(refreshStatus, 4000);
 }
 
 // Solo pollea cuando la ventana está visible y en tab relevante
@@ -638,7 +660,9 @@ document.getElementById('btnLimpiarPruebas').addEventListener('click', () => {
 // ── Sistema ───────────────────────────────────────────────
 
 const SISTEMA_SERVICES = [
-  { key: 'bot',    container: 'crecer-bot-1',    label: 'Bot WhatsApp',   icon: '◈', httpCheck: 'http://localhost:3001/status' },
+  { key: 'bot',                container: 'crecer-bot-1',                label: 'Bot WApp · Clínica',        icon: '◈', httpCheck: 'http://localhost:3001/status' },
+  { key: 'bot-administracion', container: 'crecer-bot-administracion-1', label: 'Bot WApp · Administración', icon: '◈', httpCheck: 'http://localhost:3002/status' },
+  { key: 'bot-ovodonacion',    container: 'crecer-bot-ovodonacion-1',    label: 'Bot WApp · Ovodonación',    icon: '◈', httpCheck: 'http://localhost:3003/status' },
   { key: 'web',    container: 'crecer-web-1',    label: 'Web / Laravel',  icon: '◫', httpCheck: null },
   { key: 'nginx',  container: 'crecer-nginx-1',  label: 'Nginx / HTTP',   icon: '⊹', httpCheck: 'http://localhost/login' },
   { key: 'mysql',  container: 'crecer-mysql-1',  label: 'Base de datos',  icon: '◧', httpCheck: null },

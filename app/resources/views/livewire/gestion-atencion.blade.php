@@ -50,13 +50,15 @@
                         <div style="font-weight:600;font-size:14px;">{{ $convAbierta->nombreOTelefono }}</div>
                         <div style="font-size:11px;color:var(--muted);">{{ $convAbierta->telefono }}</div>
                     </div>
-                    @if($convAbierta->asignada_a)
-                        <span style="margin-left:auto;font-size:11px;color:var(--muted);">
-                            {{ $convAbierta->asignadaA?->nombre_completo ?? '' }}
-                        </span>
-                    @endif
+                    <span style="margin-left:auto;font-size:11px;color:var(--muted);">
+                        {{ \App\Models\ConversacionWA::AREAS[$convAbierta->area] ?? $convAbierta->area }}@if($convAbierta->asignada_a) · {{ $convAbierta->asignadaA?->nombre_completo ?? '' }}@endif
+                    </span>
+                    <button wire:click="abrirDerivarArea({{ $convAbiertaId }})" title="Derivar a otra área (otro número)"
+                        style="padding:4px 12px;background:rgba(124,154,255,0.12);border:1px solid rgba(124,154,255,0.3);color:var(--info);border-radius:6px;font-size:12px;cursor:pointer;">
+                        ↪ Área
+                    </button>
                     <button wire:click="resolver({{ $convAbiertaId }},'wa')"
-                        style="margin-left:auto;padding:4px 12px;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.3);color:var(--success);border-radius:6px;font-size:12px;cursor:pointer;">
+                        style="padding:4px 12px;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.3);color:var(--success);border-radius:6px;font-size:12px;cursor:pointer;">
                         ✓ Resolver
                     </button>
                 </div>
@@ -224,6 +226,38 @@
             <div style="display:flex;gap:8px;justify-content:flex-end;">
                 <button wire:click="cancelarDelegar" style="padding:6px 16px;border:1px solid var(--border);background:none;color:var(--muted);border-radius:6px;cursor:pointer;font-size:13px;">Cancelar</button>
                 <button wire:click="confirmarDelegar" style="padding:6px 16px;background:var(--accent);border:none;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">Delegar</button>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    {{-- ── Modal Derivar a otra área ──────────────────────── --}}
+    @if($mostrarDerivarArea)
+    @php $convDer = $derivarAreaConvId ? \App\Models\ConversacionWA::find($derivarAreaConvId) : null; @endphp
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:400px;">
+            <div style="font-weight:600;font-size:15px;margin-bottom:6px;">Derivar a otra área</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5;">
+                Se le avisa al paciente por el número actual
+                (<strong>{{ \App\Models\ConversacionWA::AREAS[$convDer?->area] ?? $convDer?->area }}</strong>)
+                que va a tener respuesta desde el número del área elegida, y la conversación pasa a la cola de esa área.
+            </div>
+            <select wire:model="derivarAreaDestino"
+                style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:16px;">
+                <option value="">Elegí el área…</option>
+                @foreach(\App\Models\ConversacionWA::AREAS as $key => $label)
+                    @if($key !== $convDer?->area)
+                    <option value="{{ $key }}">{{ $label }}</option>
+                    @endif
+                @endforeach
+            </select>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button wire:click="cancelarDerivarArea" style="padding:6px 16px;border:1px solid var(--border);background:none;color:var(--muted);border-radius:6px;cursor:pointer;font-size:13px;">Cancelar</button>
+                <button wire:click="confirmarDerivarArea" wire:loading.attr="disabled" wire:target="confirmarDerivarArea"
+                    style="padding:6px 16px;background:var(--info);border:none;color:#fff;border-radius:6px;cursor:pointer;font-size:13px;">
+                    <span wire:loading.remove wire:target="confirmarDerivarArea">Derivar</span>
+                    <span wire:loading wire:target="confirmarDerivarArea">Derivando…</span>
+                </button>
             </div>
         </div>
     </div>

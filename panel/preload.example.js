@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const BOT_URL = 'http://localhost:3001';
+// Un bot por área (= número de WhatsApp). El de 'atencion' es el original.
+const BOT_PORTS    = { atencion: 3001, administracion: 3002, ovodonacion: 3003 };
+const AREA_LABELS  = { atencion: 'Tel clínica', administracion: 'Tel administración', ovodonacion: 'Tel ovodonación' };
+// Cada área es un servicio de docker-compose distinto: bot / bot-administracion / bot-ovodonacion.
+const AREA_SERVICE = { atencion: 'bot', administracion: 'bot-administracion', ovodonacion: 'bot-ovodonacion' };
+const botUrlFor    = (area) => `http://localhost:${BOT_PORTS[area] || 3001}`;
+const BOT_URL = botUrlFor('atencion');   // alias: config/textos/usuarios siguen usando el de atención (archivos compartidos)
 // Reemplazar por el token real (mismo valor que BOT_INGRESS_TOKEN en bot/.env).
 // Generar uno con: openssl rand -hex 32
 const BOT_INGRESS_TOKEN = '<<BOT_INGRESS_TOKEN>>';
@@ -13,9 +19,26 @@ const authHeaders = (extra = {}) => ({
 const tokenQuery = `?token=${encodeURIComponent(BOT_INGRESS_TOKEN)}`;
 
 contextBridge.exposeInMainWorld('bot', {
+  AREA_LABELS,
+  AREA_SERVICE,
+  areas: Object.keys(BOT_PORTS),
+
   async getStatus() {
     const res = await fetch(`${BOT_URL}/status`);
     return res.json();
+  },
+
+  // Estado de los 3 bots. { atencion: {...}|null, administracion: {...}|null, ovodonacion: {...}|null }
+  async statusAll() {
+    const entries = await Promise.all(Object.keys(BOT_PORTS).map(async (area) => {
+      try {
+        const res = await fetch(`${botUrlFor(area)}/status`, { signal: AbortSignal.timeout(4000) });
+        return [area, res.ok ? await res.json() : null];
+      } catch {
+        return [area, null];
+      }
+    }));
+    return Object.fromEntries(entries);
   },
 
   async getConfig() {

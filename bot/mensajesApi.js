@@ -3,10 +3,12 @@ const FormData = require('form-data');
 const fs       = require('fs');
 const path     = require('path');
 
+const { BOT_AREA } = require('./area');
+
 const LARAVEL_URL    = process.env.LARAVEL_URL    || 'http://web/api';
 const LARAVEL_TOKEN  = process.env.LARAVEL_TOKEN  || '';
 const WHISPER_URL    = process.env.WHISPER_URL    || 'http://whisper:9000';
-const BOT_PUBLIC_URL = process.env.BOT_PUBLIC_URL || 'http://localhost:3001';
+const BOT_PUBLIC_URL = process.env.BOT_PUBLIC_URL || ('http://localhost:' + (process.env.PORT || '3001'));
 const MEDIA_DIR      = '/app/media';
 
 if (!fs.existsSync(MEDIA_DIR)) {
@@ -85,6 +87,7 @@ async function guardarMensajeEntrante(msg) {
 
     await api.post('/bot/mensajes', {
       contacto,
+      area:      BOT_AREA,
       tipo,
       contenido,
       archivo_url,
@@ -104,6 +107,7 @@ async function guardarMensajeSaliente(contacto, texto, waId = null) {
   try {
     await api.post('/bot/mensajes/saliente', {
       contacto,
+      area:       BOT_AREA,
       contenido:  texto,
       wa_id:      waId,
       timestamp: new Date().toISOString(),
@@ -161,6 +165,7 @@ async function guardarMensajeSalienteExterno(msg) {
 
     await api.post('/bot/mensajes/saliente', {
       contacto,
+      area:    BOT_AREA,
       tipo,
       contenido,
       archivo_url,

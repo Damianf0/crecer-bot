@@ -1,33 +1,34 @@
-# Broker HTTP local para gestionar el túnel (cloudflared / ngrok).
+# Broker HTTP local para gestionar el túnel ngrok.
 #
-# Expone HTTP en localhost:9091 (loopback puro, no accesible desde la red)
-# con tres endpoints autenticados por Bearer token:
+# Expone HTTP en 127.0.0.1:9091 (loopback puro, no accesible desde la red) con
+# tres endpoints autenticados por Bearer token:
 #
 #   GET  /status -> { running, url, started_at, uptime_seconds, log_tail[], backend }
-#   POST /start  -> arranca el túnel del backend configurado, espera a que aparezca
-#                   la URL pública, y devuelve el mismo objeto que /status.
-#   POST /stop   -> mata el proceso y borra el estado.
+#   POST /start  -> arranca ngrok, espera la URL pública, devuelve el mismo objeto que /status.
+#   POST /stop   -> mata el proceso de ngrok y borra el estado.
 #
-# Backend configurable vía bot/.env:
-#   TUNNEL_BACKEND=ngrok       (default si NGROK_AUTHTOKEN está seteado)
-#   TUNNEL_BACKEND=cloudflared (default si no hay authtoken)
+# El authtoken de ngrok se lee de bot/.env (NGROK_AUTHTOKEN). La URL pública
+# es estática (dominio reservado de la cuenta ngrok), así que no cambia entre reinicios.
 #
-# Se arranca como shortcut en Startup de Windows (CrecerTunnelBroker.lnk).
-# El proceso del túnel es hijo de este broker y muere si el broker termina.
-# El estado vive en backups/auto/tunnel-state.json para sobrevivir restarts.
+# AL ARRANCAR el broker mata cualquier ngrok huérfano y levanta el túnel solo, así
+# después de un reinicio del host (o del broker) el acceso remoto vuelve sin intervención.
+#
+# Se arranca como shortcut en Startup de Windows (CrecerTunnelBroker.lnk). El proceso
+# de ngrok es hijo de este broker. El estado vive en backups/auto/tunnel-state.json.
+#
+# (Antes soportaba también cloudflared Quick Tunnel — se sacó: CF Quick Tunnel quedó
+#  caído indefinidamente y no se usa. Si alguna vez vuelve, revivir desde el historial git.)
 
 $ErrorActionPreference = 'Continue'
 $ProgressPreference    = 'SilentlyContinue'
 
 # === CONFIG ===
 $ListenPrefix    = 'http://127.0.0.1:9091/'
-$CloudflaredExe  = 'C:\Users\usuario\.local\bin\cloudflared.exe'
 $NgrokExe        = 'C:\Users\usuario\.local\bin\ngrok.exe'
-$TargetUrl       = 'http://localhost:80'   # nginx del docker-compose
-$TargetPort      = 80
+$TargetPort      = 80                          # nginx del docker-compose
 $StateDir        = 'C:\crecer\backups\auto'
 $StateFile       = Join-Path $StateDir 'tunnel-state.json'
-$LogFile         = Join-Path $StateDir 'tunnel-cloudflared.log'
+$LogFile         = Join-Path $StateDir 'tunnel-ngrok.log'
 $BrokerLog       = Join-Path $StateDir 'tunnel-broker.log'
 $TokenFile       = Join-Path $StateDir 'tunnel-broker-token.txt'
 $BotEnvFile      = 'C:\crecer\bot\.env'
@@ -44,14 +45,6 @@ function Get-EnvValue {
     return ($line -split '=', 2)[1].Trim().Trim('"').Trim("'")
 }
 
-function Get-Backend {
-    $env = Get-EnvValue 'TUNNEL_BACKEND'
-    if ($env -and $env -in @('ngrok','cloudflared')) { return $env }
-    $tok = Get-EnvValue 'NGROK_AUTHTOKEN'
-    if ($tok) { return 'ngrok' }
-    return 'cloudflared'
-}
-
 # Token: se genera al primer arranque y se persiste para que Laravel lo lea.
 if (-not (Test-Path $TokenFile)) {
     $bytes = New-Object byte[] 32
@@ -62,8 +55,7 @@ if (-not (Test-Path $TokenFile)) {
 $Token = (Get-Content $TokenFile -Raw).Trim()
 
 # === Estado en memoria ===
-$script:Process  = $null   # System.Diagnostics.Process del túnel
-$script:Backend  = 'cloudflared'
+$script:Process  = $null   # System.Diagnostics.Process de ngrok
 $script:Url      = $null
 $script:Started  = $null
 
@@ -76,7 +68,7 @@ function Write-BrokerLog {
 function Save-State {
     $obj = @{
         pid        = if ($script:Process -and -not $script:Process.HasExited) { $script:Process.Id } else { $null }
-        backend    = $script:Backend
+        backend    = 'ngrok'
         url        = $script:Url
         started_at = $script:Started
     }
@@ -94,15 +86,19 @@ function Is-Running {
     return ($script:Process -ne $null) -and (-not $script:Process.HasExited)
 }
 
+function Kill-NgrokOrphans {
+    Get-Process -Name 'ngrok' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
 function Get-Status {
     $running = Is-Running
     $uptime  = if ($running -and $script:Started) {
         [int]((Get-Date) - [datetime]$script:Started).TotalSeconds
     } else { 0 }
 
-    # Auto-resolver URL de ngrok si está corriendo y no la tenemos.
-    # Cubre el caso donde el polling inicial fue muy corto.
-    if ($running -and -not $script:Url -and $script:Backend -eq 'ngrok') {
+    # Si está corriendo pero todavía no resolvimos la URL (polling inicial corto),
+    # intentar sacarla de la API local de ngrok.
+    if ($running -and -not $script:Url) {
         try {
             $r = Invoke-RestMethod -Uri 'http://127.0.0.1:4040/api/tunnels' -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
             $publicTunnel = $r.tunnels | Where-Object { $_.proto -eq 'https' } | Select-Object -First 1
@@ -117,16 +113,13 @@ function Get-Status {
     if (Test-Path $LogFile) {
         try {
             $all = [System.IO.File]::ReadAllLines($LogFile)
-            if ($all.Length -gt 25) {
-                $tail = $all[($all.Length - 25)..($all.Length - 1)]
-            } else {
-                $tail = $all
-            }
+            if ($all.Length -gt 25) { $tail = $all[($all.Length - 25)..($all.Length - 1)] }
+            else { $tail = $all }
         } catch {}
     }
     return @{
         running        = $running
-        backend        = $script:Backend
+        backend        = 'ngrok'
         url            = $script:Url
         started_at     = $script:Started
         uptime_seconds = $uptime
@@ -134,67 +127,23 @@ function Get-Status {
     }
 }
 
-# ── Backend: cloudflared (Quick Tunnel) ─────────────────────────────
-function Start-Cloudflared {
-    if (-not (Test-Path $CloudflaredExe)) {
-        return @{ error = "cloudflared no instalado en $CloudflaredExe" }
-    }
-    Set-Content -Path $LogFile -Value '' -Encoding UTF8
+function Start-Tunnel {
+    if (Is-Running) { return Get-Status }
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName  = $CloudflaredExe
-    $psi.Arguments = "tunnel --url $TargetUrl --no-autoupdate"
-    $psi.UseShellExecute        = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.CreateNoWindow         = $true
-
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    $proc.EnableRaisingEvents = $true
-    $append = { param($s,$e) if ($null -ne $e.Data) { Add-Content -Path $LogFile -Value $e.Data } }
-    Register-ObjectEvent -InputObject $proc -EventName OutputDataReceived -Action $append | Out-Null
-    Register-ObjectEvent -InputObject $proc -EventName ErrorDataReceived  -Action $append | Out-Null
-    $null = $proc.Start()
-    $proc.BeginOutputReadLine()
-    $proc.BeginErrorReadLine()
-
-    $script:Process = $proc
-    $script:Started = (Get-Date).ToString('o')
-    $script:Url     = $null
-
-    Write-BrokerLog "cloudflared start PID=$($proc.Id)"
-
-    $deadline = (Get-Date).AddSeconds(30)
-    while ((Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 500
-        if ($proc.HasExited) {
-            Write-BrokerLog "cloudflared salio antes de generar URL (exit=$($proc.ExitCode))"
-            break
-        }
-        if (Test-Path $LogFile) {
-            $content = Get-Content $LogFile -Raw -ErrorAction SilentlyContinue
-            if ($content -match 'https://[a-z0-9\-]+\.trycloudflare\.com') {
-                $script:Url = $Matches[0]
-                Write-BrokerLog "cloudflared URL: $($script:Url)"
-                break
-            }
-        }
-    }
-    return Get-Status
-}
-
-# ── Backend: ngrok ──────────────────────────────────────────────────
-function Start-Ngrok {
     if (-not (Test-Path $NgrokExe)) {
-        return @{ error = "ngrok no instalado en $NgrokExe" }
+        return @{ error = "ngrok no instalado en $NgrokExe" } + (Get-Status)
     }
     $authtoken = Get-EnvValue 'NGROK_AUTHTOKEN'
     if (-not $authtoken) {
-        return @{ error = "NGROK_AUTHTOKEN no esta en bot/.env" }
+        return @{ error = "NGROK_AUTHTOKEN no esta en bot/.env" } + (Get-Status)
     }
 
-    # Aplicar authtoken al config de ngrok (idempotente: lo sobrescribe cada vez).
+    # Por las dudas: matar cualquier ngrok huérfano antes de levantar uno nuevo
+    # (si no, choca el puerto :4040 del inspector).
+    Kill-NgrokOrphans
+    Start-Sleep -Milliseconds 300
+
+    # Aplicar authtoken al config de ngrok (idempotente).
     $configResult = & $NgrokExe config add-authtoken $authtoken 2>&1
     Write-BrokerLog "ngrok config: $configResult"
 
@@ -202,7 +151,6 @@ function Start-Ngrok {
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName  = $NgrokExe
-    # --log=stdout para capturar; sin --inspect=false porque queremos la API local en :4040.
     $psi.Arguments = "http $TargetPort --log=stdout --log-format=json"
     $psi.UseShellExecute        = $false
     $psi.RedirectStandardOutput = $true
@@ -241,42 +189,25 @@ function Start-Ngrok {
                 Write-BrokerLog "ngrok URL: $($script:Url)"
                 break
             }
-        } catch {
-            # API todavía no levanto, retry
-        }
+        } catch {}
     }
-    return Get-Status
-}
 
-function Start-Tunnel {
-    if (Is-Running) { return Get-Status }
-    $script:Backend = Get-Backend
-    Write-BrokerLog "Iniciando backend=$script:Backend"
-    $r = switch ($script:Backend) {
-        'ngrok'       { Start-Ngrok }
-        'cloudflared' { Start-Cloudflared }
-        default       { @{ error = "backend desconocido: $script:Backend" } }
-    }
     Save-State
-    if ($r.error) { return @{ error = $r.error } + (Get-Status) }
     return Get-Status
 }
 
 function Stop-Tunnel {
-    if (-not (Is-Running)) {
-        Clear-State
-        return Get-Status
+    if (Is-Running) {
+        try {
+            Write-BrokerLog "Tunnel stop PID=$($script:Process.Id)"
+            Stop-Process -Id $script:Process.Id -Force -ErrorAction SilentlyContinue
+            $script:Process.WaitForExit(5000) | Out-Null
+        } catch {
+            Write-BrokerLog "Error matando proceso: $_"
+        }
     }
-    try {
-        Write-BrokerLog "Tunnel stop PID=$($script:Process.Id)"
-        # Stop-Process -Force mata por taskkill /T (kill tree) — funciona en PS 5.1
-Stop-Process -Id $script:Process.Id -Force -ErrorAction SilentlyContinue
-# También por si hay child cloudflared/ngrok colgado bindeando puertos
-Get-Process -Name 'ngrok','cloudflared' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        $script:Process.WaitForExit(5000) | Out-Null
-    } catch {
-        Write-BrokerLog "Error matando proceso: $_"
-    }
+    # Por si quedó algún ngrok huérfano bindeando puertos.
+    Kill-NgrokOrphans
     Clear-State
     return Get-Status
 }
@@ -291,20 +222,22 @@ try {
     exit 1
 }
 
-Write-BrokerLog "Broker arrancado en $ListenPrefix (backend default: $(Get-Backend))"
-$script:Backend = Get-Backend
+Write-BrokerLog "Broker arrancado en $ListenPrefix (backend: ngrok)"
+
+# Auto-arranque del túnel: matar huérfanos y levantar ngrok. Así, tras un reinicio
+# del host (o del broker), el acceso remoto vuelve sin que nadie apriete nada.
+Kill-NgrokOrphans
+$autoStart = Start-Tunnel
+if ($autoStart.error) { Write-BrokerLog "Auto-arranque del tunel fallo: $($autoStart.error)" }
+else { Write-BrokerLog "Auto-arranque OK: $($autoStart.url)" }
 
 # Cleanup
 $exitHandler = {
-    try { if ($script:Process -and -not $script:Process.HasExited) { # Stop-Process -Force mata por taskkill /T (kill tree) — funciona en PS 5.1
-Stop-Process -Id $script:Process.Id -Force -ErrorAction SilentlyContinue
-# También por si hay child cloudflared/ngrok colgado bindeando puertos
-Get-Process -Name 'ngrok','cloudflared' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } } catch {}
+    try { if ($script:Process -and -not $script:Process.HasExited) { Stop-Process -Id $script:Process.Id -Force -ErrorAction SilentlyContinue } } catch {}
+    try { Get-Process -Name 'ngrok' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
     try { $listener.Stop(); $listener.Close() } catch {}
     Write-BrokerLog 'Broker terminado'
 }
-# CancelKeyPress requiere consola. El broker corre headless (-WindowStyle Hidden),
-# así que no lo registramos. El exitHandler corre vía el `finally` del loop.
 
 try {
     while ($listener.IsListening) {
@@ -322,7 +255,7 @@ try {
             continue
         }
 
-        $path = $req.Url.AbsolutePath.ToLower()
+        $path   = $req.Url.AbsolutePath.ToLower()
         $method = $req.HttpMethod.ToUpper()
         $payload = $null
 

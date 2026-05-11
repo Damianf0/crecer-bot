@@ -148,15 +148,17 @@
         // Cache por usuario (clave incluye uid). Se invalida automáticamente o se puede forzar:
         // \Illuminate\Support\Facades\Cache::forget("navbar.counts.{$uid}")
         $uid = auth()->id() ?? 0;
-        [$misTareas, $pendientesAtencion] = \Illuminate\Support\Facades\Cache::remember(
+        [$misTareas, $pendByArea] = \Illuminate\Support\Facades\Cache::remember(
             "navbar.counts.{$uid}",
             5,
             fn() => [
                 \App\Models\Derivacion::where('estado','en_atencion')->where('asignada_a', $uid)->count()
                     + \App\Models\ConversacionWA::where('estado','activa')->where('asignada_a', $uid)->count(),
-                \App\Models\ConversacionWA::where('estado','activa')->whereNull('asignada_a')->where('no_leidos','>',0)->count(),
+                \App\Models\ConversacionWA::where('estado','activa')->whereNull('asignada_a')->where('no_leidos','>',0)
+                    ->selectRaw('area, count(*) as n')->groupBy('area')->pluck('n','area')->toArray(),
             ]
         );
+        $menuAreaLabels = ['atencion' => 'Tel clínica', 'administracion' => 'Tel administración', 'ovodonacion' => 'Tel ovodonación'];
     @endphp
     @auth @if(auth()->user()->hasPermiso('medico'))
     <a href="/medico" class="nav-link {{ request()->is('medico*') ? 'active' : '' }}">Mi consultorio</a>
@@ -165,12 +167,14 @@
     <a href="/secretaria" class="nav-link {{ request()->is('secretaria*') ? 'active' : '' }}">Recepción</a>
     @endif @endauth
     @auth @if(auth()->user()->hasPermiso('atencion'))
-    <a href="/atencion" class="nav-link {{ request()->is('atencion*') ? 'active' : '' }}" style="display:inline-flex;align-items:center;gap:6px;">
-        Atención WApp
-        @if($pendientesAtencion > 0)
-            <span style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">{{ $pendientesAtencion }}</span>
+    @foreach(\App\Models\ConversacionWA::AREAS as $aKey => $aLabel)
+    <a href="/atencion/{{ $aKey }}" class="nav-link {{ request()->is('atencion/'.$aKey) || request()->is('atencion/'.$aKey.'/*') ? 'active' : '' }}" style="display:inline-flex;align-items:center;gap:6px;">
+        {{ $menuAreaLabels[$aKey] ?? $aLabel }}
+        @if(($pendByArea[$aKey] ?? 0) > 0)
+            <span style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">{{ $pendByArea[$aKey] }}</span>
         @endif
     </a>
+    @endforeach
     <a href="/mis-tareas" class="nav-link {{ request()->is('mis-tareas*') ? 'active' : '' }}" style="display:inline-flex;align-items:center;gap:6px;">
         Mis tareas
         @if($misTareas > 0)

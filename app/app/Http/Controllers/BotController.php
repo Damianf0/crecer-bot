@@ -112,11 +112,13 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
+            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
             'codigo'      => 'required|string|max:50',
             'resumen_llm' => 'nullable|string|max:1000',
         ]);
+        $area = $data['area'] ?? 'atencion';
 
-        $conv = ConversacionWA::where('contacto', $data['contacto'])->first();
+        $conv = ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)->first();
         if (!$conv) {
             return response()->json(['ok' => false, 'error' => 'Conversación no encontrada'], 404);
         }
@@ -153,7 +155,8 @@ class BotController extends Controller
     public function obtenerHistorial(Request $request): JsonResponse
     {
         $contacto = $request->query('contacto');
-        $conv = ConversacionWA::where('contacto', $contacto)->first();
+        $area     = $request->query('area', 'atencion');
+        $conv = ConversacionWA::where('contacto', $contacto)->where('area', $area)->first();
         return response()->json(['ok' => true, 'historial' => $conv?->historial_llm ?? '']);
     }
 
@@ -165,10 +168,12 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'  => 'required|string|max:100',
+            'area'      => 'nullable|in:atencion,administracion,ovodonacion',
             'historial' => 'required|string|max:5000',
         ]);
+        $area = $data['area'] ?? 'atencion';
 
-        ConversacionWA::where('contacto', $data['contacto'])
+        ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)
             ->update(['historial_llm' => $data['historial']]);
 
         return response()->json(['ok' => true]);
@@ -184,21 +189,23 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
+            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
             'tipo'        => 'required|in:texto,audio,imagen,documento,video',
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',
             'wa_id'       => 'nullable|string|max:150',
             'timestamp'   => 'required|string',
         ]);
+        $area = $data['area'] ?? 'atencion';
 
         // Deduplicar por wa_id
         if (($data['wa_id'] ?? null) && MensajeWA::where('wa_id', $data['wa_id'])->exists()) {
             return response()->json(['ok' => true, 'duplicate' => true]);
         }
 
-        // Buscar o crear conversación para este contacto
+        // Buscar o crear conversación para este contacto (por área = número de WA)
         $conv = ConversacionWA::firstOrCreate(
-            ['contacto' => $data['contacto']],
+            ['contacto' => $data['contacto'], 'area' => $area],
             ['estado' => 'activa', 'ultima_actividad' => now()]
         );
 
@@ -272,7 +279,7 @@ class BotController extends Controller
         ]);
 
         // Invalidar cache de la cola para que la nueva conversación / mensaje aparezca al toque.
-        \Illuminate\Support\Facades\Cache::forget('atencion.items');
+        ConversacionWA::invalidarColaCache();
 
         // Despachar resumen LLM si la conv amerita. Asincrónico (queue 'resumen' separada),
         // no bloquea esta request. ameritaResumen filtra saludos sueltos y "ok/gracias".
@@ -288,9 +295,13 @@ class BotController extends Controller
      */
     public function marcarLeido(Request $request): JsonResponse
     {
-        $data = $request->validate(['contacto' => 'required|string|max:100']);
+        $data = $request->validate([
+            'contacto' => 'required|string|max:100',
+            'area'     => 'nullable|in:atencion,administracion,ovodonacion',
+        ]);
+        $area = $data['area'] ?? 'atencion';
 
-        $conv = ConversacionWA::where('contacto', $data['contacto'])->first();
+        $conv = ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)->first();
         if ($conv) {
             MensajeWA::where('conversacion_id', $conv->id)
                 ->where('leido', false)
@@ -309,12 +320,14 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
+            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
             'tipo'        => 'nullable|in:texto,audio,imagen,documento,video',
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',
             'wa_id'       => 'nullable|string|max:150',
             'timestamp'   => 'required|string',
         ]);
+        $area = $data['area'] ?? 'atencion';
 
         // Dedup: si llega el mismo wa_id 2 veces (ej: Laravel guardó al enviar
         // via /enviar y ahora vuelve por message_create del bot), no duplicamos.
@@ -323,7 +336,7 @@ class BotController extends Controller
         }
 
         $conv = ConversacionWA::firstOrCreate(
-            ['contacto' => $data['contacto']],
+            ['contacto' => $data['contacto'], 'area' => $area],
             ['estado' => 'activa', 'ultima_actividad' => now()]
         );
 
@@ -338,7 +351,7 @@ class BotController extends Controller
         ]);
 
         $conv->update(['ultima_actividad' => now()]);
-        \Illuminate\Support\Facades\Cache::forget('atencion.items');
+        ConversacionWA::invalidarColaCache();
 
         return response()->json(['ok' => true], 201);
     }

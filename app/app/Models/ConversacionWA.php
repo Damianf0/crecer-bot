@@ -12,7 +12,7 @@ class ConversacionWA extends Model
     protected $table = 'conversaciones_wa';
 
     protected $fillable = [
-        'contacto', 'nombre', 'estado', 'no_leidos', 'ultima_actividad',
+        'contacto', 'area', 'nombre', 'estado', 'no_leidos', 'ultima_actividad',
         'urgente', 'asignada_a', 'resumen_llm', 'historial_llm', 'resumen_intento_at',
     ];
 
@@ -22,6 +22,46 @@ class ConversacionWA extends Model
         'no_leidos'          => 'integer',
         'urgente'            => 'boolean',
     ];
+
+    /** Áreas válidas (= números de WhatsApp). 'atencion' es el bot original. */
+    public const AREAS = [
+        'atencion'       => 'Atención',
+        'administracion' => 'Administración',
+        'ovodonacion'    => 'Ovodonación',
+    ];
+
+    /** URL interna del bot que corresponde al área de esta conversación. */
+    public function botUrl(): string
+    {
+        $area = isset(self::AREAS[$this->area]) ? $this->area : 'atencion';
+        return rtrim(config('app.bot_url_' . $area) ?: config('app.bot_url'), '/');
+    }
+
+    /** URL del bot para un área dada (helper estático, p/ casos sin instancia). */
+    public static function botUrlPara(?string $area): string
+    {
+        $area = isset(self::AREAS[$area]) ? $area : 'atencion';
+        return rtrim(config('app.bot_url_' . $area) ?: config('app.bot_url'), '/');
+    }
+
+    /**
+     * Áreas que la secretaria declaró atender en esta sesión (las que marcó en
+     * la pantalla de colas). Si no marcó ninguna → todas (compat + default).
+     */
+    public static function areasDeLaSesion(): array
+    {
+        $colas = (array) session('colas', []);
+        $sel = array_values(array_intersect($colas, array_keys(self::AREAS)));
+        return $sel ?: array_keys(self::AREAS);
+    }
+
+    /** Invalida el cache de la cola de /atencion (una clave por área). */
+    public static function invalidarColaCache(): void
+    {
+        foreach (array_keys(self::AREAS) as $a) {
+            \Illuminate\Support\Facades\Cache::forget("atencion.items.{$a}");
+        }
+    }
 
     /**
      * ¿Esta conversación amerita resumen LLM?

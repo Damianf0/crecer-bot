@@ -511,7 +511,7 @@ html.dark .toast.error { background: rgba(248,81,73,.15); border-color: rgba(248
 
     {{-- Header --}}
     <div class="at-header">
-        <span class="at-title">Gestión de Atención</span>
+        <span class="at-title">Atención · {{ $areaLabel ?? 'Clínica' }} <span style="font-size:12px;color:var(--muted);font-weight:400;">(WhatsApp)</span></span>
 
         <button class="btn-nueva" onclick="abrirModalNueva()" title="Iniciar conversación con un contacto">
             + Nueva conversación
@@ -637,7 +637,7 @@ async function fetchItems() {
         };
         if (_itemsEtag) headers['If-None-Match'] = _itemsEtag;
 
-        const r = await fetch('/atencion/items', { headers });
+        const r = await fetch('/atencion/{{ $area ?? "atencion" }}/items', { headers });
         if (r.status === 304) return;            // sin cambios — mantener state actual
         if (!r.ok) return;
 
@@ -1047,6 +1047,9 @@ async function cargarConversacion(id) {
         headBtns = `<a class="btn" href="/pacientes/${conv.contacto_id}/documentos" target="_blank" title="Ver documentos del paciente"
             style="text-decoration:none;border-color:color-mix(in srgb,var(--info) 35%,transparent);color:var(--info);">📁 Legajo</a>` + headBtns;
     }
+    // Derivar a otra área (otro número de WhatsApp)
+    headBtns += ` <button class="btn" onclick="derivarAreaPrompt(${id})" title="Derivar a otra área (otro número de WhatsApp)"
+        style="border-color:color-mix(in srgb,var(--info) 35%,transparent);color:var(--info);">↪ Derivar área</button>`;
 
     // Mensajes — se omiten solo las respuestas automáticas del bot.
     // Las identificamos como saliente sin usuario y sin wa_id (el bot no guarda
@@ -1814,7 +1817,7 @@ async function enviarNuevaConversacion() {
     const texto = document.getElementById('nueva-texto').value.trim();
     if (!texto) { toast('Falta el mensaje', 'error'); return; }
 
-    const body = { texto };
+    const body = { texto, area: @json($area ?? 'atencion') };
     if (_nuevaModo === 'contacto') {
         if (!_nuevaContactoSel) { toast('Seleccioná un contacto', 'error'); return; }
         body.contacto_id = _nuevaContactoSel.id;
@@ -1841,6 +1844,42 @@ async function enviarNuevaConversacion() {
         toast(e.serverMsg || 'No se pudo iniciar la conversación', 'error');
         btn.disabled = false;
         btn.textContent = 'Iniciar y enviar';
+    }
+}
+
+// ── Derivar a otra área ──────────────────────────────────────
+function derivarAreaPrompt(convId) {
+    const AREAS_MENU = { atencion: 'Clínica', administracion: 'Administración', ovodonacion: 'Ovodonación' };
+    const old = document.getElementById('derivar-area-modal');
+    if (old) old.remove();
+    const opciones = Object.entries(AREAS_MENU).map(([k, l]) =>
+        `<button class="btn" style="margin:4px;" onclick="confirmarDerivarArea(${convId}, '${k}')">${l}</button>`
+    ).join('');
+    const div = document.createElement('div');
+    div.id = 'derivar-area-modal';
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;display:flex;align-items:center;justify-content:center;';
+    div.innerHTML = `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:min(440px,92vw);">
+        <div style="font-weight:600;font-size:15px;margin-bottom:8px;">Derivar a otra área</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5;">Se le avisa al paciente por el número actual que va a tener respuesta desde el número del área elegida, y la conversación pasa a esa cola.</div>
+        <div style="display:flex;flex-wrap:wrap;">${opciones}</div>
+        <div style="text-align:right;margin-top:14px;"><button class="btn" onclick="document.getElementById('derivar-area-modal').remove()">Cancelar</button></div>
+    </div>`;
+    div.onclick = (e) => { if (e.target === div) div.remove(); };
+    document.body.appendChild(div);
+}
+
+async function confirmarDerivarArea(convId, area) {
+    const m = document.getElementById('derivar-area-modal');
+    if (m) m.querySelectorAll('button').forEach(b => b.disabled = true);
+    try {
+        const r = await post(`/atencion/conversacion/${convId}/derivar-area`, { area });
+        if (m) m.remove();
+        toast(r.mensaje || 'Derivada ✓');
+        cerrarPanel();
+        await fetchItems();
+    } catch (e) {
+        if (m) m.querySelectorAll('button').forEach(b => b.disabled = false);
+        toast(e.serverMsg || 'No se pudo derivar', 'error');
     }
 }
 

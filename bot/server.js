@@ -8,9 +8,10 @@ const {
   getUptime,
 } = require('./estado-bot');
 const { procesarConversacion, generarResumen } = require('./ollama');
+const { BOT_AREA } = require('./area');
 const axios = require('axios');
 
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || '3001', 10);
 const ENV_PATH = path.join(__dirname, '.env');
 const TEXTOS_PATH = path.join(__dirname, 'textos.json');
 
@@ -85,6 +86,7 @@ app.get('/status', (req, res) => {
     qrDataUrl: estado.qrDataUrl,
     phone: estado.phone,
     uptime: getUptime(),
+    area: BOT_AREA,
   });
 });
 
@@ -424,7 +426,7 @@ app.post('/enviar-archivo', async (req, res) => {
 // ── Arranque ──────────────────────────────────────────────
 function iniciarServidor() {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[server] HTTP escuchando en puerto ${PORT}`);
+    console.log(`[server] HTTP escuchando en puerto ${PORT} (área: ${BOT_AREA})`);
   });
 }
 

@@ -98,6 +98,10 @@ services:
     networks:
       - clinica-net
 
+  # Bot WhatsApp — área ATENCIÓN (el original). Cada área es un contenedor con
+  # su propia sesión de WhatsApp (volumen wa-session-*) y su propio puerto. El
+  # código de ./bot es el mismo para los 3; se diferencian por las variables
+  # BOT_AREA / PORT / BOT_PUBLIC_URL (acá, NO en bot/.env que es compartido).
   bot:
     build: ./docker/node
     restart: unless-stopped
@@ -110,8 +114,61 @@ services:
       - web
     environment:
       - TZ=America/Argentina/Buenos_Aires
+      - BOT_AREA=atencion
+      - PORT=3001
+      - BOT_PUBLIC_URL=http://192.168.1.125:3001
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3001/status"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    networks:
+      - clinica-net
+
+  # Bot WhatsApp — área ADMINISTRACIÓN
+  bot-administracion:
+    build: ./docker/node
+    restart: unless-stopped
+    volumes:
+      - ./bot:/app
+      - wa-session-administracion:/app/.wwebjs_auth
+    ports:
+      - "3002:3002"
+    depends_on:
+      - web
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+      - BOT_AREA=administracion
+      - PORT=3002
+      - BOT_PUBLIC_URL=http://192.168.1.125:3002
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3002/status"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    networks:
+      - clinica-net
+
+  # Bot WhatsApp — área OVODONACIÓN
+  bot-ovodonacion:
+    build: ./docker/node
+    restart: unless-stopped
+    volumes:
+      - ./bot:/app
+      - wa-session-ovodonacion:/app/.wwebjs_auth
+    ports:
+      - "3003:3003"
+    depends_on:
+      - web
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+      - BOT_AREA=ovodonacion
+      - PORT=3003
+      - BOT_PUBLIC_URL=http://192.168.1.125:3003
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3003/status"]
       interval: 15s
       timeout: 3s
       retries: 3
@@ -161,7 +218,9 @@ services:
 volumes:
   mysql-data:
   ollama-data:
-  wa-session:
+  wa-session:                  # sesión WhatsApp del bot de ATENCIÓN
+  wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN
+  wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN
 
 networks:
   clinica-net:

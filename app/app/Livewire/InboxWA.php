@@ -35,6 +35,7 @@ class InboxWA extends Component
     public function getConversacionesProperty()
     {
         return ConversacionWA::where('estado', $this->filtro)
+            ->whereIn('area', ConversacionWA::areasDeLaSesion())
             ->with(['ultimoMensaje'])
             ->when($this->buscar, fn($q) => $q->where(function ($q) {
                 $q->where('contacto', 'like', "%{$this->buscar}%")
@@ -110,8 +111,8 @@ class InboxWA extends Component
             return;
         }
 
-        // Mensaje saliente — llamar al bot para enviar por WhatsApp
-        $botUrl = rtrim(config('app.bot_url'), '/');
+        // Mensaje saliente — llamar al bot del área de la conversación
+        $botUrl = $conv->botUrl();
         $botTok = config('app.bot_ingress_token');
         try {
             $res = Http::timeout(10)

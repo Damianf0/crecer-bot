@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { BOT_AREA } = require('./area');
 
 const LARAVEL_URL   = process.env.LARAVEL_URL   || 'http://web/api';
 const LARAVEL_TOKEN = process.env.LARAVEL_TOKEN || '';
@@ -16,7 +17,7 @@ async function derivarConversacion(contacto, codigo, resumen = null) {
   try {
     await axios.post(
       `${LARAVEL_URL}/bot/conversacion/derivar`,
-      { contacto, codigo, resumen_llm: resumen },
+      { contacto, area: BOT_AREA, codigo, resumen_llm: resumen },
       { headers: headers(), timeout: 10_000 }
     );
     console.log(`[cola] Derivado: ${contacto} → ${codigo}`);
@@ -32,7 +33,7 @@ async function obtenerHistorial(contacto) {
   try {
     const resp = await axios.get(
       `${LARAVEL_URL}/bot/conversacion/historial`,
-      { params: { contacto }, headers: headers(), timeout: 5_000 }
+      { params: { contacto, area: BOT_AREA }, headers: headers(), timeout: 5_000 }
     );
     return resp.data?.historial || '';
   } catch (_) {
@@ -47,7 +48,7 @@ async function guardarHistorial(contacto, historial) {
   try {
     await axios.patch(
       `${LARAVEL_URL}/bot/conversacion/historial`,
-      { contacto, historial },
+      { contacto, area: BOT_AREA, historial },
       { headers: headers(), timeout: 5_000 }
     );
   } catch (_) {
@@ -59,7 +60,7 @@ async function marcarLeido(contacto) {
   try {
     await axios.post(
       `${LARAVEL_URL}/bot/mensajes/marcar-leido`,
-      { contacto },
+      { contacto, area: BOT_AREA },
       { headers: headers(), timeout: 5_000 }
     );
   } catch (_) {}

@@ -44,12 +44,15 @@ class GenerarResumenLLM implements ShouldQueue
         if (!$conv) return;
         if (!empty($conv->resumen_llm)) return;
 
-        // Construir el texto a resumir: últimos 25 mensajes en orden cronológico
+        // Construir el texto a resumir: SOLO los mensajes entrantes del paciente
+        // (últimos 25, en orden cronológico). No incluimos salientes: ni las
+        // autorrespuestas del bot ni las respuestas manuales de la secretaria —
+        // el resumen es del motivo de consulta del paciente, no del ida y vuelta.
         $msgs = MensajeWA::where('conversacion_id', $conv->id)
-            ->whereIn('direccion', ['entrante', 'saliente'])
+            ->where('direccion', 'entrante')
             ->orderBy('created_at')
             ->take(25)
-            ->get(['direccion', 'tipo', 'contenido']);
+            ->get(['tipo', 'contenido']);
 
         if ($msgs->isEmpty()) {
             $conv->forceFill(['resumen_intento_at' => now()])->saveQuietly();
@@ -57,7 +60,6 @@ class GenerarResumenLLM implements ShouldQueue
         }
 
         $texto = $msgs->map(function ($m) {
-            $prefix = $m->direccion === 'entrante' ? 'Paciente: ' : 'Bot: ';
             $cuerpo = $m->contenido;
             if (!$cuerpo) {
                 $cuerpo = match ($m->tipo) {
@@ -68,7 +70,7 @@ class GenerarResumenLLM implements ShouldQueue
                     default     => '[sin texto]',
                 };
             }
-            return $prefix . $cuerpo;
+            return 'Paciente: ' . $cuerpo;
         })->implode("\n");
 
         try {
