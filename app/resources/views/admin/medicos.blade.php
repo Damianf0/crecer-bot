@@ -166,17 +166,16 @@ function _getCookie(name) {
 }
 
 async function api(method, url, body) {
-    // Cookie XSRF-TOKEN renovada en cada response — no se vuelve stale.
-    const xsrf = _getCookie('XSRF-TOKEN');
-    const csrf = document.querySelector('meta[name=csrf-token]')?.content
-        ?? document.querySelector('input[name=_token]')?.value ?? '';
-    const tok = xsrf || csrf;
+    // Token CRUDO de la sesión. NO usar la cookie XSRF-TOKEN como X-CSRF-TOKEN: viene cifrada
+    // y Laravel no la descifra en ese header → 419. (Bug del "auto-CSRF via cookie".)
+    const tok = document.querySelector('meta[name=csrf-token]')?.content
+        ?? document.querySelector('input[name=_token]')?.value ?? '{{ csrf_token() }}';
     const opts = {
         method,
         credentials: 'same-origin',
-        headers: { 'X-XSRF-TOKEN': tok, 'X-CSRF-TOKEN': tok, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+        headers: { 'X-CSRF-TOKEN': tok, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
     };
-    if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify({ ...body, _token: tok }); }
     const r = await fetch(url, opts);
     const d = await r.json().catch(() => ({}));
     if (r.status === 419) return { ok: false, _err: 'Sesión expirada — recargá la página (F5).' };

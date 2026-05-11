@@ -94,20 +94,15 @@
 </div>
 
 <script>
-// CSRF: leemos XSRF-TOKEN cookie (renovada por Laravel en cada response) para que
-// nunca se vuelva stale aunque la pestaña esté abierta hace rato.
-function _getCookie(name) {
-    return document.cookie.split('; ').reduce((acc, c) => {
-        const [k, v] = c.split('=');
-        return k === name ? decodeURIComponent(v) : acc;
-    }, null);
-}
+// CSRF: token CRUDO de la sesión (el <meta> de layouts.app o el blade).
+// OJO: NO usar la cookie XSRF-TOKEN acá — esa viene CIFRADA por EncryptCookies, y si se
+// manda como header `X-CSRF-TOKEN` Laravel no la descifra → siempre 419 ("sesión expirada").
+// (Ese era el bug: el "auto-CSRF via cookie" mandaba el valor cifrado como X-CSRF-TOKEN.)
 function getCsrf() {
-    return _getCookie('XSRF-TOKEN')
-        || document.querySelector('meta[name=csrf-token]')?.content
+    return document.querySelector('meta[name=csrf-token]')?.content
         || '{{ csrf_token() }}';
 }
-const CSRF = getCsrf();   // legacy
+const CSRF = getCsrf();
 let _editId = null;
 let _meta = { roles: {}, permisos_labels: {}, permisos_default: {} };
 
@@ -212,8 +207,8 @@ async function guardar() {
         const r = await fetch(url, {
             method: 'POST',
             credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': tok, 'X-CSRF-TOKEN': tok, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
-            body: JSON.stringify(data),
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': tok, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify({ ...data, _token: tok }),
         });
         const d = await r.json().catch(() => ({}));
         if (r.status === 419) throw new Error('Sesión expirada — recargá la página (F5) y volvé a intentar.');

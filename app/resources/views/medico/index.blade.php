@@ -185,18 +185,18 @@ function getCookie(name) {
 }
 
 async function call(url, opts = {}) {
-    // El XSRF-TOKEN cookie se renueva en cada response de Laravel — siempre vigente.
-    // El meta name="csrf-token" se serializa una vez al cargar la página y se queda viejo.
-    const xsrf = getCookie('XSRF-TOKEN');
-    const csrf = document.querySelector('meta[name=csrf-token]')?.content
-        ?? document.querySelector('input[name=_token]')?.value ?? '';
+    // Token CRUDO de la sesión (meta del layout o fallback blade-rendered). El meta sirve
+    // por toda la vida de la sesión (SESSION_LIFETIME) — no caduca al ratito.
+    // OJO: NO usar la cookie XSRF-TOKEN como `X-CSRF-TOKEN` — viene CIFRADA y Laravel
+    // no la descifra en ese header → 419 "sesión expirada". (Era el bug del auto-CSRF cookie.)
+    const tok = document.querySelector('meta[name=csrf-token]')?.content
+        ?? document.querySelector('input[name=_token]')?.value ?? '{{ csrf_token() }}';
     const r = await fetch(url, {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
-            'X-XSRF-TOKEN': xsrf || csrf,
-            'X-CSRF-TOKEN': csrf,
+            'X-CSRF-TOKEN': tok,
             ...(opts.headers || {}),
         },
         ...opts,

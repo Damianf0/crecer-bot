@@ -150,15 +150,13 @@ function _getCookie(name) {
     }, null);
 }
 async function call(url, opts = {}) {
-    const xsrf = _getCookie('XSRF-TOKEN');
-    const csrf = document.querySelector('meta[name=csrf-token]')?.content || '';
-    const tok = xsrf || csrf;
+    // Token CRUDO de la sesión. NO usar la cookie XSRF-TOKEN como X-CSRF-TOKEN (viene cifrada → 419).
+    const tok = document.querySelector('meta[name=csrf-token]')?.content || '{{ csrf_token() }}';
     return fetch(url, {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
-            'X-XSRF-TOKEN': tok,
             'X-CSRF-TOKEN': tok,
             ...(opts.headers || {}),
         },
