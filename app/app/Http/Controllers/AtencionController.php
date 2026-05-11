@@ -611,21 +611,38 @@ class AtencionController extends Controller
         }
 
         // Verificar con el bot del área que el número tiene WhatsApp y obtener el ID normalizado.
-        $botUrl = ConversacionWA::botUrlPara($area);
-        $botTok = config('app.bot_ingress_token');
+        $botUrl    = ConversacionWA::botUrlPara($area);
+        $botTok    = config('app.bot_ingress_token');
+        $areaLabel = ConversacionWA::AREAS[$area] ?? $area;
+
+        // Pre-check: ¿el bot del área tiene WhatsApp conectado? Si no, mensaje claro
+        // ("escaneá el QR") en vez del 502 genérico.
+        try {
+            $st = Http::timeout(6)->get("{$botUrl}/status");
+            $estado = $st->ok() ? $st->json('status') : null;
+            if ($estado !== 'listo') {
+                $msg = $estado === 'esperando_qr'
+                    ? "El bot de {$areaLabel} todavía no se vinculó a WhatsApp. Abrí el panel Electron → tab \"QR / Conexión\" y escaneá el QR de ese número antes de iniciar conversaciones desde acá."
+                    : "El bot de {$areaLabel} no está conectado a WhatsApp (estado: " . ($estado ?? 'sin respuesta') . "). Revisá el panel Electron.";
+                return response()->json(['ok' => false, 'error' => $msg], 503);
+            }
+        } catch (\Exception) {
+            return response()->json(['ok' => false, 'error' => "El bot de {$areaLabel} no responde. Revisá que el contenedor esté corriendo."], 502);
+        }
+
         try {
             $check = Http::timeout(15)
                 ->withToken($botTok)
                 ->post("{$botUrl}/check-numero", ['numero' => $telefonoNorm]);
             if (!$check->ok() || !$check->json('ok')) {
-                return response()->json(['ok' => false, 'error' => 'No se pudo verificar el número con WhatsApp'], 502);
+                return response()->json(['ok' => false, 'error' => "No se pudo verificar el número con el bot de {$areaLabel}."], 502);
             }
             if (!$check->json('registered')) {
                 return response()->json(['ok' => false, 'error' => 'Ese número no está registrado en WhatsApp'], 422);
             }
             $contactoWA = $check->json('normalizedId');
         } catch (\Exception) {
-            return response()->json(['ok' => false, 'error' => 'No se pudo contactar al bot. Reintentá en unos segundos.'], 502);
+            return response()->json(['ok' => false, 'error' => "No se pudo contactar al bot de {$areaLabel}. Reintentá en unos segundos."], 502);
         }
 
         // Reusar o crear conversación en el área desde la que se inicia (cada área = su número).
