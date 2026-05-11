@@ -197,15 +197,20 @@ async function guardar() {
     try {
         const r = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
             body: JSON.stringify(data),
         });
-        const d = await r.json();
-        if (!d.ok) throw new Error(d.error || 'Error');
+        const d = await r.json().catch(() => ({}));
+        if (r.status === 419) throw new Error('Sesión expirada — recargá la página (F5) y volvé a intentar.');
+        if (r.status === 422) {
+            const detalle = d.errors ? Object.entries(d.errors).map(([k, vs]) => `• ${k}: ${vs.join(', ')}`).join('\n') : (d.message || '');
+            throw new Error('Datos inválidos:\n' + detalle);
+        }
+        if (!r.ok || !d.ok) throw new Error(d.error || d.message || `HTTP ${r.status}`);
         cerrarModal();
         await cargar();
     } catch (e) {
-        alert('No se pudo guardar: ' + e.message);
+        alert('No se pudo guardar:\n' + e.message);
     } finally {
         btn.disabled = false; btn.textContent = 'Guardar';
     }

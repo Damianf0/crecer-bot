@@ -72,6 +72,10 @@ return [
     'bot_url' => env('BOT_URL', 'http://bot:3001'),
     'bot_ingress_token' => env('BOT_INGRESS_TOKEN', ''),
 
+    // Broker del Quick Tunnel de Cloudflare (corre en la host).
+    'tunnel_broker_url'   => env('TUNNEL_BROKER_URL',   'http://host.docker.internal:9091'),
+    'tunnel_broker_token' => env('TUNNEL_BROKER_TOKEN', ''),
+
     /*
      * Path absoluto donde se almacena el legajo de documentos por paciente.
      * Si está vacío, default es storage/app/private/documentos.

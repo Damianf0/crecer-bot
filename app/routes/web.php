@@ -10,6 +10,7 @@ use App\Http\Controllers\AgendaController;
 use App\Http\Controllers\ContactoController;
 use App\Http\Controllers\TareaController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\MedicoController;
 use App\Http\Controllers\EstadisticasController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DocumentoController;
@@ -19,7 +20,15 @@ use App\Http\Middleware\SecretariaAuth;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', fn() => redirect('/secretaria'));
+Route::get('/', function () {
+    if (!Auth::check()) return redirect('/login');
+    $u = Auth::user();
+    if ($u->hasPermiso('secretaria')) return redirect('/secretaria');
+    if ($u->hasPermiso('medico'))     return redirect('/medico');
+    if ($u->hasPermiso('atencion'))   return redirect('/atencion');
+    if ($u->hasPermiso('admin'))      return redirect('/admin');
+    return redirect('/login');
+});
 
 // Auth
 Route::get('/login',  Login::class)->name('login');
@@ -41,6 +50,16 @@ Route::get('/declarar-colas', DeclaracionColas::class)
 
 // Tablet — sin auth (pantalla pública en la sala)
 Route::get('/tablet', Tablet::class);
+
+// Panel médico — auth + permiso:medico, sin requerir declaración de colas.
+Route::middleware(['auth', 'permiso:medico'])->prefix('medico')->group(function () {
+    Route::get('/',                  [MedicoController::class, 'index']);
+    Route::get('/data',              [MedicoController::class, 'data']);
+    Route::post('/tareas',           [MedicoController::class, 'crearTarea']);
+    Route::post('/{id}/llamar',      [MedicoController::class, 'llamar'])->whereNumber('id');
+    Route::post('/{id}/rellamar',    [MedicoController::class, 'rellamar'])->whereNumber('id');
+    Route::post('/{id}/atendido',    [MedicoController::class, 'atendido'])->whereNumber('id');
+});
 
 // Área de secretaria — requiere auth + activo + colas declaradas
 Route::middleware([SecretariaAuth::class])->group(function () {
@@ -159,6 +178,16 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/estadisticas/hoy',          [EstadisticasController::class, 'hoy']);
         Route::get('/estadisticas/secretarias',  [EstadisticasController::class, 'secretarias']);
         Route::get('/estadisticas/tendencias',   [EstadisticasController::class, 'tendencias']);
+
+        Route::get('/medicos',           [AdminController::class, 'medicos']);
+        Route::get('/medicos/data',      [AdminController::class, 'medicosData']);
+        Route::post('/medicos/save',     [AdminController::class, 'medicosSave']);
+        Route::delete('/medicos/{id}',   [AdminController::class, 'medicosDestroy']);
+
+        Route::get('/tunnel',         [AdminController::class, 'tunnel']);
+        Route::get('/tunnel/status',  [AdminController::class, 'tunnelStatus']);
+        Route::post('/tunnel/start',  [AdminController::class, 'tunnelStart']);
+        Route::post('/tunnel/stop',   [AdminController::class, 'tunnelStop']);
     });
 
     // Agenda

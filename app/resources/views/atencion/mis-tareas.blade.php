@@ -1092,5 +1092,20 @@ renderLista();
 setTimeout(fetchConversaciones, 5000);
 setInterval(fetchConversaciones, 10000);
 setInterval(() => { if (state.tab === 'tareas') fetchTareas(); }, 15000);
+
+// Deep-link: /mis-tareas?tarea_id=N abre el tab Tareas y muestra el detalle.
+(function() {
+    const m = window.location.search.match(/[?&]tarea_id=(\d+)/);
+    if (!m) return;
+    const tid = parseInt(m[1]);
+    setTab('tareas');
+    const wait = setInterval(() => {
+        if (state.tareas?.length) {
+            clearInterval(wait);
+            verTarea(tid);
+        }
+    }, 200);
+    setTimeout(() => clearInterval(wait), 5000);
+})();
 </script>
 @endsection

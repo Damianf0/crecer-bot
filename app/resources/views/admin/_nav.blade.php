@@ -33,6 +33,8 @@
     <a href="/admin/pruebas"   class="{{ str_starts_with($cur, 'admin/pruebas') ? 'active' : '' }}">Pruebas</a>
     <a href="/admin/logs"      class="{{ str_starts_with($cur, 'admin/logs') ? 'active' : '' }}">Logs</a>
     <a href="/admin/usuarios"  class="{{ str_starts_with($cur, 'admin/usuarios') ? 'active' : '' }}">Usuarios</a>
+    <a href="/admin/medicos"   class="{{ str_starts_with($cur, 'admin/medicos') ? 'active' : '' }}">Médicos</a>
     <a href="/admin/legajo"    class="{{ str_starts_with($cur, 'admin/legajo') ? 'active' : '' }}">Legajo</a>
     <a href="/admin/estadisticas" class="{{ str_starts_with($cur, 'admin/estadisticas') ? 'active' : '' }}">Estadísticas</a>
+    <a href="/admin/tunnel"    class="{{ str_starts_with($cur, 'admin/tunnel') ? 'active' : '' }}">Acceso remoto</a>
 </nav>

@@ -22,6 +22,7 @@ class User extends Authenticatable
         'permisos',
         'intentos_fallidos',
         'bloqueado_hasta',
+        'medico_id',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -100,6 +101,7 @@ class User extends Authenticatable
         'supervisora' => ['secretaria', 'atencion', 'contactos', 'agenda', 'historial', 'admin'],
         'admin'       => ['secretaria', 'atencion', 'contactos', 'agenda', 'historial', 'admin'],
         'tecnico'     => ['secretaria', 'atencion', 'contactos', 'agenda', 'historial', 'admin'],
+        'medico'      => ['medico'],
     ];
 
     public const PERMISOS_LABELS = [
@@ -109,6 +111,7 @@ class User extends Authenticatable
         'agenda'     => 'Agenda',
         'historial'  => 'Ver historial',
         'admin'      => 'Administración (panel)',
+        'medico'     => 'Panel médico',
     ];
 
     // Devuelve los permisos efectivos: los guardados en DB, o los default del rol si nunca se configuraron
@@ -130,7 +133,13 @@ class User extends Authenticatable
         'supervisora' => 'Supervisora',
         'admin'       => 'Administrativo',
         'tecnico'     => 'Técnico WORKBENCH IT',
+        'medico'      => 'Médico',
     ];
+
+    public function medico()
+    {
+        return $this->belongsTo(Medico::class);
+    }
 
     public const COLAS = [
         'recepcion'    => 'Recepción general',

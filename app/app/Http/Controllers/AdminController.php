@@ -284,13 +284,16 @@ class AdminController extends Controller
 
     public function usuariosSave(Request $request, int $id = null): JsonResponse
     {
+        $rolesValidos = array_keys(User::ROLES);
+
         $data = $request->validate([
             'nombre_completo' => 'required|string|max:120',
             'email'           => 'required|email|max:150',
-            'rol'             => 'required|in:secretaria,supervisora,admin,tecnico',
+            'rol'             => 'required|in:' . implode(',', $rolesValidos),
             'activo'          => 'required|boolean',
             'permisos'        => 'nullable|array',
             'permisos.*'      => 'string',
+            'medico_id'       => 'nullable|integer|exists:medicos,id',
             'password'        => [
                 'nullable',
                 'string',
@@ -301,15 +304,18 @@ class AdminController extends Controller
             ],
         ]);
 
+        $fields = [
+            'nombre_completo' => $data['nombre_completo'],
+            'email'           => $data['email'],
+            'rol'             => $data['rol'],
+            'activo'          => $data['activo'],
+            'permisos'        => $data['permisos'] ?? null,
+            'medico_id'       => $data['medico_id'] ?? null,
+        ];
+
         if ($id) {
             $user = User::findOrFail($id);
-            $user->fill([
-                'nombre_completo' => $data['nombre_completo'],
-                'email'           => $data['email'],
-                'rol'             => $data['rol'],
-                'activo'          => $data['activo'],
-                'permisos'        => $data['permisos'] ?? null,
-            ]);
+            $user->fill($fields);
             if (!empty($data['password'])) {
                 $user->password = bcrypt($data['password']);
             }
@@ -318,14 +324,7 @@ class AdminController extends Controller
             if (empty($data['password'])) {
                 return response()->json(['ok' => false, 'error' => 'Contraseña requerida para nuevo usuario'], 422);
             }
-            $user = User::create([
-                'nombre_completo' => $data['nombre_completo'],
-                'email'           => $data['email'],
-                'password'        => bcrypt($data['password']),
-                'rol'             => $data['rol'],
-                'activo'          => $data['activo'],
-                'permisos'        => $data['permisos'] ?? null,
-            ]);
+            $user = User::create($fields + ['password' => bcrypt($data['password'])]);
         }
 
         return response()->json(['ok' => true, 'id' => $user->id]);
@@ -362,5 +361,153 @@ class AdminController extends Controller
             'X-Accel-Buffering' => 'no',
             'Connection'        => 'keep-alive',
         ]);
+    }
+
+    // ── Médicos ──────────────────────────────────────────────────────
+
+    public function medicos()
+    {
+        return view('admin.medicos');
+    }
+
+    public function medicosData(): JsonResponse
+    {
+        $medicos = \App\Models\Medico::with('user:id,nombre_completo,email')
+            ->orderBy('nombre_completo')
+            ->get();
+
+        // Nombres de profesionales detectados en cola_atencion que NO tienen
+        // registro local — los sugerimos para alta rápida.
+        $existentes = $medicos->pluck('nombre_completo')->map(fn($n) => mb_strtolower($n))->toArray();
+        $detectados = \App\Models\ColaAtencion::whereNotNull('profesional')
+            ->where('profesional', '!=', '')
+            ->distinct()
+            ->pluck('profesional')
+            ->filter(fn($n) => !in_array(mb_strtolower($n), $existentes, true))
+            ->values();
+
+        // Users que podrían vincularse (sin médico asignado).
+        $usersDisponibles = \App\Models\User::where('activo', true)
+            ->whereNull('medico_id')
+            ->orderBy('nombre_completo')
+            ->get(['id', 'nombre_completo', 'email']);
+
+        return response()->json([
+            'ok'         => true,
+            'medicos'    => $medicos,
+            'detectados' => $detectados,
+            'users'      => $usersDisponibles,
+        ]);
+    }
+
+    public function medicosSave(Request $r): JsonResponse
+    {
+        $data = $r->validate([
+            'id'              => 'nullable|integer|exists:medicos,id',
+            'nombre_completo' => 'required|string|max:150',
+            'especialidad'    => 'nullable|string|max:100',
+            'planta'          => 'nullable|in:alta,baja',
+            'consultorio'     => 'nullable|integer|min:1|max:99',
+            'omnia_id'        => 'nullable|string|max:50',
+            'activo'          => 'boolean',
+            'user_id'         => 'nullable|integer|exists:users,id',
+        ]);
+
+        $userId = $data['user_id'] ?? null;
+        unset($data['user_id']);
+
+        if (!empty($data['id'])) {
+            $med = \App\Models\Medico::findOrFail($data['id']);
+            $med->update($data);
+        } else {
+            $med = \App\Models\Medico::create($data);
+        }
+
+        // Vinculación con user
+        if ($userId !== null) {
+            // Limpiar cualquier user que tuviera este medico_id (excepto el que viene)
+            \App\Models\User::where('medico_id', $med->id)
+                ->where('id', '!=', $userId)
+                ->update(['medico_id' => null]);
+            $u = \App\Models\User::find($userId);
+            if ($u) {
+                $u->medico_id = $med->id;
+                // Asegurar permiso medico
+                $perms = $u->permisos ?: \App\Models\User::PERMISOS_DEFAULT[$u->rol] ?? [];
+                if (!in_array('medico', $perms, true)) $perms[] = 'medico';
+                $u->permisos = $perms;
+                $u->save();
+            }
+        }
+
+        return response()->json(['ok' => true, 'medico' => $med->load('user:id,nombre_completo')]);
+    }
+
+    public function medicosDestroy(int $id): JsonResponse
+    {
+        $med = \App\Models\Medico::findOrFail($id);
+        \App\Models\User::where('medico_id', $med->id)->update(['medico_id' => null]);
+        $med->delete();
+        return response()->json(['ok' => true]);
+    }
+
+    // ── Cloudflare Quick Tunnel ──────────────────────────────────────
+    //
+    // El proceso `cloudflared` corre en la host (Windows) gestionado por
+    // tunnel-broker.ps1, que expone http://host.docker.internal:9091. Laravel
+    // solo proxea start/stop/status — no maneja el proceso directamente.
+
+    private function tunnelBroker()
+    {
+        $url   = rtrim(config('app.tunnel_broker_url'), '/');
+        $token = (string) config('app.tunnel_broker_token');
+        // El broker corre HttpListener bindeado a localhost: requiere Host: localhost
+        // aunque conectamos via host.docker.internal desde el container.
+        return [
+            'url'  => $url ?: 'http://host.docker.internal:9091',
+            'http' => Http::timeout(45)
+                ->withToken($token)
+                ->withHeaders(['Host' => 'localhost']),
+        ];
+    }
+
+    public function tunnel()
+    {
+        return view('admin.tunnel');
+    }
+
+    public function tunnelStatus(): JsonResponse
+    {
+        try {
+            $b = $this->tunnelBroker();
+            $r = $b['http']->get($b['url'] . '/status');
+            return response()->json(['ok' => $r->ok()] + ($r->json() ?: []));
+        } catch (\Exception $e) {
+            return response()->json(['ok' => false, 'error' => 'Broker no responde: ' . $e->getMessage()], 502);
+        }
+    }
+
+    public function tunnelStart(): JsonResponse
+    {
+        try {
+            $b = $this->tunnelBroker();
+            $r = $b['http']->post($b['url'] . '/start');
+            $j = $r->json() ?: [];
+            $ok = $r->ok() && !empty($j['url']);
+            return response()->json(['ok' => $ok] + $j, $ok ? 200 : 502);
+        } catch (\Exception $e) {
+            return response()->json(['ok' => false, 'error' => 'Broker no responde: ' . $e->getMessage()], 502);
+        }
+    }
+
+    public function tunnelStop(): JsonResponse
+    {
+        try {
+            $b = $this->tunnelBroker();
+            $r = $b['http']->post($b['url'] . '/stop');
+            return response()->json(['ok' => $r->ok()] + ($r->json() ?: []));
+        } catch (\Exception $e) {
+            return response()->json(['ok' => false, 'error' => 'Broker no responde: ' . $e->getMessage()], 502);
+        }
     }
 }

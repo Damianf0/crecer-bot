@@ -157,7 +157,13 @@
             ]
         );
     @endphp
+    @auth @if(auth()->user()->hasPermiso('medico'))
+    <a href="/medico" class="nav-link {{ request()->is('medico*') ? 'active' : '' }}">Mi consultorio</a>
+    @endif @endauth
+    @auth @if(auth()->user()->hasPermiso('secretaria'))
     <a href="/secretaria" class="nav-link {{ request()->is('secretaria*') ? 'active' : '' }}">Recepción</a>
+    @endif @endauth
+    @auth @if(auth()->user()->hasPermiso('atencion'))
     <a href="/atencion" class="nav-link {{ request()->is('atencion*') ? 'active' : '' }}" style="display:inline-flex;align-items:center;gap:6px;">
         Atención WApp
         @if($pendientesAtencion > 0)
@@ -170,7 +176,10 @@
             <span style="background:var(--info);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">{{ $misTareas }}</span>
         @endif
     </a>
+    @endif @endauth
+    @auth @if(auth()->user()->hasPermiso('contactos'))
     <a href="/contactos" class="nav-link {{ request()->is('contactos*') ? 'active' : '' }}">Contactos</a>
+    @endif @endauth
     @auth
     @if(auth()->user()->hasPermiso('historial'))
     <a href="/historial" class="nav-link {{ request()->is('historial*') ? 'active' : '' }}">Historial</a>
@@ -205,7 +214,9 @@
                     {{ explode(' ', auth()->user()->nombre_completo)[0] }}
                 </span>
             </span>
+            @if(auth()->user()->hasPermiso('secretaria'))
             <a href="/declarar-colas" class="nav-link" title="Cambiar mis colas" style="font-size:12px;padding:0 8px;">⇄</a>
+            @endif
             <a href="/logout" class="nav-link" onclick="return confirm('¿Cerrar sesión?');" style="color:var(--muted);font-size:12px;padding:0 8px;">Salir</a>
         @endauth
     </div>
