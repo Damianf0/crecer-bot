@@ -288,7 +288,10 @@ class AdminController extends Controller
 
         $data = $request->validate([
             'nombre_completo' => 'required|string|max:120',
-            'email'           => 'required|email|max:150',
+            'email'           => [
+                'required', 'email', 'max:150',
+                \Illuminate\Validation\Rule::unique('users', 'email')->ignore($id),
+            ],
             'rol'             => 'required|in:' . implode(',', $rolesValidos),
             'activo'          => 'required|boolean',
             'permisos'        => 'nullable|array',
@@ -304,7 +307,10 @@ class AdminController extends Controller
             ],
         ]);
 
+        // OJO: la tabla `users` tiene columna `name` NOT NULL (default de Laravel) además
+        // de `nombre_completo`. Copiamos ahí también para que el INSERT no rompa.
         $fields = [
+            'name'            => $data['nombre_completo'],
             'nombre_completo' => $data['nombre_completo'],
             'email'           => $data['email'],
             'rol'             => $data['rol'],
