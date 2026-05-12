@@ -938,6 +938,38 @@ async function delegarItem(id, tipo, userId, userName) {
     post('/atencion/delegar', { id, tipo, user_id: userId }).catch(() => toast('Error al delegar', 'error'));
 }
 
+// Delegar desde el panel de conversación (cuando estás leyéndola pero NO la tomaste).
+function delegarPanel(convId) {
+    cerrarMenusDelegar();
+    const btn = document.getElementById('panel-delegar-btn');
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const otros = USUARIOS.filter(u => u.id !== ME_ID);
+    const opts = otros.length
+        ? otros.map(u => `<div class="delegar-opt" onclick="delegarDesdePanel(${convId},${u.id},'${u.nombre_completo.replace(/'/g,"\\'")}')">${u.nombre_completo}</div>`).join('')
+        : '<div class="delegar-opt" style="color:var(--muted)">Sin otros usuarios</div>';
+    document.body.insertAdjacentHTML('beforeend', `<div class="delegar-menu" id="panel-delegar-menu">${opts}</div>`);
+    const menu = document.getElementById('panel-delegar-menu');
+    if (!menu) return;
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 230)) + 'px';
+    if (window.innerHeight - r.bottom > 220) menu.style.top = (r.bottom + 4) + 'px';
+    else menu.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+}
+async function delegarDesdePanel(convId, userId, userName) {
+    cerrarMenusDelegar();
+    // Optimista en la lista
+    const item = [...state.nuevas, ...state.enProceso].find(i => i.id === convId && i.tipo === 'wa');
+    if (item) { item.asig_id = userId; item.asig_name = userName;
+        const idxN = state.nuevas.findIndex(i => i.id === convId && i.tipo === 'wa');
+        if (idxN >= 0) { state.enProceso.unshift(state.nuevas.splice(idxN,1)[0]); }
+        renderColumnas();
+    }
+    cerrarPanel();
+    toast(`Delegado a ${userName}`);
+    try { await post('/atencion/delegar', { id: convId, tipo: 'wa', user_id: userId }); }
+    catch (e) { toast(e.serverMsg || 'Error al delegar', 'error'); fetchItems(); }
+}
+
 // Cerrar delegar al click fuera
 document.addEventListener('click', e => {
     if (state.delegarOpenId && !e.target.closest('.delegar-wrap')) {
@@ -1051,7 +1083,8 @@ async function cargarConversacion(id) {
     const panelConv = document.getElementById('panel-conv');
 
     let headBtns = !tomado
-        ? `<button class="btn btn-tomar" onclick="tomarYAbrir(${id})">Tomar</button>`
+        ? `<button class="btn btn-tomar" onclick="tomarYAbrir(${id})">Tomar</button>
+           <button class="btn btn-del" id="panel-delegar-btn" onclick="delegarPanel(${id})">Delegar ▾</button>`
         : esMio
             ? `<button class="btn btn-resolver" onclick="resolverPanel()">✓ Resuelto</button>`
             : `<span style="font-size:11px;color:var(--muted);">Con: ${conv.asig_name}</span>`;
