@@ -9,6 +9,25 @@ const { registrarCliente } = require('./server');
 
 const AUTH_PATH = '/app/.wwebjs_auth';
 
+// Borra SOLO el cache de Chromium (Cache, Code Cache, GPUCache, Service Worker/CacheStorage…)
+// preservando IndexedDB / Local Storage / Cookies / Login Data → la sesión WhatsApp NO se pierde.
+// El cache de WA Web se hincha muy rápido (Code Cache de V8 sobre todo) y termina saturando las
+// operaciones CDP → "Runtime.callFunctionOn timed out". Llamado en cada reinicio del watchdog
+// (Chromium ya está muerto ahí, los archivos están libres) para que arranque con cache vacío.
+function limpiarCacheChromium() {
+  const base = path.join(AUTH_PATH, 'session', 'Default');
+  const dirs = ['Cache', 'Code Cache', 'GPUCache', 'DawnGraphiteCache', 'DawnWebGPUCache',
+                path.join('Service Worker', 'CacheStorage'), path.join('Service Worker', 'ScriptCache')];
+  let n = 0;
+  for (const d of dirs) {
+    const full = path.join(base, d);
+    try {
+      if (fs.existsSync(full)) { fs.rmSync(full, { recursive: true, force: true }); n++; }
+    } catch (_) { /* best-effort */ }
+  }
+  if (n) console.log(`[whatsapp] Cache de Chromium limpiado (${n} carpetas)`);
+}
+
 // Tracking de mensajes salientes que ENVIAMOS nosotros mismos (vía /enviar
 // o respuestas automáticas). Los marcamos al crearlos para que el handler
 // `message_create` no los duplique en el inbox como si fueran del celular.
@@ -103,6 +122,7 @@ async function iniciarWhatsApp() {
     detenerWatchdog();
     setStatus('reiniciando');
     try { await client.destroy(); } catch (_) {}
+    limpiarCacheChromium();   // Chromium ya está muerto → archivos del cache libres
     setTimeout(() => iniciarWhatsApp(), 5_000);
   }
 
