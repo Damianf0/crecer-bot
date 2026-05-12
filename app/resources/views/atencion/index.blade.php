@@ -405,19 +405,19 @@ audio { height: 32px; width: 210px; display: block; }
 .der-detail h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
 .der-texto { font-size: 14px; color: var(--text); line-height: 1.6; white-space: pre-wrap; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 
-/* Delegar dropdown */
+/* Delegar dropdown — position:fixed para escapar el overflow:hidden de las cards.
+   top/left/bottom los setea el JS según la posición del botón. */
 .delegar-wrap { position: relative; display: inline-flex; }
 .delegar-menu {
-    position: absolute;
-    bottom: 32px;
-    left: 0;
+    position: fixed;
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    min-width: 200px;
-    z-index: 100;
-    box-shadow: 0 8px 24px rgba(0,0,0,.12);
-    overflow: hidden;
+    min-width: 220px;
+    max-height: min(60vh, 320px);
+    overflow-y: auto;
+    z-index: 2000;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
 }
 .delegar-opt {
     padding: 9px 14px;
@@ -885,21 +885,40 @@ async function toggleUrgente(id, tipo, btn) {
     });
 }
 
-function toggleDelegar(id, tipo) {
-    const wasOpen = state.delegarOpenId === id && state.delegarOpenTipo === tipo;
-
-    // Cerrar cualquier menú abierto
+function cerrarMenusDelegar() {
     document.querySelectorAll('.delegar-menu').forEach(m => m.remove());
     state.delegarOpenId   = null;
     state.delegarOpenTipo = null;
+}
 
-    if (!wasOpen) {
-        state.delegarOpenId   = id;
-        state.delegarOpenTipo = tipo;
-        const wrap = document.getElementById(`dw-${tipo}-${id}`);
-        if (wrap) wrap.insertAdjacentHTML('beforeend', renderDelegarMenu(id, tipo));
+function toggleDelegar(id, tipo) {
+    const wasOpen = state.delegarOpenId === id && state.delegarOpenTipo === tipo;
+    cerrarMenusDelegar();
+    if (wasOpen) return;
+
+    const wrap = document.getElementById(`dw-${tipo}-${id}`);
+    if (!wrap) return;
+    const btn = wrap.querySelector('.btn-del') || wrap;
+    const r = btn.getBoundingClientRect();
+
+    state.delegarOpenId   = id;
+    state.delegarOpenTipo = tipo;
+    // Lo colgamos del <body> (no de la card) para que el overflow:hidden de la card no lo recorte.
+    document.body.insertAdjacentHTML('beforeend', renderDelegarMenu(id, tipo));
+    const menu = document.querySelector('.delegar-menu');
+    if (!menu) return;
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 230)) + 'px';
+    if (window.innerHeight - r.bottom > 220) {
+        menu.style.top = (r.bottom + 4) + 'px';      // hay lugar abajo
+    } else {
+        menu.style.bottom = (window.innerHeight - r.top + 4) + 'px';   // abrir hacia arriba
     }
 }
+
+// Click afuera del menú (o del botón "Delegar") → cerrar.
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.delegar-menu') && !e.target.closest('.btn-del')) cerrarMenusDelegar();
+});
 
 async function delegarItem(id, tipo, userId, userName) {
     // Optimista
