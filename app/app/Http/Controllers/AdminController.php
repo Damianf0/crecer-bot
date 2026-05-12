@@ -47,18 +47,27 @@ class AdminController extends Controller
         }
     }
 
-    /** GET /admin/bot/status — proxy del status del bot (sin exponer token al browser) */
+    /**
+     * GET /admin/bot/status — estado (y QR si aplica) de los 3 bots por área.
+     * Proxy: el browser no ve el ingress token. Respuesta:
+     *   { ok:true, labels:{...}, bots:{ atencion:{...}, administracion:{...}, ovodonacion:{...} } }
+     */
     public function botStatus(): JsonResponse
     {
-        try {
-            $r = $this->bot()->get($this->botUrl() . '/status');
-            if (!$r->ok()) {
-                return response()->json(['ok' => false, 'error' => 'Bot no responde'], 502);
+        $labels = \App\Models\ConversacionWA::AREAS;
+        $bots = [];
+        foreach (array_keys($labels) as $area) {
+            $url = \App\Models\ConversacionWA::botUrlPara($area);
+            try {
+                $r = Http::timeout(6)->get("{$url}/status");
+                $bots[$area] = $r->ok()
+                    ? (['ok' => true] + ($r->json() ?: []))
+                    : ['ok' => false, 'error' => 'Bot no responde (HTTP ' . $r->status() . ')'];
+            } catch (\Exception) {
+                $bots[$area] = ['ok' => false, 'error' => 'Bot no responde / contenedor apagado'];
             }
-            return response()->json(['ok' => true] + $r->json());
-        } catch (\Exception $e) {
-            return response()->json(['ok' => false, 'error' => $e->getMessage()], 502);
         }
+        return response()->json(['ok' => true, 'labels' => $labels, 'bots' => $bots]);
     }
 
     // ── Textos ────────────────────────────────────────────────────────

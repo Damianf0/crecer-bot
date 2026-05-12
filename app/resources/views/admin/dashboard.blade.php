@@ -36,28 +36,19 @@
 .qr-warn { font-size: 12px; color: var(--warning); margin-bottom: 10px; font-weight: 600; }
 </style>
 
-<h2 style="font-size:16px;font-weight:700;margin-bottom:14px;">Estado del bot WhatsApp</h2>
-
-<div class="bot-card" id="card">
-    <div class="bot-row">
-        <span class="bot-dot" id="dot"></span>
-        <div>
-            <div class="bot-status" id="status-txt">Cargando…</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px;" id="last-update"></div>
-        </div>
-    </div>
-
-    <dl class="bot-detail">
-        <dt>Número conectado</dt><dd id="phone">—</dd>
-        <dt>Uptime</dt><dd id="uptime">—</dd>
-        <dt>Endpoint</dt><dd style="font-family:monospace;font-size:12px;">{{ config('app.bot_url') }}</dd>
-    </dl>
-
-    <div id="qr-section" style="display:none;">
-        <div class="qr-warn">⚠ Bot esperando escaneo de QR — abrí WhatsApp en el celular y escaneá:</div>
-        <div class="qr-wrap"><img id="qr-img" src=""></div>
-    </div>
+<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap;">
+    <h2 style="font-size:16px;font-weight:700;">Bots de WhatsApp <span style="font-weight:400;color:var(--muted);font-size:13px;">— uno por área (número)</span></h2>
+    <span style="font-size:11px;color:var(--muted);" id="bots-update"></span>
 </div>
+
+<div id="bots-container" style="display:flex;flex-wrap:wrap;gap:16px;">
+    <div style="color:var(--muted);font-size:13px;">Cargando…</div>
+</div>
+
+<p style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5;">
+    Cuando un bot esté <strong>esperando QR</strong> aparece el código acá — escaneá con WhatsApp del celular de ese número
+    (Ajustes → Dispositivos vinculados → Vincular un dispositivo). La sesión queda guardada; no hay que re-escanear salvo que se cierre.
+</p>
 
 <h2 style="font-size:16px;font-weight:700;margin:28px 0 14px;">Tareas programadas</h2>
 <div class="bot-card" style="padding:16px 20px;">
@@ -78,47 +69,52 @@
 </div>
 
 <script>
+function escHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
 async function refreshStatus() {
+    const cont = document.getElementById('bots-container');
     try {
         const r = await fetch('/admin/bot/status', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
         const d = await r.json();
         if (!d.ok) throw new Error(d.error || 'Error');
-
-        const dot       = document.getElementById('dot');
-        const statusTxt = document.getElementById('status-txt');
-        const qrSection = document.getElementById('qr-section');
-        const qrImg     = document.getElementById('qr-img');
-
-        // Estados conocidos: 'iniciando', 'autenticado', 'listo', 'desconectado', 'error'
-        dot.className = 'bot-dot';
-        if (d.status === 'listo') {
-            dot.classList.add('ok');
-            statusTxt.textContent = 'Conectado y listo';
-        } else if (d.status === 'iniciando' || d.status === 'autenticado') {
-            dot.classList.add('warn');
-            statusTxt.textContent = 'Iniciando…';
-        } else if (d.qrDataUrl) {
-            dot.classList.add('warn');
-            statusTxt.textContent = 'Esperando QR';
-        } else {
-            dot.classList.add('err');
-            statusTxt.textContent = 'Desconectado';
-        }
-
-        document.getElementById('phone').textContent  = d.phone ?? '—';
-        document.getElementById('uptime').textContent = d.uptime ?? '—';
-        document.getElementById('last-update').textContent = 'Actualizado ' + new Date().toLocaleTimeString();
-
-        if (d.qrDataUrl) {
-            qrImg.src = d.qrDataUrl;
-            qrSection.style.display = '';
-        } else {
-            qrSection.style.display = 'none';
-        }
+        const labels = d.labels || {};
+        const areas = Object.keys(labels);
+        cont.innerHTML = areas.map(area => {
+            const b = (d.bots && d.bots[area]) || { ok: false };
+            let dotCls, statusTxt, qrHtml = '';
+            if (!b.ok) {
+                dotCls = 'err'; statusTxt = b.error || 'Sin contacto con el bot';
+            } else if (b.status === 'listo') {
+                dotCls = 'ok'; statusTxt = 'Conectado' + (b.phone ? ' · +' + escHtml(b.phone) : '');
+            } else if (b.status === 'iniciando' || b.status === 'autenticado') {
+                dotCls = 'warn'; statusTxt = 'Iniciando…';
+            } else if (b.qrDataUrl) {
+                dotCls = 'warn'; statusTxt = 'Esperando escaneo de QR';
+                qrHtml = `<div class="qr-warn" style="margin-top:14px;">⚠ Escaneá con el celular de este número:</div>
+                          <div class="qr-wrap"><img src="${b.qrDataUrl}" style="max-width:210px;width:100%;height:auto;"></div>`;
+            } else {
+                dotCls = 'err'; statusTxt = escHtml(b.status || 'Desconectado');
+            }
+            return `<div class="bot-card" style="flex:1 1 280px;min-width:280px;max-width:340px;">
+                <div class="bot-row" style="margin-bottom:14px;">
+                    <span class="bot-dot ${dotCls}"></span>
+                    <div>
+                        <div class="bot-status" style="font-size:15px;">${escHtml(labels[area])}</div>
+                        <div style="font-size:12px;color:var(--muted);margin-top:2px;">${statusTxt}</div>
+                    </div>
+                </div>
+                <dl class="bot-detail">
+                    <dt>Número</dt><dd>${b.phone ? '+' + escHtml(b.phone) : '—'}</dd>
+                    <dt>Uptime</dt><dd>${escHtml(b.uptime) || '—'}</dd>
+                    <dt>Área</dt><dd style="font-family:monospace;font-size:12px;">${escHtml(area)}</dd>
+                </dl>
+                ${qrHtml}
+            </div>`;
+        }).join('') || '<div style="color:var(--muted);font-size:13px;">Sin bots configurados.</div>';
+        document.getElementById('bots-update').textContent = 'Actualizado ' + new Date().toLocaleTimeString();
     } catch (e) {
-        document.getElementById('dot').className = 'bot-dot err';
-        document.getElementById('status-txt').textContent = 'Sin contacto con el bot';
-        document.getElementById('last-update').textContent = 'Reintentando…';
+        cont.innerHTML = '<div style="color:var(--error);font-size:13px;">Sin contacto con el panel del bot. Reintentando…</div>';
+        document.getElementById('bots-update').textContent = '';
     }
 }
 
