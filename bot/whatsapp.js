@@ -30,7 +30,7 @@ module.exports.markSent = markSent;
 module.exports.wasOurSent = wasOurSent;
 
 // Watchdog: si el cliente está "listo" pero no recibió nada en WATCHDOG_TIMEOUT ms, reinicia
-const WATCHDOG_TIMEOUT  = parseInt(process.env.WATCHDOG_TIMEOUT  || String(45 * 60 * 1000)); // 45 min
+const WATCHDOG_TIMEOUT  = parseInt(process.env.WATCHDOG_TIMEOUT  || String(20 * 60 * 1000)); // 20 min sin actividad (fallback)
 const WATCHDOG_INTERVAL = parseInt(process.env.WATCHDOG_INTERVAL || String(5  * 60 * 1000)); // chequea c/5 min
 
 const PUPPETEER_OPTS = {
@@ -87,6 +87,7 @@ async function iniciarWhatsApp() {
   let ultimaActividad = Date.now();
   let watchdogTimer   = null;
   let destruido        = false;
+  let chequeosSinConnected = 0;   // getState() consecutivos que no devolvieron CONNECTED
 
   function resetActividad() {
     ultimaActividad = Date.now();
@@ -94,6 +95,15 @@ async function iniciarWhatsApp() {
 
   function detenerWatchdog() {
     if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+  }
+
+  async function reiniciarPorWatchdog(motivo) {
+    console.warn(`[watchdog] Cliente colgado (${motivo}) — reiniciando WhatsApp...`);
+    destruido = true;
+    detenerWatchdog();
+    setStatus('reiniciando');
+    try { await client.destroy(); } catch (_) {}
+    setTimeout(() => iniciarWhatsApp(), 5_000);
   }
 
   async function verificarSalud() {
@@ -112,20 +122,22 @@ async function iniciarWhatsApp() {
       console.warn(`[watchdog] No se pudo obtener estado: ${err.message}`);
     }
 
-    console.log(`[watchdog] Estado: ${estadoReal ?? 'desconocido'} | Inactivo: ${Math.round(inactivo / 60000)}m`);
+    if (estadoReal === 'CONNECTED') chequeosSinConnected = 0;
+    else chequeosSinConnected++;
 
-    // Solo reiniciar si pasó MUCHO tiempo sin actividad Y el estado no es CONNECTED.
-    // Antes con OR el watchdog mataba el cliente apenas getState fallaba (destruyendo
-    // sendMessage en vuelo). Ahora exigimos ambas condiciones: bot realmente colgado.
-    const colgado = inactivo > WATCHDOG_TIMEOUT && estadoReal !== 'CONNECTED';
+    console.log(`[watchdog] Estado: ${estadoReal ?? 'desconocido'} | Inactivo: ${Math.round(inactivo / 60000)}m | sin CONNECTED: ${chequeosSinConnected}`);
 
-    if (colgado) {
-      console.warn(`[watchdog] Cliente colgado (${Math.round(inactivo/60000)}m sin actividad) — reiniciando WhatsApp...`);
-      destruido = true;
-      detenerWatchdog();
-      setStatus('reiniciando');
-      try { await client.destroy(); } catch (_) {}
-      setTimeout(() => iniciarWhatsApp(), 5_000);
+    // (a) Chromium congelado: varios getState() seguidos sin CONNECTED (típicamente timeouts
+    //     "Runtime.callFunctionOn timed out" por cache de Chromium hinchado). Un solo fallo
+    //     puede ser un getState() lento con un sendMessage en vuelo — por eso exigimos 3 seguidos
+    //     (~15 min) antes de matar. Mucho más rápido que esperar el timeout de inactividad.
+    if (chequeosSinConnected >= 3) {
+      return reiniciarPorWatchdog(`${chequeosSinConnected} chequeos seguidos sin CONNECTED (Chromium congelado)`);
+    }
+
+    // (b) Fallback: mucho tiempo sin actividad Y no está CONNECTED.
+    if (inactivo > WATCHDOG_TIMEOUT && estadoReal !== 'CONNECTED') {
+      return reiniciarPorWatchdog(`${Math.round(inactivo/60000)}m sin actividad`);
     }
   }
 
