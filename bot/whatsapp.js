@@ -269,4 +269,8 @@ async function iniciarWhatsApp() {
   }
 }
 
-module.exports = { iniciarWhatsApp };
+// OJO: NO usar `module.exports = {...}` acá — sobreescribe `markSent`/`wasOurSent` que se
+// exportaron arriba (líneas ~48-49), y server.js/respuestas.js los necesitan via require().
+// Ese era el bug: `/enviar` (= iniciar conversación, responder por panel) tiraba
+// "markSent is not a function" → 500 → "no se pudo enviar / no se pudo abrir la conversación".
+module.exports.iniciarWhatsApp = iniciarWhatsApp;
