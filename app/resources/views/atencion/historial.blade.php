@@ -175,6 +175,15 @@
             </select>
         </div>
         <div>
+            <label>Área</label>
+            <select name="area" class="hist-input hist-select">
+                <option value="todas" {{ ($area ?? 'todas') === 'todas' ? 'selected' : '' }}>Todas</option>
+                @foreach(\App\Models\ConversacionWA::AREAS as $k => $v)
+                    <option value="{{ $k }}" {{ ($area ?? 'todas') === $k ? 'selected' : '' }}>{{ $v }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
             <label>Buscar</label>
             <input type="text" name="q" class="hist-input hist-search"
                 placeholder="Contacto / título…" value="{{ $q }}">
@@ -206,6 +215,7 @@
             'desde' => $desde?->format('Y-m-d'),
             'hasta' => $hasta?->format('Y-m-d'),
             'tipo'  => $tipo !== 'todos' ? $tipo : null,
+            'area'  => ($area ?? 'todas') !== 'todas' ? $area : null,
             'q'     => $q ?: null,
         ]));
     @endphp
@@ -217,6 +227,7 @@
                 <th style="width:180px;">Contacto / Título</th>
                 <th>Resumen / Descripción</th>
                 <th style="width:130px;">Responsable</th>
+                <th style="width:120px;">Área</th>
                 <th style="width:110px;"></th>
             </tr>
         </thead>
@@ -241,6 +252,7 @@
             </td>
             <td style="color:var(--muted);max-width:340px;">{{ $item['resumen'] }}</td>
             <td style="color:var(--muted);">{{ $item['asig_name'] ?? '—' }}</td>
+            <td style="color:var(--muted);">{{ $item['area_label'] ?? '—' }}</td>
             <td style="white-space:nowrap;display:flex;gap:6px;">
                 <button class="reabrir-btn" onclick="toggleDetalle('{{ $item['tipo'] }}', {{ $item['id'] }}, {{ json_encode($item) }})">
                     Ver ▾
@@ -253,7 +265,7 @@
             </td>
         </tr>
         <tr class="detail-row" id="detail-{{ $item['tipo'] }}-{{ $item['id'] }}">
-            <td colspan="6" class="detail-cell">
+            <td colspan="7" class="detail-cell">
                 <div id="detail-content-{{ $item['tipo'] }}-{{ $item['id'] }}" style="color:var(--muted);font-size:12px;">
                     Cargando…
                 </div>

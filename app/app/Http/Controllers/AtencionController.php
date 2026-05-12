@@ -475,10 +475,12 @@ class AtencionController extends Controller
             : null;
         $tipo  = $request->input('tipo', 'todos'); // todos | bot | wa | tarea
         $q     = $request->input('q', '');
+        $area  = $request->input('area', 'todas'); // todas | atencion | administracion | ovodonacion (solo aplica a WA)
 
         $items = collect();
 
-        if ($tipo === 'tarea' || $tipo === 'todos') {
+        // Tareas y derivaciones-bot no tienen área → si se filtra por área, no se incluyen.
+        if (($tipo === 'tarea' || $tipo === 'todos') && $area === 'todas') {
             $query = Tarea::where('estado', 'completada')
                 ->with(['asignadaA:id,nombre_completo', 'creadaPor:id,nombre_completo', 'comentarios.user:id,nombre_completo'])
                 ->orderByDesc('updated_at');
@@ -507,7 +509,7 @@ class AtencionController extends Controller
             );
         }
 
-        if ($tipo !== 'wa' && $tipo !== 'tarea') {
+        if ($tipo !== 'wa' && $tipo !== 'tarea' && $area === 'todas') {
             $query = Derivacion::where('estado', 'resuelto')
                 ->with('asignadaA:id,nombre_completo')
                 ->orderByDesc('atendido_at');
@@ -537,7 +539,9 @@ class AtencionController extends Controller
             if ($desde) $query->where('updated_at', '>=', $desde);
             if ($hasta) $query->where('updated_at', '<=', $hasta);
             if ($q)     $query->where('contacto', 'like', "%{$q}%");
+            if ($area !== 'todas') $query->where('area', $area);
 
+            $areaLabels = ConversacionWA::AREAS;
             $items = $items->concat(
                 $query->limit(200)->get()->map(fn($c) => [
                     'id'          => $c->id,
@@ -546,6 +550,8 @@ class AtencionController extends Controller
                     'etiqueta'    => 'WhatsApp',
                     'resumen'     => $c->resumen_llm ?: ($c->ultimoMensaje?->snippet ?? '—'),
                     'asig_name'   => $c->asignadaA?->nombre_completo,
+                    'area'        => $c->area,
+                    'area_label'  => $areaLabels[$c->area] ?? $c->area,
                     'resuelto_at' => $c->updated_at?->format('d/m/Y H:i'),
                     'ts'          => $c->updated_at?->timestamp ?? 0,
                 ])
@@ -573,7 +579,7 @@ class AtencionController extends Controller
 
         $usuarios = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
 
-        return view('atencion.historial', compact('items', 'desde', 'hasta', 'tipo', 'q', 'usuarios', 'page', 'pages', 'total', 'perPage'));
+        return view('atencion.historial', compact('items', 'desde', 'hasta', 'tipo', 'q', 'area', 'usuarios', 'page', 'pages', 'total', 'perPage'));
     }
 
     /**
