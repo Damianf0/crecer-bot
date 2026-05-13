@@ -18,6 +18,7 @@ use App\Http\Controllers\DocumentoController;
 use App\Livewire\Login;
 use App\Livewire\Tablet;
 use App\Http\Middleware\SecretariaAuth;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -117,8 +118,23 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         // Cola y polling por área (constraint para no chocar con las rutas de arriba).
         Route::get('/atencion/{area}',            [AtencionController::class, 'index'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
         Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
-        Route::get('/mis-tareas',                 [AtencionController::class, 'misTareas']);
-        Route::get('/mis-tareas/data',            [AtencionController::class, 'misTareasData']);
+        // Mis conversaciones WA asignadas
+        Route::get('/mis-conversaciones',         [AtencionController::class, 'misConversaciones']);
+        Route::get('/mis-conversaciones/data',    [AtencionController::class, 'misConversacionesData']);
+
+        // Centro de tareas (tareas + derivaciones del bot tomadas)
+        Route::get('/centro-tareas',              [AtencionController::class, 'centroTareas']);
+        Route::get('/centro-tareas/derivaciones', [AtencionController::class, 'centroTareasDerivaciones']);
+
+        // Redirects legacy de /mis-tareas (mantienen bookmarks viejos vivos).
+        // El deep-link ?tarea_id=N va al centro de tareas; el resto, a mis conversaciones.
+        Route::get('/mis-tareas', function (Request $request) {
+            if ($request->filled('tarea_id')) {
+                return redirect('/centro-tareas?tarea_id=' . (int) $request->input('tarea_id'));
+            }
+            return redirect('/mis-conversaciones');
+        });
+        Route::get('/mis-tareas/data', fn() => redirect('/mis-conversaciones/data'));
 
         // Tareas generales
         Route::get('/tareas/data',                [TareaController::class, 'data']);

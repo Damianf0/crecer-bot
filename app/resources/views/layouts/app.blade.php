@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Crecer — {{ $title ?? 'Panel' }}</title>
+    <link rel="icon" id="favicon" type="image/x-icon" href="/favicon.ico">
     @livewireStyles
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
     <script>
@@ -109,18 +110,19 @@
             padding: 20px;
         }
 
-        /* Toast */
+        /* Toast — pointer-events:none para no tapar clicks al FAB del chat */
         .toast-fixed {
             position: fixed;
             bottom: 24px;
-            right: 24px;
-            z-index: 9999;
+            right: 88px;   /* libera el sector del FAB del chat (right:20 + width:56 + margen) */
+            z-index: 9995;
             padding: 12px 20px;
             border-radius: 8px;
             font-size: 13px;
             font-weight: 500;
             display: none;
             animation: fadeIn 0.2s;
+            pointer-events: none;
         }
 
         .toast-fixed.ok    { background: rgba(63,185,80,0.15); color: var(--success); border: 1px solid rgba(63,185,80,0.3); display: block; }
@@ -144,16 +146,17 @@
         <img src="/logo.jpg" alt="Crecer">
     </a>
     @php
-        // Counts del navbar cacheados 5s — evita 3 COUNTs por cada render de cualquier página.
+        // Counts del navbar cacheados 5s — evita varios COUNTs por cada render de cualquier página.
         // Cache por usuario (clave incluye uid). Se invalida automáticamente o se puede forzar:
         // \Illuminate\Support\Facades\Cache::forget("navbar.counts.{$uid}")
         $uid = auth()->id() ?? 0;
-        [$misTareas, $pendByArea] = \Illuminate\Support\Facades\Cache::remember(
+        [$misConv, $misTareasCnt, $pendByArea] = \Illuminate\Support\Facades\Cache::remember(
             "navbar.counts.{$uid}",
             5,
             fn() => [
+                \App\Models\ConversacionWA::where('estado','activa')->where('asignada_a', $uid)->count(),
                 \App\Models\Derivacion::where('estado','en_atencion')->where('asignada_a', $uid)->count()
-                    + \App\Models\ConversacionWA::where('estado','activa')->where('asignada_a', $uid)->count(),
+                    + \App\Models\Tarea::where('estado','!=','completada')->where('asignada_a', $uid)->count(),
                 \App\Models\ConversacionWA::where('estado','activa')->whereNull('asignada_a')->where('no_leidos','>',0)
                     ->selectRaw('area, count(*) as n')->groupBy('area')->pluck('n','area')->toArray(),
             ]
@@ -175,10 +178,16 @@
         @endif
     </a>
     @endforeach
-    <a href="/mis-tareas" class="nav-link {{ request()->is('mis-tareas*') ? 'active' : '' }}" style="display:inline-flex;align-items:center;gap:6px;">
-        Mis tareas
-        @if($misTareas > 0)
-            <span style="background:var(--info);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">{{ $misTareas }}</span>
+    <a href="/mis-conversaciones" class="nav-link {{ request()->is('mis-conversaciones*') ? 'active' : '' }}" style="display:inline-flex;align-items:center;gap:6px;">
+        Mis conversaciones
+        @if($misConv > 0)
+            <span style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">{{ $misConv }}</span>
+        @endif
+    </a>
+    <a href="/centro-tareas" class="nav-link {{ request()->is('centro-tareas*') ? 'active' : '' }}" style="display:inline-flex;align-items:center;gap:6px;">
+        Centro de tareas
+        @if($misTareasCnt > 0)
+            <span style="background:var(--info);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;">{{ $misTareasCnt }}</span>
         @endif
     </a>
     @endif @endauth
@@ -210,6 +219,15 @@
 
     <div style="display:flex;align-items:center;gap:0;flex-shrink:0;">
         @auth
+            {{-- Botón "chat interno" en navbar: ícono + badge de no leídos. Click → abre el panel del chat. --}}
+            <button id="navbar-chat-btn" type="button"
+                onclick="if(window.ChatWidget) window.ChatWidget.toggle();"
+                title="Chat interno"
+                style="position:relative;background:none;border:none;cursor:pointer;padding:0 10px;height:52px;display:inline-flex;align-items:center;gap:5px;color:var(--muted);border-left:1px solid var(--border);transition:color .15s;font-size:16px;line-height:1;">
+                <span style="font-size:17px;">💬</span>
+                <span id="navbar-chat-badge"
+                      style="display:none;position:absolute;top:8px;right:2px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;min-width:18px;text-align:center;line-height:1.3;"></span>
+            </button>
             <span style="display:inline-flex;align-items:center;gap:7px;padding:0 10px;border-left:1px solid var(--border);">
                 <span style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;"
                       title="{{ auth()->user()->nombre_completo }}{{ session('colas') ? ' · '.implode(', ', array_map(fn($c) => \App\Models\User::COLAS[$c] ?? $c, session('colas', []))) : '' }}">

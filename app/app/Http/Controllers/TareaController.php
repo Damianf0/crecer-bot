@@ -14,9 +14,10 @@ class TareaController extends Controller
 {
     public function data(Request $request): JsonResponse
     {
-        $uid    = Auth::id();
-        $filtro = $request->input('filtro', 'mias');   // mias | todas
-        $estado = $request->input('estado', 'activas'); // activas | completadas | todas
+        $uid      = Auth::id();
+        $filtro   = $request->input('filtro', 'mias');      // mias | asignadas | creadas | todas
+        $estado   = $request->input('estado', 'activas');   // activas | completadas | todas
+        $vencidas = (bool) $request->boolean('vencidas');   // si true, solo vencidas
 
         $q = Tarea::with([
             'asignadaA:id,nombre_completo',
@@ -24,15 +25,22 @@ class TareaController extends Controller
             'comentarios.user:id,nombre_completo',
         ]);
 
-        if ($filtro === 'mias') {
-            $q->where(fn($q) => $q->where('asignada_a', $uid)->orWhere('creada_por', $uid));
-        }
+        match ($filtro) {
+            'mias'      => $q->where(fn($q) => $q->where('asignada_a', $uid)->orWhere('creada_por', $uid)),
+            'asignadas' => $q->where('asignada_a', $uid),
+            'creadas'   => $q->where('creada_por', $uid),
+            default     => null, // todas
+        };
 
         match ($estado) {
             'activas'     => $q->where('estado', '!=', 'completada'),
             'completadas' => $q->where('estado', 'completada'),
             default       => null,
         };
+
+        if ($vencidas) {
+            $q->where('vence_at', '<', now())->where('estado', '!=', 'completada');
+        }
 
         $tareas = $q->orderByDesc('created_at')->get()->map(fn($t) => $this->mapTarea($t));
 

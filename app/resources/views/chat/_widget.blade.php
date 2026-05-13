@@ -6,7 +6,7 @@
 @auth
 <style>
 .chat-fab {
-    position: fixed; right: 20px; bottom: 20px; z-index: 7000;
+    position: fixed; right: 20px; bottom: 20px; z-index: 9990;
     width: 56px; height: 56px; border-radius: 50%;
     background: var(--accent); color: #fff;
     border: none; cursor: pointer;
@@ -26,7 +26,7 @@
 }
 
 .chat-panel {
-    position: fixed; right: 20px; bottom: 90px; z-index: 7001;
+    position: fixed; right: 20px; bottom: 90px; z-index: 9991;
     width: min(640px, calc(100vw - 40px));
     height: min(560px, calc(100vh - 130px));
     background: var(--card);
@@ -416,11 +416,20 @@
         await Chat.marcarLeido();
     };
 
+    // Lock para que no haya dos cargarMensajes en vuelo a la vez —
+    // si pasa, dos GETs con el mismo since= duplican mensajes al appendear.
+    let _cargandoMensajes = false;
+
     Chat.cargarMensajes = async function(reset) {
         if (!Chat.canalActivo) return;
+        if (_cargandoMensajes && !reset) return;   // reset siempre prevalece
+        _cargandoMensajes = true;
+        const canalAlInicio = Chat.canalActivo;
         try {
             const url = '/chat/canales/' + Chat.canalActivo + '/mensajes' + (reset ? '' : '?since=' + Chat.ultimoMsgId);
             const r = await api('GET', url);
+            // Si el usuario cambió de canal mientras volaba el request, descartamos.
+            if (Chat.canalActivo !== canalAlInicio) return;
             const msgs = r.data || [];
             const cont = document.getElementById('chat-msgs');
 
@@ -434,20 +443,29 @@
             } else {
                 if (msgs.length) {
                     cont.querySelectorAll('.chat-msg-empty').forEach(e => e.remove());
-                    msgs.forEach(m => cont.insertAdjacentHTML('beforeend', msgHtml(m)));
-                    cont.scrollTop = cont.scrollHeight;
-                    // Sonido si llegó algo de otra persona
-                    if (msgs.some(m => m.user_id !== ME)) sonarPing();
+                    let appended = 0;
+                    msgs.forEach(m => {
+                        // Dedup: si ya está en el DOM, lo salteamos. Cubre el caso
+                        // del poller corriendo en paralelo con un envío manual.
+                        if (cont.querySelector(`[data-msg-id="${m.id}"]`)) return;
+                        cont.insertAdjacentHTML('beforeend', msgHtml(m));
+                        appended++;
+                    });
+                    if (appended > 0) cont.scrollTop = cont.scrollHeight;
+                    // Sonido si llegó algo de otra persona y efectivamente se appendeó
+                    if (appended > 0 && msgs.some(m => m.user_id !== ME)) sonarPing();
                 }
             }
-            if (msgs.length) Chat.ultimoMsgId = msgs[msgs.length - 1].id;
-        } catch {}
+            if (msgs.length) Chat.ultimoMsgId = Math.max(Chat.ultimoMsgId, msgs[msgs.length - 1].id);
+        } catch {} finally {
+            _cargandoMensajes = false;
+        }
     };
 
     function msgHtml(m) {
         const mio = m.user_id === ME;
         if (m.eliminado) {
-            return `<div class="chat-msg ${mio ? 'out' : 'in'} eliminado">
+            return `<div class="chat-msg ${mio ? 'out' : 'in'} eliminado" data-msg-id="${m.id}">
                 ${mio ? '' : `<div class="chat-msg-autor">${escTxt(m.autor)}</div>`}
                 <div>Mensaje eliminado</div>
                 <div class="chat-msg-time">${escTxt(m.hora)}</div>
@@ -456,7 +474,7 @@
         const borrar = mio
             ? `<button class="chat-msg-borrar" onclick="ChatWidget.eliminarMensaje(${m.id})" title="Eliminar mensaje" aria-label="Eliminar">&times;</button>`
             : '';
-        return `<div class="chat-msg ${mio ? 'out' : 'in'}">
+        return `<div class="chat-msg ${mio ? 'out' : 'in'}" data-msg-id="${m.id}">
             ${mio ? '' : `<div class="chat-msg-autor">${escTxt(m.autor)}</div>`}
             <div>${escTxt(m.texto)}</div>
             <div class="chat-msg-time">${escTxt(m.hora)}</div>
@@ -537,16 +555,99 @@
     let _primerPollNoLeidos = true;
 
     // ── Badge & polling global ──────────────────────────────────
+    // Guardamos el título original una sola vez para poder restaurarlo cuando
+    // no hay mensajes sin leer. Si otro script lo cambia más tarde, le pegamos
+    // arriba con `(N)` igual — esto es OK porque queremos que el usuario lo vea.
+    const _tituloOriginal = document.title.replace(/^\(\d+\+?\)\s*/, '');
+
+    // Favicon dinámico: dibuja el logo base + un dot rojo con el contador.
+    // Cacheamos por valor de N para no regenerar en cada poll si el número no cambió.
+    const _faviconBaseHref = (document.getElementById('favicon')?.href) || '/favicon.ico';
+    const _faviconCache = {};  // { '0': hrefBase, '3': dataURL, '99+': dataURL }
+    let   _faviconKeyActual = null;
+
+    function _generarFaviconConBadge(label) {
+        // Favicon "alerta": círculo verde sólido con el contador en blanco,
+        // ocupando todo el favicon. Reemplaza el logo cuando hay mensajes
+        // sin leer para que sea evidente de un vistazo en la solapa.
+        const size = 64;
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const ctx = c.getContext('2d');
+
+        // Círculo verde lleno
+        ctx.beginPath();
+        ctx.arc(size/2, size/2, size/2 - 1, 0, Math.PI*2);
+        ctx.fillStyle = '#00875a';   // var(--success) tema claro
+        ctx.fill();
+
+        // Número en blanco, centrado. Tamaño según ancho del label.
+        const txt = String(label);
+        const fontPx = txt.length === 1 ? 44 : (txt.length === 2 ? 36 : 26);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold ' + fontPx + 'px Arial, Helvetica, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(txt, size/2, size/2 + 2);
+
+        return c.toDataURL('image/png');
+    }
+
+    function actualizarFavicon(count) {
+        const key = count > 0 ? (count > 99 ? '99+' : String(count)) : '0';
+        if (key === _faviconKeyActual) return;   // sin cambios, no tocar el DOM
+        _faviconKeyActual = key;
+
+        if (!(key in _faviconCache)) {
+            _faviconCache[key] = (key === '0')
+                ? _faviconBaseHref
+                : _generarFaviconConBadge(key);
+        }
+
+        // Chrome (y otros) cachean el favicon agresivamente y a veces no
+        // detectan el cambio de href en un mismo <link>. Trick conocido:
+        // remover el <link> y agregar uno nuevo fuerza al browser a re-leer.
+        document.querySelectorAll('link[rel~="icon"]').forEach(el => el.remove());
+        const link = document.createElement('link');
+        link.id   = 'favicon';
+        link.rel  = 'icon';
+        link.type = key === '0' ? 'image/x-icon' : 'image/png';
+        link.href = _faviconCache[key];
+        document.head.appendChild(link);
+    }
+
     async function actualizarBadge() {
         try {
             const r = await api('GET', '/chat/no-leidos');
+            const total = r.count > 0 ? (r.count > 99 ? '99+' : r.count) : '';
+
+            // Badge del FAB flotante
             const badge = document.getElementById('chat-fab-badge');
             if (r.count > 0) {
-                badge.textContent = r.count > 99 ? '99+' : r.count;
+                badge.textContent = total;
                 badge.style.display = '';
             } else {
                 badge.style.display = 'none';
             }
+
+            // Badge del botón en la navbar (junto al nombre de usuario)
+            const nb = document.getElementById('navbar-chat-badge');
+            if (nb) {
+                if (r.count > 0) {
+                    nb.textContent = total;
+                    nb.style.display = '';
+                } else {
+                    nb.style.display = 'none';
+                }
+            }
+
+            // Título de la pestaña del browser: "(3) Crecer — Panel"
+            // Quita cualquier prefijo "(N)" previo y lo reemplaza por el actual.
+            const base = document.title.replace(/^\(\d+\+?\)\s*/, '');
+            document.title = r.count > 0 ? `(${total}) ${base || _tituloOriginal}` : (base || _tituloOriginal);
+
+            // Favicon dinámico con dot rojo + contador
+            actualizarFavicon(r.count);
 
             // Detectar canales con mensaje nuevo desde el último poll y notificar.
             for (const c of (r.canales || [])) {

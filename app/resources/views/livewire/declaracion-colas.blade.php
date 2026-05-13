@@ -113,7 +113,7 @@
         @if($tareas->isNotEmpty())
             <div class="pend-sub">📌 Tareas pendientes <span class="pend-count">{{ $tareas->count() }}</span></div>
             @foreach($tareas as $t)
-                <a class="pend-card" href="/mis-tareas?tarea_id={{ $t['id'] }}">
+                <a class="pend-card" href="/centro-tareas?tarea_id={{ $t['id'] }}">
                     <div class="pend-head">
                         <span class="pend-name">{{ $t['titulo'] }}</span>
                         @if($t['vencida'])

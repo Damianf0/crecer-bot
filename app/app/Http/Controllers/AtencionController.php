@@ -409,20 +409,21 @@ class AtencionController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    public function misTareas()
+    public function misConversaciones()
     {
-        $uid = Auth::id();
+        $items    = $this->misConvItems();
+        $usuarios = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
 
-        $items = ConversacionWA::where('estado', 'activa')
-            ->where('asignada_a', $uid)
-            ->with(['ultimoMensaje', 'asignadaA:id,nombre_completo', 'contactoVinculado:id,wa_id,avatar_path'])
-            ->orderByDesc('urgente')
-            ->orderByDesc('ultima_actividad')
-            ->limit(300)
-            ->get()
-            ->map(fn($c) => $this->mapWA($c))
-            ->values();
+        return view('atencion.mis-conversaciones', compact('items', 'usuarios'));
+    }
 
+    public function misConversacionesData(): JsonResponse
+    {
+        return response()->json(['ok' => true, 'data' => $this->misConvItems()]);
+    }
+
+    public function centroTareas()
+    {
         $usuarios = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
 
         $conversaciones = ConversacionWA::where('estado', 'activa')
@@ -431,14 +432,42 @@ class AtencionController extends Controller
             ->get()
             ->map(fn($c) => ['id' => $c->id, 'label' => $c->nombreOTelefono . ' — ' . $c->telefono]);
 
-        return view('atencion.mis-tareas', compact('items', 'usuarios', 'conversaciones'));
+        return view('atencion.centro-tareas', compact('usuarios', 'conversaciones'));
     }
 
-    public function misTareasData(): JsonResponse
+    public function centroTareasDerivaciones(): JsonResponse
+    {
+        // Derivaciones del bot que el usuario ya tomó pero todavía no resolvió.
+        // Aparecen como tarjetas destacadas en /centro-tareas porque son trabajo
+        // pendiente real, aunque vivan en otra tabla que la de tareas.
+        $uid = Auth::id();
+
+        $items = Derivacion::where('estado', 'en_atencion')
+            ->where('asignada_a', $uid)
+            ->with('asignadaA:id,nombre_completo')
+            ->orderByDesc('urgente')
+            ->orderByDesc('bot_at')
+            ->get()
+            ->map(fn($d) => [
+                'id'         => $d->id,
+                'contacto'   => $d->contacto,
+                'telefono'   => $d->telefono,
+                'texto'      => $d->texto ? Str::limit($d->texto, 160) : '—',
+                'etiqueta'   => $d->etiqueta,
+                'urgente'    => (bool) $d->urgente,
+                'resumen'    => $d->resumen_llm,
+                'hace'       => $d->created_at?->diffForHumans(),
+                'creada_fmt' => $d->created_at?->format('d/m H:i'),
+            ])->values();
+
+        return response()->json(['ok' => true, 'data' => $items]);
+    }
+
+    private function misConvItems()
     {
         $uid = Auth::id();
 
-        $items = ConversacionWA::where('estado', 'activa')
+        return ConversacionWA::where('estado', 'activa')
             ->where('asignada_a', $uid)
             ->with(['ultimoMensaje', 'asignadaA:id,nombre_completo', 'contactoVinculado:id,wa_id,avatar_path'])
             ->orderByDesc('urgente')
@@ -447,8 +476,6 @@ class AtencionController extends Controller
             ->get()
             ->map(fn($c) => $this->mapWA($c))
             ->values();
-
-        return response()->json(['ok' => true, 'data' => $items]);
     }
 
     public function reabrir(Request $request): JsonResponse
