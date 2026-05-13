@@ -10,6 +10,137 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 /**
+ * Importa contactos desde un archivo .vcf (vCard 3.0).
+ * Sin --apply hace dry-run (sólo reporta). Con --apply ejecuta los INSERT.
+ *
+ * Nombre = FN; si falta, usa ORG; si falta también, skipea (no hay info útil).
+ * Teléfono = primer TEL del vcard, normalizado con Contacto::normalizarTelefono.
+ * Skipea con motivo: sin_nombre, sin_tel, tel_invalido, tel_duplicado_db,
+ * tel_duplicado_archivo.
+ *
+ * Uso: docker exec crecer-web-1 php artisan contactos:importar-vcf /var/www/html/storage/app/import/admin.vcf
+ *      docker exec crecer-web-1 php artisan contactos:importar-vcf /var/www/html/storage/app/import/admin.vcf --apply
+ */
+Artisan::command('contactos:importar-vcf {archivo} {--apply} {--muestra=20}', function () {
+    $archivo = $this->argument('archivo');
+    $apply   = (bool) $this->option('apply');
+    $muestra = (int) $this->option('muestra') ?: 20;
+
+    if (!file_exists($archivo)) {
+        $this->error("No existe: $archivo");
+        return 1;
+    }
+
+    $contenido = file_get_contents($archivo);
+    $contenido = str_replace("\r\n", "\n", $contenido);
+
+    // vCard permite líneas plegadas (continuación con espacio o tab al inicio): unfold.
+    $contenido = preg_replace("/\n[ \t]/", '', $contenido);
+
+    $bloques = preg_split('/BEGIN:VCARD/i', $contenido);
+    array_shift($bloques);   // antes del primer BEGIN
+
+    $stats = [
+        'total'                  => 0,
+        'sin_nombre'             => 0,
+        'sin_tel'                => 0,
+        'tel_invalido'           => 0,
+        'tel_duplicado_db'       => 0,
+        'tel_duplicado_archivo'  => 0,
+        'importables'            => 0,
+    ];
+    $importables = [];
+    $vistosTel   = [];
+
+    foreach ($bloques as $b) {
+        $stats['total']++;
+        $b = explode('END:VCARD', $b)[0];
+
+        $fn  = null; $org = null; $tel = null;
+        foreach (explode("\n", $b) as $linea) {
+            $linea = trim($linea);
+            if ($linea === '') continue;
+
+            // El "name" puede tener parámetros antes de los ":" — separamos por el primer ":".
+            $sep = strpos($linea, ':');
+            if ($sep === false) continue;
+            $head = strtoupper(strtok(substr($linea, 0, $sep), ';'));
+            $val  = substr($linea, $sep + 1);
+
+            if ($head === 'FN'  && $fn  === null) $fn  = $val;
+            if ($head === 'ORG' && $org === null) $org = explode(';', $val)[0];
+            if ($head === 'TEL' && $tel === null) $tel = $val;
+        }
+
+        $nombre = trim($fn ?: ($org ?: ''));
+        // Limpiar caracteres raros pegados al inicio (emojis, comillas tipográficas son OK
+        // pero algunos prefijos tipo "*" o caracteres de control conviene removerlos)
+        $nombre = preg_replace('/^[\s\*]+|[\s\*]+$/', '', $nombre);
+
+        if ($nombre === '') { $stats['sin_nombre']++; continue; }
+        if (!$tel)          { $stats['sin_tel']++;    continue; }
+
+        $telNorm = Contacto::normalizarTelefono($tel);
+        if (!$telNorm) { $stats['tel_invalido']++; continue; }
+
+        if (isset($vistosTel[$telNorm])) {
+            $stats['tel_duplicado_archivo']++;
+            continue;
+        }
+        $vistosTel[$telNorm] = true;
+
+        if (Contacto::where('telefono', $telNorm)->exists()) {
+            $stats['tel_duplicado_db']++;
+            continue;
+        }
+
+        $importables[] = ['nombre' => $nombre, 'telefono' => $telNorm];
+        $stats['importables']++;
+    }
+
+    // Reporte
+    $this->newLine();
+    $this->info("Archivo: $archivo");
+    $this->line(sprintf("  %-30s %d", 'vCards leídas',            $stats['total']));
+    $this->line(sprintf("  %-30s %d", 'Sin nombre (FN/ORG)',      $stats['sin_nombre']));
+    $this->line(sprintf("  %-30s %d", 'Sin teléfono',             $stats['sin_tel']));
+    $this->line(sprintf("  %-30s %d", 'Tel inválido (no normalizable)', $stats['tel_invalido']));
+    $this->line(sprintf("  %-30s %d", 'Tel duplicado en archivo', $stats['tel_duplicado_archivo']));
+    $this->line(sprintf("  %-30s %d", 'Tel duplicado en DB',      $stats['tel_duplicado_db']));
+    $this->info(sprintf("  %-30s %d", 'IMPORTABLES',              $stats['importables']));
+
+    if (!empty($importables) && $muestra > 0) {
+        $this->newLine();
+        $this->line("Primeros $muestra para revisar:");
+        $this->table(['Nombre', 'Teléfono'], array_slice($importables, 0, $muestra));
+    }
+
+    if (!$apply) {
+        $this->newLine();
+        $this->warn('DRY-RUN — nada se insertó. Pasá --apply para ejecutar.');
+        return 0;
+    }
+
+    if (empty($importables)) {
+        $this->info('Nada por importar.');
+        return 0;
+    }
+
+    $now = now();
+    $rows = array_map(fn($r) => $r + ['created_at' => $now, 'updated_at' => $now], $importables);
+
+    // Inserto en chunks de 500 para no pegarle a max_allowed_packet
+    $insertados = 0;
+    foreach (array_chunk($rows, 500) as $chunk) {
+        \App\Models\Contacto::insert($chunk);
+        $insertados += count($chunk);
+    }
+
+    $this->info("Insertados: $insertados");
+    return 0;
+})->purpose('Importa contactos desde un .vcf (vCard) con dry-run por default; pasá --apply para ejecutar');
+
+/**
  * Audita contactos sin wa_id resuelto agrupándolos por motivo.
  *   sin_telefono     → telefono vacío en BD
  *   formato_invalido → digitos no normalizables (fijo, número corto, internacional raro)
