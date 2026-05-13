@@ -98,36 +98,97 @@ function parsearRespuesta(contenido) {
 }
 
 /**
+ * Quita emojis y símbolos no-letra del texto antes de pasarlo al LLM.
+ * Razón: qwen3:4b asocia emojis con contextos multilingues y hace drift
+ * de idioma (sobre todo a portugués) cuando el input los contiene en abundancia.
+ * Los emojis no aportan al "motivo de consulta" del paciente.
+ */
+function stripEmojis(texto) {
+  // Strip de bloques Unicode emoji/símbolos típicos sin tocar letras acentuadas.
+  return texto
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+/**
+ * Detecta si el texto está (parcial o totalmente) en portugués.
+ * Heurística simple — qwen3:4b a veces droppea a portugués; usamos esto para
+ * descartar el resumen y dejar que se regenere más tarde (resumen_intento_at
+ * marca el throttle de 10 min en Laravel).
+ */
+function pareceEnPortugues(texto) {
+  const t = texto.toLowerCase();
+  // Marcadores fuertes: caracteres ç ã õ son inusuales en castellano
+  if (/[ãõç]/i.test(texto)) return true;
+  // Sufijos ortográficos portugueses típicos
+  if (/\b\w+ção\b|\b\w+ções\b|\b\w+ões\b/.test(t)) return true;
+  // Palabras funcionales portuguesas frecuentes
+  const palabras = [' não ', ' você ', ' está ', ' obrigad', ' uma ', ' já ', ' são ', ' foi ', ' este ', ' essa '];
+  let hits = 0;
+  for (const p of palabras) if (t.includes(p)) hits++;
+  return hits >= 2;
+}
+
+/**
  * Genera un resumen breve (1-2 frases) del intercambio paciente↔bot.
  * Usado para que la secretaria sepa de qué viene la conversación sin leerla entera.
  * Usa el mismo Ollama pero con prompt distinto al clasificador. Texto plano, no JSON.
  */
+const SYSTEM_PROMPT_RESUMEN = `Sos asistente de la secretaria de Crecer Reproducción Humana. Tu tarea es resumir conversaciones de pacientes.
+
+REGLAS ESTRICTAS:
+1. Respondé SIEMPRE en castellano rioplatense (Argentina). NUNCA uses portugués, inglés u otro idioma — aunque el paciente haya escrito en otro idioma, vos resumís en castellano.
+2. Devolvé SOLO una oración breve (máx 30 palabras) con el motivo de la consulta y datos útiles (fecha, profesional, estudio, urgencia).
+3. NUNCA expliques tu razonamiento. NUNCA uses "Okay", "Let's", "The user", "Aqui". Empezá directo con el resumen.
+4. NO uses comillas, markdown, encabezados, emojis ni saltos de línea.`;
+
 async function generarResumen(texto) {
-  const prompt = `Sos asistente de la secretaria de Crecer Reproducción.
-Resumí esta conversación en una sola oración breve en español rioplatense, indicando el motivo principal de la consulta y cualquier dato útil (fecha, profesional, estudio, urgencia).
-NO uses comillas ni markdown. NO uses encabezados. Solo la oración.
-
-Conversación:
-${texto.slice(0, 4000)}
-
-Resumen:`;
+  const textoLimpio = stripEmojis(texto).slice(0, 4000);
 
   try {
     const response = await axios.post(
-      `${OLLAMA_URL}/api/generate`,
+      `${OLLAMA_URL}/api/chat`,
       {
-        model:  OLLAMA_MODEL,
-        prompt: prompt,
-        stream: false,
-        think:  false,
-        options: { temperature: 0.2, num_predict: 120 },
+        model:   OLLAMA_MODEL,
+        stream:  false,
+        think:   false,
+        format:  'json',   // fuerza JSON puro, igual que el clasificador → corta el "thinking out loud" de qwen3
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT_RESUMEN + '\n\nFormato de respuesta (JSON estricto):\n{"resumen": "oración en castellano rioplatense"}' },
+          { role: 'user',   content: `/no_think\nConversación:\n${textoLimpio}` },
+        ],
+        options: { temperature: 0.2, num_predict: 200 },
       },
       { timeout: 60_000 }
     );
-    let resumen = (response.data?.response || '').trim();
-    // Limpieza: sacar comillas, markdown leve
-    resumen = resumen.replace(/^["'`*_]+|["'`*_]+$/g, '').trim();
-    if (!resumen || resumen.length < 5) return null;
+
+    const raw = response.data?.message?.content || '';
+    let resumen = null;
+    try {
+      const parsed = JSON.parse(raw);
+      resumen = (parsed.resumen || '').trim();
+    } catch (_) {
+      // Fallback: intentar extraer { ... } del texto
+      const m = raw.match(/\{[^{}]*"resumen"[^{}]*\}/);
+      if (m) {
+        try { resumen = (JSON.parse(m[0]).resumen || '').trim(); } catch (_) {}
+      }
+    }
+    if (!resumen) return null;
+
+    // Limpieza: comillas, markdown, emojis residuales
+    resumen = resumen.replace(/^["'`*_\-]+|["'`*_\-]+$/g, '').trim();
+    resumen = stripEmojis(resumen).trim();
+    if (resumen.length < 5) return null;
+
+    // Guard contra drift de idioma: si salió en portugués (entero o mixto),
+    // devolvemos null para que el throttle de 10min de Laravel reintente.
+    if (pareceEnPortugues(resumen)) {
+      console.warn('[ollama] Resumen descartado por idioma (portugués):', resumen.slice(0, 100));
+      return null;
+    }
+
     if (resumen.length > 280) resumen = resumen.slice(0, 280) + '…';
     return resumen;
   } catch (err) {
