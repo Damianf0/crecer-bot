@@ -348,6 +348,40 @@ audio { height: 32px; width: 210px; display: block; }
     cursor: pointer;
 }
 .mode-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+
+/* Dropdown de respuestas rápidas */
+.rr-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 260px;
+    max-width: 380px;
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    z-index: 50;
+    padding: 4px 0;
+}
+.rr-menu-item {
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text);
+    transition: background .12s;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+.rr-menu-item:last-child { border-bottom: none; }
+.rr-menu-item:hover { background: var(--bg); }
+.rr-menu-item .rr-titulo  { font-weight: 600; }
+.rr-menu-item .rr-preview { font-size: 11px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rr-menu-empty { padding: 14px; font-size: 12px; color: var(--muted); text-align: center; }
+.rr-menu-foot  { padding: 6px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
+.rr-menu-foot a { color: var(--info); text-decoration: none; }
+.rr-menu-foot a:hover { text-decoration: underline; }
+
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
 .msg-textarea {
     flex: 1;
@@ -575,6 +609,19 @@ html.dark .toast.error { background: rgba(248,81,73,.15); border-color: rgba(248
 <script>
 const CSRF   = '{{ csrf_token() }}';
 const ME_ID  = {{ auth()->id() }};
+const AREA   = @json($area ?? 'atencion');
+
+// Respuestas rápidas del área (cacheadas en JS; se cargan al inicio).
+let RESPUESTAS_RAPIDAS = [];
+async function cargarRespuestasRapidas() {
+    try {
+        const r = await fetch('/atencion/respuestas-rapidas/' + AREA, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!r.ok) return;
+        const d = await r.json();
+        RESPUESTAS_RAPIDAS = d.data || [];
+    } catch {}
+}
+cargarRespuestasRapidas();
 const ME_NAME= '{{ addslashes(auth()->user()->nombre_completo) }}';
 const USUARIOS = @json($usuarios);
 
@@ -1155,11 +1202,15 @@ async function cargarConversacion(id) {
                 <span class="file-preview-name" id="file-preview-name"></span>
                 <button class="file-preview-clear" onclick="limpiarArchivo()">✕</button>
             </div>
-            <div class="input-modes">
+            <div class="input-modes" style="position:relative;">
                 <button class="mode-btn ${state.panelModo === 'mensaje' ? 'active' : ''}" onclick="setModo('mensaje')">Mensaje</button>
                 <button class="mode-btn ${state.panelModo === 'nota' ? 'active' : ''}" onclick="setModo('nota')">Nota interna</button>
-                ${state.panelModo !== 'nota' ? `<button class="mode-btn" onclick="document.getElementById('file-input').click()" style="margin-left:auto;">📎 Adjuntar archivo</button>
+                ${state.panelModo !== 'nota' ? `<div style="margin-left:auto;display:flex;gap:6px;align-items:center;position:relative;">
+                    <button class="mode-btn" id="btn-rr" onclick="rrToggle(event)" title="Respuestas rápidas">📋 Respuestas ▾</button>
+                    <button class="mode-btn" onclick="document.getElementById('file-input').click()">📎 Adjuntar archivo</button>
+                </div>
                 <input type="file" id="file-input" style="display:none" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="onFileChange(event)">` : ''}
+                <div id="rr-menu" class="rr-menu" style="display:none;"></div>
             </div>
             <div class="input-row">
                 <textarea class="msg-textarea" id="msg-input"
@@ -1964,6 +2015,49 @@ async function refrescarConvAbierta() {
     if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
 }
 setInterval(refrescarConvAbierta, 8000);
+
+// ── Respuestas rápidas — dropdown 📋 ─────────────────────────────
+function rrToggle(ev) {
+    if (ev) ev.stopPropagation();
+    const menu = document.getElementById('rr-menu');
+    if (!menu) return;
+    if (menu.style.display === 'block') { menu.style.display = 'none'; return; }
+    rrRender();
+    menu.style.display = 'block';
+    setTimeout(() => document.addEventListener('click', rrCerrarFuera, { once: true }), 0);
+}
+function rrCerrarFuera(e) {
+    const menu = document.getElementById('rr-menu');
+    if (!menu) return;
+    if (!menu.contains(e.target) && e.target.id !== 'btn-rr') menu.style.display = 'none';
+    else setTimeout(() => document.addEventListener('click', rrCerrarFuera, { once: true }), 0);
+}
+function rrRender() {
+    const menu = document.getElementById('rr-menu');
+    if (!menu) return;
+    if (!RESPUESTAS_RAPIDAS.length) {
+        menu.innerHTML = `<div class="rr-menu-empty">Sin respuestas rápidas para esta área.</div>
+            <div class="rr-menu-foot"><a href="/admin/respuestas-rapidas" target="_blank">+ Agregar</a></div>`;
+        return;
+    }
+    menu.innerHTML = RESPUESTAS_RAPIDAS.map(r =>
+        `<div class="rr-menu-item" onclick="rrInsertar(${r.id})">
+            <div class="rr-titulo">${esc(r.titulo)}</div>
+            <div class="rr-preview">${esc(r.texto.slice(0, 80))}</div>
+        </div>`
+    ).join('')
+    + `<div class="rr-menu-foot"><a href="/admin/respuestas-rapidas" target="_blank">Administrar respuestas</a></div>`;
+}
+function rrInsertar(id) {
+    const r = RESPUESTAS_RAPIDAS.find(x => x.id === id);
+    if (!r) return;
+    const inp = document.getElementById('msg-input');
+    if (!inp) return;
+    inp.value = r.texto;   // reemplaza el texto actual; el operador puede editar antes de enviar
+    inp.focus();
+    inp.dispatchEvent(new Event('input'));
+    document.getElementById('rr-menu').style.display = 'none';
+}
 
 // Auto-abrir conversación si viene ?conv_id=N en la URL (deep-link desde Contactos)
 (function() {

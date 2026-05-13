@@ -111,6 +111,32 @@
 .panel-input { border-top: 1px solid var(--border); padding: 10px 0 0; flex-shrink: 0; }
 .mode-btn { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
 .mode-btn.active { border-color: var(--accent); background: rgba(192,39,58,.1); color: var(--accent); }
+
+/* Dropdown de respuestas rápidas */
+.rr-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 260px;
+    max-width: 380px;
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    z-index: 50;
+    padding: 4px 0;
+}
+.rr-menu-item { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--text); transition: background .12s; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+.rr-menu-item:last-child { border-bottom: none; }
+.rr-menu-item:hover { background: var(--bg); }
+.rr-menu-item .rr-titulo  { font-weight: 600; }
+.rr-menu-item .rr-preview { font-size: 11px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rr-menu-empty { padding: 14px; font-size: 12px; color: var(--muted); text-align: center; }
+.rr-menu-foot  { padding: 6px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
+.rr-menu-foot a { color: var(--info); text-decoration: none; }
+.rr-menu-foot a:hover { text-decoration: underline; }
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
 .msg-textarea { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; color: var(--text); font-size: 13px; resize: none; min-height: 50px; font-family: inherit; }
 .msg-textarea:focus { outline: none; border-color: var(--info); }
@@ -157,11 +183,26 @@ const ME_ID    = {{ auth()->id() }};
 const USUARIOS = @json($usuarios);
 
 let state = {
-    items:   @json($items),
-    panelId: null,
-    modo:    'mensaje',
-    segOpen: true,
+    items:    @json($items),
+    panelId:  null,
+    panelArea: null,    // área de la conv abierta — usada por el dropdown 📋
+    modo:     'mensaje',
+    segOpen:  true,
 };
+
+// Cache por área para no traer la misma lista varias veces.
+const RR_CACHE = {};
+async function cargarRespuestasRapidas(area) {
+    if (!area) return [];
+    if (RR_CACHE[area]) return RR_CACHE[area];
+    try {
+        const r = await fetch('/atencion/respuestas-rapidas/' + area, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!r.ok) return [];
+        const d = await r.json();
+        RR_CACHE[area] = d.data || [];
+        return RR_CACHE[area];
+    } catch { return []; }
+}
 
 // ── API ──────────────────────────────────────────────────────────
 async function api(method, url, body) {
@@ -235,6 +276,10 @@ function renderLista() {
 // ── Panel ────────────────────────────────────────────────────────
 async function verItem(id) {
     state.panelId = id;
+    const item = state.items.find(i => i.id === id);
+    state.panelArea = item?.area || null;
+    // Prefetch las respuestas del área para que el dropdown abra al instante
+    if (state.panelArea) cargarRespuestasRapidas(state.panelArea);
     renderLista();
     document.getElementById('panel-empty').style.display = 'none';
     const panelConv = document.getElementById('panel-conv');
@@ -301,14 +346,16 @@ async function cargarConversacion(id) {
         <div class="msg-list" id="msg-list">${msgHtml || '<div style="text-align:center;color:var(--muted);padding:32px;font-size:13px;">Sin mensajes aún</div>'}</div>
         ${segHtml}
         <div class="panel-input">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;position:relative;">
                 <div style="display:flex;gap:6px;">
                     <button class="mode-btn ${state.modo==='mensaje'?'active':''}" onclick="setModo('mensaje')">Mensaje</button>
                     <button class="mode-btn ${state.modo==='nota'?'active':''}" onclick="setModo('nota')">Nota interna</button>
                 </div>
-                <div>
-                    <button id="btn-adjuntar" onclick="document.getElementById('mc-file-input').click()" style="font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;${state.modo==='nota'?'display:none':''}">📎 Adjuntar</button>
+                <div style="display:flex;gap:6px;align-items:center;position:relative;${state.modo==='nota'?'display:none':''}">
+                    <button id="btn-rr" onclick="rrToggle(event)" title="Respuestas rápidas" style="font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;">📋 Respuestas ▾</button>
+                    <button id="btn-adjuntar" onclick="document.getElementById('mc-file-input').click()" style="font-size:12px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;">📎 Adjuntar</button>
                     <input type="file" id="mc-file-input" style="display:none" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="onFileChange(event)">
+                    <div id="rr-menu" class="rr-menu" style="display:none;"></div>
                 </div>
             </div>
             <div id="mc-file-preview" style="display:none;align-items:center;gap:8px;padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12px;">
@@ -527,6 +574,50 @@ async function refrescarConvAbierta() {
     if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
 }
 setInterval(refrescarConvAbierta, 8000);
+
+// ── Respuestas rápidas — dropdown 📋 ─────────────────────────────
+async function rrToggle(ev) {
+    if (ev) ev.stopPropagation();
+    const menu = document.getElementById('rr-menu');
+    if (!menu) return;
+    if (menu.style.display === 'block') { menu.style.display = 'none'; return; }
+    await rrRender();
+    menu.style.display = 'block';
+    setTimeout(() => document.addEventListener('click', rrCerrarFuera, { once: true }), 0);
+}
+function rrCerrarFuera(e) {
+    const menu = document.getElementById('rr-menu');
+    if (!menu) return;
+    if (!menu.contains(e.target) && e.target.id !== 'btn-rr') menu.style.display = 'none';
+    else setTimeout(() => document.addEventListener('click', rrCerrarFuera, { once: true }), 0);
+}
+async function rrRender() {
+    const menu = document.getElementById('rr-menu');
+    if (!menu) return;
+    const items = await cargarRespuestasRapidas(state.panelArea);
+    if (!items.length) {
+        menu.innerHTML = `<div class="rr-menu-empty">Sin respuestas rápidas para esta área.</div>
+            <div class="rr-menu-foot"><a href="/admin/respuestas-rapidas" target="_blank">+ Agregar</a></div>`;
+        return;
+    }
+    menu.innerHTML = items.map(r =>
+        `<div class="rr-menu-item" onclick="rrInsertar(${r.id})">
+            <div class="rr-titulo">${esc(r.titulo)}</div>
+            <div class="rr-preview">${esc(r.texto.slice(0, 80))}</div>
+        </div>`
+    ).join('')
+    + `<div class="rr-menu-foot"><a href="/admin/respuestas-rapidas" target="_blank">Administrar respuestas</a></div>`;
+}
+function rrInsertar(id) {
+    const items = RR_CACHE[state.panelArea] || [];
+    const r = items.find(x => x.id === id);
+    if (!r) return;
+    const inp = document.getElementById('msg-input');
+    if (!inp) return;
+    inp.value = r.texto;
+    inp.focus();
+    document.getElementById('rr-menu').style.display = 'none';
+}
 
 // Deep-link: /mis-conversaciones?conv_id=N abre la conversación
 (function() {

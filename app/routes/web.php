@@ -126,6 +126,10 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/centro-tareas',              [AtencionController::class, 'centroTareas']);
         Route::get('/centro-tareas/derivaciones', [AtencionController::class, 'centroTareasDerivaciones']);
 
+        // Respuestas rápidas (plantillas) del área — alimenta el dropdown 📋 en la conv.
+        Route::get('/atencion/respuestas-rapidas/{area}', [AtencionController::class, 'respuestasRapidas'])
+            ->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+
         // Redirects legacy de /mis-tareas (mantienen bookmarks viejos vivos).
         // El deep-link ?tarea_id=N va al centro de tareas; el resto, a mis conversaciones.
         Route::get('/mis-tareas', function (Request $request) {
@@ -199,6 +203,12 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/usuarios/data',            [AdminController::class, 'usuariosData']);
         Route::post('/usuarios/save',           [AdminController::class, 'usuariosSave']);
         Route::post('/usuarios/{id}/save',      [AdminController::class, 'usuariosSave']);
+
+        Route::get('/respuestas-rapidas',           [AdminController::class, 'respuestasRapidas']);
+        Route::get('/respuestas-rapidas/data',      [AdminController::class, 'respuestasRapidasData']);
+        Route::post('/respuestas-rapidas',          [AdminController::class, 'respuestasRapidasSave']);
+        Route::post('/respuestas-rapidas/{id}',     [AdminController::class, 'respuestasRapidasSave']);
+        Route::delete('/respuestas-rapidas/{id}',   [AdminController::class, 'respuestasRapidasDelete']);
 
         Route::get('/estadisticas',              [EstadisticasController::class, 'index']);
         Route::get('/estadisticas/hoy',          [EstadisticasController::class, 'hoy']);

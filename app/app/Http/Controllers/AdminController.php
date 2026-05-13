@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ConversacionWA;
+use App\Models\RespuestaRapida;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class AdminController extends Controller
@@ -524,5 +527,49 @@ class AdminController extends Controller
         } catch (\Exception $e) {
             return response()->json(['ok' => false, 'error' => 'Broker no responde: ' . $e->getMessage()], 502);
         }
+    }
+
+    // ── Respuestas rápidas (por área) ────────────────────────────────
+
+    public function respuestasRapidas()
+    {
+        $areas = ConversacionWA::AREAS;
+        return view('admin.respuestas-rapidas', compact('areas'));
+    }
+
+    public function respuestasRapidasData(): JsonResponse
+    {
+        $data = RespuestaRapida::ordenadas()->get(['id', 'area', 'titulo', 'texto', 'orden']);
+        return response()->json(['ok' => true, 'data' => $data]);
+    }
+
+    public function respuestasRapidasSave(Request $request, ?int $id = null): JsonResponse
+    {
+        $data = $request->validate([
+            'area'   => 'required|in:' . implode(',', array_keys(ConversacionWA::AREAS)),
+            'titulo' => 'required|string|max:80',
+            'texto'  => 'required|string|max:4000',
+            'orden'  => 'nullable|integer',
+        ]);
+        $data['orden'] = $data['orden'] ?? 0;
+
+        if ($id) {
+            $r = RespuestaRapida::findOrFail($id);
+            $r->update($data);
+        } else {
+            $r = RespuestaRapida::create($data);
+        }
+
+        Cache::forget('respuestas_rapidas.' . $data['area']);
+        return response()->json(['ok' => true, 'data' => $r]);
+    }
+
+    public function respuestasRapidasDelete(int $id): JsonResponse
+    {
+        $r = RespuestaRapida::findOrFail($id);
+        $area = $r->area;
+        $r->delete();
+        Cache::forget('respuestas_rapidas.' . $area);
+        return response()->json(['ok' => true]);
     }
 }

@@ -6,11 +6,13 @@ use App\Models\ConversacionEvento;
 use App\Models\ConversacionWA;
 use App\Models\Derivacion;
 use App\Models\MensajeWA;
+use App\Models\RespuestaRapida;
 use App\Models\Tarea;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -433,6 +435,23 @@ class AtencionController extends Controller
             ->map(fn($c) => ['id' => $c->id, 'label' => $c->nombreOTelefono . ' — ' . $c->telefono]);
 
         return view('atencion.centro-tareas', compact('usuarios', 'conversaciones'));
+    }
+
+    /**
+     * GET /atencion/respuestas-rapidas/{area} — lista de plantillas para el área.
+     * Cacheado 5 minutos; el admin invalida al guardar/borrar.
+     */
+    public function respuestasRapidas(string $area): JsonResponse
+    {
+        if (!array_key_exists($area, ConversacionWA::AREAS)) {
+            return response()->json(['ok' => false, 'error' => 'área inválida'], 400);
+        }
+        $data = Cache::remember(
+            'respuestas_rapidas.' . $area,
+            300,
+            fn() => RespuestaRapida::area($area)->ordenadas()->get(['id', 'titulo', 'texto'])
+        );
+        return response()->json(['ok' => true, 'data' => $data]);
     }
 
     public function centroTareasDerivaciones(): JsonResponse
@@ -1032,6 +1051,7 @@ class AtencionController extends Controller
         return [
             'id'          => $c->id,
             'tipo'        => 'wa',
+            'area'        => $c->area,
             'contacto'    => $c->nombreOTelefono,
             'contacto_id' => $hit['id'] ?? null,
             'telefono'    => $c->telefono,
