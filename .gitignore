@@ -26,6 +26,9 @@ app/bootstrap/cache/*.php
 # ── Backups y datos del cliente ──────────────────────────────────
 backups/
 contactos.csv
+Contactos/
+contactos/
+*.vcf
 *.sql
 *.sql.gz
 *.tar.gz
