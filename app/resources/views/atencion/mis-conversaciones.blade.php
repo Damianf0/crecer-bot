@@ -513,6 +513,21 @@ renderLista();
 setTimeout(fetchConversaciones, 5000);
 setInterval(fetchConversaciones, 10000);
 
+// Auto-refresh del hilo abierto en el panel (cada 8s si pestaña visible).
+// Sin esto, los mensajes entrantes a una conv abierta no aparecen hasta que
+// el operador haga algo manual.
+async function refrescarConvAbierta() {
+    if (document.hidden || !state.panelId) return;
+    const list = document.getElementById('msg-list');
+    const estabaAlFondo = list
+        ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
+        : true;
+    try { await cargarConversacion(state.panelId); } catch (e) { return; }
+    const listNew = document.getElementById('msg-list');
+    if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
+}
+setInterval(refrescarConvAbierta, 8000);
+
 // Deep-link: /mis-conversaciones?conv_id=N abre la conversación
 (function() {
     const m = window.location.search.match(/[?&]conv_id=(\d+)/);

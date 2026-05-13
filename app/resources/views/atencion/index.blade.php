@@ -1941,6 +1941,30 @@ renderColumnas();
 setTimeout(fetchItems, 2000);          // primer refresh a los 2s
 setInterval(fetchItems, 8000);
 
+// Auto-refresh de la conversación abierta en el panel: sin esto el hilo
+// queda congelado hasta que el operador haga algo (enviar, cerrar/reabrir).
+// Pollea cada 8s solo si hay panel abierto y la pestaña está visible.
+// Antes de re-render guarda si el usuario estaba al fondo del scroll, para
+// no romperle la lectura si está mirando un mensaje anterior.
+async function refrescarConvAbierta() {
+    if (document.hidden) return;
+    if (!state.panelId || !state.panelTipo) return;
+    if (state.panelTipo !== 'wa') return;   // las derivaciones del bot no tienen polling útil
+
+    const list = document.getElementById('msg-list');
+    const estabaAlFondo = list
+        ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
+        : true;
+
+    try {
+        await cargarConversacion(state.panelId);
+    } catch (e) { return; }
+
+    const listNew = document.getElementById('msg-list');
+    if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
+}
+setInterval(refrescarConvAbierta, 8000);
+
 // Auto-abrir conversación si viene ?conv_id=N en la URL (deep-link desde Contactos)
 (function() {
     const m = window.location.search.match(/[?&]conv_id=(\d+)/);
