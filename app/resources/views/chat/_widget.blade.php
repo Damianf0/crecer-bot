@@ -6,7 +6,7 @@
 @auth
 <style>
 .chat-fab {
-    position: fixed; right: 20px; bottom: 20px; z-index: 9990;
+    position: fixed; right: 20px; bottom: 110px; z-index: 9990;
     width: 56px; height: 56px; border-radius: 50%;
     background: var(--accent); color: #fff;
     border: none; cursor: pointer;
@@ -26,9 +26,9 @@
 }
 
 .chat-panel {
-    position: fixed; right: 20px; bottom: 90px; z-index: 9991;
+    position: fixed; right: 20px; bottom: 180px; z-index: 9991;
     width: min(640px, calc(100vw - 40px));
-    height: min(560px, calc(100vh - 130px));
+    height: min(560px, calc(100vh - 220px));
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
