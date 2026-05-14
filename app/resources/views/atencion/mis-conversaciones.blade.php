@@ -565,11 +565,24 @@ setInterval(fetchConversaciones, 10000);
 // el operador haga algo manual.
 async function refrescarConvAbierta() {
     if (document.hidden || !state.panelId) return;
+
+    // Si el usuario está escribiendo en el textarea, abortar — sino se le
+    // borra lo que está tipeando cuando recargamos el panel (bug 14/05).
+    const inpActual = document.getElementById('msg-input');
+    const tieneFoco = inpActual && document.activeElement === inpActual;
+    const textoActual = inpActual?.value ?? '';
+    if (tieneFoco && textoActual.length > 0) return;
+
     const list = document.getElementById('msg-list');
     const estabaAlFondo = list
         ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
         : true;
     try { await cargarConversacion(state.panelId); } catch (e) { return; }
+
+    // Defensa adicional: si alcanzó a tipear algo durante el fetch, restaurarlo.
+    const inpNuevo = document.getElementById('msg-input');
+    if (inpNuevo && textoActual && !inpNuevo.value) inpNuevo.value = textoActual;
+
     const listNew = document.getElementById('msg-list');
     if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
 }

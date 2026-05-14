@@ -2002,6 +2002,13 @@ async function refrescarConvAbierta() {
     if (!state.panelId || !state.panelTipo) return;
     if (state.panelTipo !== 'wa') return;   // las derivaciones del bot no tienen polling útil
 
+    // Si el usuario está escribiendo en el textarea, abortar — sino se le borra
+    // lo que está tipeando cuando recargamos el panel (bug 14/05).
+    const inpActual = document.getElementById('msg-input');
+    const tieneFoco = inpActual && document.activeElement === inpActual;
+    const textoActual = inpActual?.value ?? '';
+    if (tieneFoco && textoActual.length > 0) return;
+
     const list = document.getElementById('msg-list');
     const estabaAlFondo = list
         ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
@@ -2010,6 +2017,11 @@ async function refrescarConvAbierta() {
     try {
         await cargarConversacion(state.panelId);
     } catch (e) { return; }
+
+    // Restaurar lo que el operador hubiera tipeado mientras esperábamos la
+    // respuesta del fetch (defensa adicional aunque ya cortamos arriba).
+    const inpNuevo = document.getElementById('msg-input');
+    if (inpNuevo && textoActual && !inpNuevo.value) inpNuevo.value = textoActual;
 
     const listNew = document.getElementById('msg-list');
     if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
