@@ -161,7 +161,7 @@
                     ->selectRaw('area, count(*) as n')->groupBy('area')->pluck('n','area')->toArray(),
             ]
         );
-        $menuAreaLabels = ['atencion' => 'Tel Secretarias', 'administracion' => 'Tel Administración', 'ovodonacion' => 'Tel Ovodonación'];
+        $menuAreaLabels = ['atencion' => 'Tel Secretarias', 'administracion' => 'Tel Admin', 'ovodonacion' => 'Tel Ovo'];
     @endphp
     @auth @if(auth()->user()->hasPermiso('medico'))
     <a href="/medico" class="nav-link {{ request()->is('medico*') ? 'active' : '' }}">Mi consultorio</a>
