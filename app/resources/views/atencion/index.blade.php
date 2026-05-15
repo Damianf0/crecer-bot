@@ -1102,6 +1102,8 @@ function renderSeguimiento(eventos) {
         reabierta:   { icon: '🔁', label: (e) => `Reabrió <strong>${esc(e.usuario||'—')}</strong>` },
         urgente_on:  { icon: '⚑',  label: (e) => `Urgente: <strong>${esc(e.usuario||'—')}</strong>` },
         urgente_off: { icon: '⚐',  label: (e) => `Sin urgencia: <strong>${esc(e.usuario||'—')}</strong>` },
+        reenviada:   { icon: '🔁', label: (e) => `Reenvió y archivó <strong>${esc(e.usuario||'—')}</strong>` },
+        derivada_area: { icon: '↗', label: (e) => `Derivó a otra área <strong>${esc(e.usuario||'—')}</strong>` },
     };
 
     const hayEventos = eventos && eventos.length > 0;
@@ -1135,7 +1137,8 @@ async function cargarConversacion(id) {
         ? `<button class="btn btn-tomar" onclick="tomarYAbrir(${id})">Tomar</button>
            <button class="btn btn-del" id="panel-delegar-btn" onclick="delegarPanel(${id})">Delegar ▾</button>`
         : esMio
-            ? `<button class="btn btn-resolver" onclick="resolverPanel()">✓ Resuelto</button>`
+            ? `<button class="btn" onclick="abrirModalReenvio(${id})" title="Reenviar el hilo a otro contacto y archivar">📤 Reenviar</button>
+               <button class="btn btn-resolver" onclick="resolverPanel()">✓ Resuelto</button>`
             : `<span style="font-size:11px;color:var(--muted);">Con: ${conv.asig_name}</span>`;
 
     // Si la conversación viene de un número que no está en el directorio,
@@ -2155,5 +2158,140 @@ function verAvatarGrande(url) {
      style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9200;align-items:center;justify-content:center;cursor:zoom-out;">
     <img id="avatar-zoom-img" alt="" style="max-width:90vw;max-height:90vh;border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,.5);">
 </div>
+
+{{-- Modal "Reenviar conversación a otro contacto" --}}
+<div id="modal-reenvio" style="display:none;position:fixed;inset:0;z-index:9100;background:rgba(0,0,0,.6);align-items:center;justify-content:center;" onclick="cerrarModalReenvio()">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px;width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 64px);overflow-y:auto;" onclick="event.stopPropagation()">
+        <div style="font-weight:700;font-size:15px;margin-bottom:6px;">📤 Reenviar conversación</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5;">
+            Envía el hilo completo a un contacto y archiva esta conversación. El destinatario recibe el resumen como un mensaje WA común; no entra al sistema.
+        </div>
+
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;">Buscar contacto destino</div>
+        <input type="text" id="rx-buscar" placeholder="Escribí nombre o teléfono…" autocomplete="off"
+            oninput="rxBuscarDebounced()"
+            style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-size:13px;">
+        <div id="rx-resultados" style="margin-top:6px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;background:var(--bg);display:none;"></div>
+
+        <div id="rx-seleccionado" style="margin-top:10px;padding:9px 12px;background:color-mix(in srgb,var(--info) 8%,transparent);border:1px solid color-mix(in srgb,var(--info) 30%,transparent);border-radius:6px;display:none;">
+            <div style="font-size:11px;color:var(--info);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:2px;">Destino</div>
+            <div id="rx-sel-nombre" style="font-weight:600;font-size:13px;"></div>
+            <div id="rx-sel-tel" style="font-size:12px;color:var(--muted);"></div>
+        </div>
+
+        <div style="margin-top:14px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;">
+            Comentario (opcional)
+        </div>
+        <textarea id="rx-comentario" placeholder="Ej: Te paso esto que necesita tu visto bueno"
+            style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 11px;color:var(--text);font-size:13px;resize:vertical;min-height:60px;font-family:inherit;"></textarea>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn" onclick="cerrarModalReenvio()">Cancelar</button>
+            <button class="btn btn-resolver" id="rx-confirmar" onclick="confirmarReenvio()" disabled>Reenviar y archivar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Reenvío de conversación a contacto externo ─────────────────────────
+let _rxConvId = null;
+let _rxContacto = null;
+let _rxBuscarTimer = null;
+
+function abrirModalReenvio(convId) {
+    _rxConvId = convId;
+    _rxContacto = null;
+    document.getElementById('rx-buscar').value = '';
+    document.getElementById('rx-comentario').value = '';
+    document.getElementById('rx-resultados').style.display = 'none';
+    document.getElementById('rx-seleccionado').style.display = 'none';
+    document.getElementById('rx-confirmar').disabled = true;
+    document.getElementById('modal-reenvio').style.display = 'flex';
+    setTimeout(() => document.getElementById('rx-buscar').focus(), 50);
+}
+
+function cerrarModalReenvio() {
+    document.getElementById('modal-reenvio').style.display = 'none';
+}
+
+function rxBuscarDebounced() {
+    clearTimeout(_rxBuscarTimer);
+    _rxBuscarTimer = setTimeout(rxBuscar, 250);
+}
+
+async function rxBuscar() {
+    const q = document.getElementById('rx-buscar').value.trim();
+    const cont = document.getElementById('rx-resultados');
+    if (q.length < 2) { cont.style.display = 'none'; return; }
+    try {
+        const r = await fetch('/atencion/contactos/buscar?q=' + encodeURIComponent(q), {
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const d = await r.json();
+        const items = d.data || [];
+        if (!items.length) {
+            cont.innerHTML = '<div style="padding:10px 14px;font-size:12px;color:var(--muted);">Sin resultados</div>';
+            cont.style.display = 'block';
+            return;
+        }
+        cont.innerHTML = items.map(c => `
+            <div onclick="rxElegir(${c.id}, ${JSON.stringify(c.nombre).replace(/"/g, '&quot;')}, ${JSON.stringify(c.telefono || '').replace(/"/g, '&quot;')}, ${c.es_grupo ? 1 : 0})"
+                 style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px;"
+                 onmouseover="this.style.background='var(--surface)'"
+                 onmouseout="this.style.background='transparent'">
+                <div style="font-weight:600;">${esc(c.nombre)}${c.es_grupo ? ' <span style="font-size:9px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);padding:1px 5px;border-radius:3px;text-transform:uppercase;font-weight:700;">grupo</span>' : ''}</div>
+                <div style="font-size:11px;color:var(--muted);">${esc(c.telefono || c.wa_id || '—')}</div>
+            </div>`).join('');
+        cont.style.display = 'block';
+    } catch {
+        cont.innerHTML = '<div style="padding:10px;color:var(--error);">Error</div>';
+        cont.style.display = 'block';
+    }
+}
+
+function rxElegir(id, nombre, telefono, esGrupo) {
+    _rxContacto = { id, nombre, telefono, es_grupo: !!esGrupo };
+    document.getElementById('rx-resultados').style.display = 'none';
+    document.getElementById('rx-buscar').value = '';
+    const sel = document.getElementById('rx-seleccionado');
+    sel.style.display = 'block';
+    document.getElementById('rx-sel-nombre').textContent = nombre + (esGrupo ? ' (grupo)' : '');
+    document.getElementById('rx-sel-tel').textContent = telefono || '';
+    document.getElementById('rx-confirmar').disabled = false;
+}
+
+async function confirmarReenvio() {
+    if (!_rxConvId || !_rxContacto) return;
+    const btn = document.getElementById('rx-confirmar');
+    btn.disabled = true;
+    btn.textContent = 'Reenviando...';
+    try {
+        const r = await fetch(`/atencion/conversacion/${_rxConvId}/reenviar`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': CSRF,
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+                contacto_id: _rxContacto.id,
+                comentario: document.getElementById('rx-comentario').value.trim() || null,
+            }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        toast(`Reenviado a ${d.destino} ✓`);
+        cerrarModalReenvio();
+        cerrarPanel();
+        await fetchItems();
+    } catch (e) {
+        toast('Error al reenviar: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Reenviar y archivar';
+    }
+}
+</script>
 
 @endsection

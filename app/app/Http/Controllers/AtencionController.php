@@ -438,6 +438,211 @@ class AtencionController extends Controller
     }
 
     /**
+     * GET /atencion/contactos/buscar?q=... — listado liviano para el modal de
+     * reenvío. Devuelve hasta 20 contactos matcheando por nombre o teléfono.
+     * Solo expone los campos necesarios para mostrar/elegir un destino.
+     */
+    public function buscarContactos(Request $request): JsonResponse
+    {
+        $q = trim($request->input('q', ''));
+        $base = \App\Models\Contacto::query();
+
+        if ($q !== '') {
+            $qDigitos = preg_replace('/\D/', '', $q);
+            $base->where(function ($w) use ($q, $qDigitos) {
+                $w->where('nombre', 'like', "%{$q}%")
+                  ->orWhere('wa_id', 'like', "%{$q}%");
+                if ($qDigitos !== '') {
+                    $w->orWhere('telefono', 'like', "%{$qDigitos}%");
+                }
+            });
+        }
+
+        $hits = $base->orderBy('nombre')
+            ->limit(20)
+            ->get(['id', 'nombre', 'telefono', 'wa_id'])
+            ->map(fn($c) => [
+                'id'       => $c->id,
+                'nombre'   => $c->nombre,
+                'telefono' => $c->telefono,
+                'wa_id'    => $c->wa_id,
+                'es_grupo' => $c->wa_id && str_ends_with($c->wa_id, '@g.us'),
+            ]);
+
+        return response()->json(['ok' => true, 'data' => $hits]);
+    }
+
+    /**
+     * POST /atencion/conversacion/{id}/reenviar — reenvía el hilo completo a un
+     * contacto de la agenda y archiva la conversación original.
+     *
+     * Body: { contacto_id: int, comentario?: string }
+     *
+     * Bot emisor: el del área de la conv original (si la conv estaba en
+     * 'administracion', manda el bot de administracion, etc).
+     *
+     * Auditoría: inserta una nota_interna en el hilo original con el detalle
+     * (queda visible en el panel si alguien reabre) + evento `reenviada` en la
+     * timeline. Solo archiva si TODOS los chunks del mensaje se mandaron OK.
+     */
+    public function reenviarExterno(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate([
+            'contacto_id' => 'required|integer|exists:contactos,id',
+            'comentario'  => 'nullable|string|max:1000',
+        ]);
+
+        $conv = ConversacionWA::findOrFail($id);
+        $area = $conv->area;
+        $destinoModel = \App\Models\Contacto::findOrFail($data['contacto_id']);
+
+        // Resolver el JID destino: si el contacto es grupo, usar wa_id directo;
+        // si tiene wa_id personal cacheado, usar ese; si solo hay teléfono,
+        // normalizar y armar el JID `<numero>@c.us`.
+        $destinoJid = null;
+        $waId = $destinoModel->wa_id ?? '';
+        if ($waId) {
+            $destinoJid = $waId;
+        } elseif ($destinoModel->telefono) {
+            $telNorm = \App\Models\Contacto::normalizarTelefono($destinoModel->telefono);
+            if ($telNorm) $destinoJid = $telNorm . '@c.us';
+        }
+        if (!$destinoJid) {
+            return response()->json(['ok' => false, 'error' => 'El contacto destino no tiene teléfono ni wa_id válido.'], 422);
+        }
+
+        // Verificar bot del área antes de cargar el hilo
+        $botUrl    = ConversacionWA::botUrlPara($area);
+        $botTok    = config('app.bot_ingress_token');
+        $areaLabel = ConversacionWA::AREAS[$area] ?? $area;
+        try {
+            $st = Http::timeout(6)->get("{$botUrl}/status");
+            if (!$st->ok() || $st->json('status') !== 'listo') {
+                return response()->json(['ok' => false, 'error' => "El bot de {$areaLabel} no está listo. Reintentá en unos segundos."], 503);
+            }
+        } catch (\Throwable) {
+            return response()->json(['ok' => false, 'error' => "El bot de {$areaLabel} no responde."], 502);
+        }
+
+        // Cargar mensajes del hilo (en orden cronológico, todos)
+        $mensajes = MensajeWA::where('conversacion_id', $conv->id)
+            ->orderBy('created_at')
+            ->get(['direccion', 'tipo', 'contenido', 'usuario_id', 'created_at']);
+
+        $contactoNombre = $conv->nombreOTelefono ?: $conv->telefono;
+        $operador       = Auth::user()->nombre_completo ?? '—';
+        $comentario     = trim($data['comentario'] ?? '');
+
+        // Cuerpo del mensaje a reenviar
+        $lineas = [];
+        $lineas[] = "📋 Reenvío de conversación";
+        $lineas[] = "Paciente: {$contactoNombre}" . ($conv->telefono ? " ({$conv->telefono})" : '');
+        $lineas[] = "Atendida por: {$operador}";
+        $lineas[] = '';
+        if ($comentario) {
+            $lineas[] = $comentario;
+            $lineas[] = '';
+        }
+        $lineas[] = '─── HILO ───';
+
+        // Cache nombres de usuarios usados en los salientes (evita N+1)
+        $userIds = $mensajes->pluck('usuario_id')->filter()->unique();
+        $userNames = User::whereIn('id', $userIds)->pluck('nombre_completo', 'id');
+
+        foreach ($mensajes as $m) {
+            $hora = $m->created_at?->setTimezone('America/Argentina/Buenos_Aires')->format('d/m H:i') ?? '';
+            $autor = match ($m->direccion) {
+                'entrante'     => 'Paciente',
+                'nota_interna' => '📝 Nota',
+                default        => $userNames[$m->usuario_id] ?? 'Operador',
+            };
+            $cuerpo = $m->contenido;
+            if (!$cuerpo) {
+                $cuerpo = match ($m->tipo) {
+                    'audio'     => '[audio]',
+                    'imagen'    => '[imagen]',
+                    'video'     => '[video]',
+                    'documento' => '[documento]',
+                    default     => '[sin texto]',
+                };
+            }
+            $lineas[] = "[{$hora}] {$autor}: {$cuerpo}";
+        }
+
+        $textoCompleto = implode("\n", $lineas);
+
+        // Partir en chunks de hasta 4000 chars respetando saltos de línea
+        $chunks = $this->partirEnChunks($textoCompleto, 4000);
+
+        // Enviar todos los chunks al bot. Si alguno falla, abortar sin archivar.
+        $chunkCount = count($chunks);
+        foreach ($chunks as $i => $chunk) {
+            $sufijo = $chunkCount > 1 ? "  [" . ($i + 1) . "/{$chunkCount}]" : '';
+            $payload = $i === 0 ? $chunk : "[continúa]\n" . $chunk;
+            try {
+                $resp = Http::timeout(20)->withToken($botTok)
+                    ->post("{$botUrl}/enviar", [
+                        'contacto' => $destinoJid,
+                        'texto'    => $payload . $sufijo,
+                    ]);
+                if (!$resp->ok() || $resp->json('ok') !== true) {
+                    return response()->json([
+                        'ok'    => false,
+                        'error' => "Falló el envío al bot (chunk " . ($i + 1) . "/{$chunkCount}). La conversación NO se archivó.",
+                    ], 502);
+                }
+            } catch (\Throwable $e) {
+                return response()->json(['ok' => false, 'error' => 'No se pudo contactar al bot: ' . $e->getMessage()], 502);
+            }
+        }
+
+        // Éxito: nota interna en el hilo + evento + archivar
+        $notaTexto = "🔁 Reenviada a {$destinoModel->nombre}"
+            . ($destinoModel->telefono ? " ({$destinoModel->telefono})" : '')
+            . " por {$operador}"
+            . ($comentario ? " — comentario: {$comentario}" : '');
+
+        MensajeWA::create([
+            'conversacion_id' => $conv->id,
+            'direccion'       => 'nota_interna',
+            'tipo'            => 'texto',
+            'contenido'       => $notaTexto,
+            'usuario_id'      => Auth::id(),
+            'leido'           => true,
+        ]);
+
+        $this->logEvento($conv->id, 'reenviada');
+
+        $conv->update([
+            'estado'     => 'archivada',
+            'asignada_a' => null,
+            'urgente'    => false,
+        ]);
+
+        return response()->json(['ok' => true, 'destino' => $destinoModel->nombre, 'chunks' => $chunkCount]);
+    }
+
+    /**
+     * Parte un texto largo en chunks de hasta $max chars, intentando cortar en
+     * el último '\n' antes del límite para no romper en medio de una línea.
+     */
+    private function partirEnChunks(string $texto, int $max): array
+    {
+        if (mb_strlen($texto) <= $max) return [$texto];
+        $chunks = [];
+        $rest = $texto;
+        while (mb_strlen($rest) > $max) {
+            $slice = mb_substr($rest, 0, $max);
+            $corte = mb_strrpos($slice, "\n");
+            if ($corte === false || $corte < $max * 0.5) $corte = $max;
+            $chunks[] = mb_substr($rest, 0, $corte);
+            $rest = ltrim(mb_substr($rest, $corte), "\n");
+        }
+        if ($rest !== '') $chunks[] = $rest;
+        return $chunks;
+    }
+
+    /**
      * GET /atencion/respuestas-rapidas/{area} — lista de plantillas para el área.
      * Cacheado 5 minutos; el admin invalida al guardar/borrar.
      */
