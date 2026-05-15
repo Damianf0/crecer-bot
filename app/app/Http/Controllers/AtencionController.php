@@ -648,27 +648,45 @@ class AtencionController extends Controller
             return response()->json(['ok' => false, 'error' => 'Indicá teléfono o contacto'], 422);
         }
 
-        // Resolver el teléfono a partir del contacto o del input directo
+        // Resolver el destinatario a partir del contacto agendado o del input directo.
+        // Para GRUPOS de WhatsApp (wa_id termina en @g.us) el flujo es distinto:
+        // no se normaliza como teléfono argentino ni se pasa por /check-numero
+        // (los grupos no tienen "número registrado"), se usa el JID tal cual.
         $contactoModel = null;
+        $telefonoRaw   = '';
+        $esGrupo       = false;
+
         if (!empty($data['contacto_id'])) {
             $contactoModel = \App\Models\Contacto::find($data['contacto_id']);
-            $telefonoRaw   = $contactoModel?->telefono ?? '';
+            $waId = $contactoModel?->wa_id ?? '';
+            if ($contactoModel && str_ends_with($waId, '@g.us')) {
+                $esGrupo    = true;
+                $contactoWA = $waId;
+            } else {
+                $telefonoRaw = $contactoModel?->telefono ?? '';
+            }
         } else {
-            $telefonoRaw = $data['telefono'];
+            $telefonoRaw = $data['telefono'] ?? '';
+            // Soportar pegar el JID del grupo directamente en el campo "teléfono"
+            if (str_ends_with($telefonoRaw, '@g.us')) {
+                $esGrupo    = true;
+                $contactoWA = $telefonoRaw;
+            }
         }
 
-        $telefonoNorm = \App\Models\Contacto::normalizarTelefono($telefonoRaw);
-        if (!$telefonoNorm) {
-            return response()->json(['ok' => false, 'error' => 'Número inválido — debe ser argentino con 10 dígitos (ej: 1123456789 o 549...)'], 422);
-        }
-
-        // Verificar con el bot del área que el número tiene WhatsApp y obtener el ID normalizado.
         $botUrl    = ConversacionWA::botUrlPara($area);
         $botTok    = config('app.bot_ingress_token');
         $areaLabel = ConversacionWA::AREAS[$area] ?? $area;
 
-        // Pre-check: ¿el bot del área tiene WhatsApp conectado? Si no, mensaje claro
-        // ("escaneá el QR") en vez del 502 genérico.
+        if (!$esGrupo) {
+            $telefonoNorm = \App\Models\Contacto::normalizarTelefono($telefonoRaw);
+            if (!$telefonoNorm) {
+                return response()->json(['ok' => false, 'error' => 'Número inválido — debe ser argentino con 10 dígitos (ej: 1123456789 o 549...)'], 422);
+            }
+        }
+
+        // Pre-check: ¿el bot del área tiene WhatsApp conectado? Aplica a ambos
+        // flujos (contactos y grupos) — si el bot está caído, no se puede mandar.
         try {
             $st = Http::timeout(6)->get("{$botUrl}/status");
             $estado = $st->ok() ? $st->json('status') : null;
@@ -682,19 +700,23 @@ class AtencionController extends Controller
             return response()->json(['ok' => false, 'error' => "El bot de {$areaLabel} no responde. Revisá que el contenedor esté corriendo."], 502);
         }
 
-        try {
-            $check = Http::timeout(15)
-                ->withToken($botTok)
-                ->post("{$botUrl}/check-numero", ['numero' => $telefonoNorm]);
-            if (!$check->ok() || !$check->json('ok')) {
-                return response()->json(['ok' => false, 'error' => "No se pudo verificar el número con el bot de {$areaLabel}."], 502);
+        // Solo para destinos personales: verificar que el número exista en WA y
+        // obtener el JID normalizado. Los grupos saltean este paso.
+        if (!$esGrupo) {
+            try {
+                $check = Http::timeout(15)
+                    ->withToken($botTok)
+                    ->post("{$botUrl}/check-numero", ['numero' => $telefonoNorm]);
+                if (!$check->ok() || !$check->json('ok')) {
+                    return response()->json(['ok' => false, 'error' => "No se pudo verificar el número con el bot de {$areaLabel}."], 502);
+                }
+                if (!$check->json('registered')) {
+                    return response()->json(['ok' => false, 'error' => 'Ese número no está registrado en WhatsApp'], 422);
+                }
+                $contactoWA = $check->json('normalizedId');
+            } catch (\Exception) {
+                return response()->json(['ok' => false, 'error' => "No se pudo contactar al bot de {$areaLabel}. Reintentá en unos segundos."], 502);
             }
-            if (!$check->json('registered')) {
-                return response()->json(['ok' => false, 'error' => 'Ese número no está registrado en WhatsApp'], 422);
-            }
-            $contactoWA = $check->json('normalizedId');
-        } catch (\Exception) {
-            return response()->json(['ok' => false, 'error' => "No se pudo contactar al bot de {$areaLabel}. Reintentá en unos segundos."], 502);
         }
 
         // Reusar o crear conversación en el área desde la que se inicia (cada área = su número).
