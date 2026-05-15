@@ -6,9 +6,11 @@ use App\Models\ColaAtencion;
 use App\Models\Medico;
 use App\Models\Tarea;
 use App\Models\User;
+use App\Services\OmniaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class MedicoController extends Controller
@@ -78,6 +80,22 @@ class MedicoController extends Controller
         ];
     }
 
+    /**
+     * Agenda del día del médico desde Omnia.
+     * Si no tiene `omnia_id` configurado, devuelve [].
+     * Si Omnia falla, devuelve [] y loguea (no rompe la pantalla).
+     */
+    private function agendaHoy(Medico $m): array
+    {
+        if (empty($m->omnia_id)) return [];
+        try {
+            return app(OmniaService::class)->turnosDelDiaPorMedico($m->omnia_id);
+        } catch (\Throwable $e) {
+            Log::warning('[MedicoController] agendaHoy fallo', ['msg' => $e->getMessage(), 'medico_id' => $m->id]);
+            return [];
+        }
+    }
+
     // ── Vista ─────────────────────────────────────────────────────────
 
     public function index()
@@ -91,6 +109,7 @@ class MedicoController extends Controller
             'medico'   => $m,
             'enSala'   => $this->pacientesEnSala($m),
             'llamados' => $this->pacientesLlamados($m),
+            'agenda'   => $this->agendaHoy($m),
             'destinatarios' => $this->destinatariosTareas(),
             'tareasDelegadas' => $this->tareasDelegadas(),
         ]);
@@ -146,6 +165,7 @@ class MedicoController extends Controller
             'ok'       => true,
             'en_sala'  => $this->pacientesEnSala($m),
             'llamados' => $this->pacientesLlamados($m),
+            'agenda'   => $this->agendaHoy($m),
             'tareas_delegadas' => $this->tareasDelegadas(),
         ]);
     }

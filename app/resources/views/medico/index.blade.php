@@ -137,6 +137,47 @@
 
 <div class="med-wrap">
     <div>
+        @if(!empty($medico->omnia_id))
+        <div class="med-section">
+            <div class="med-section-title">
+                🗓️ Mi agenda de hoy (Omnia)
+                <span class="med-count" id="cnt-agenda">{{ count($agenda) }}</span>
+                <span style="margin-left:auto;font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;">solo pendientes · actualiza cada 60s</span>
+            </div>
+            <div id="lista-agenda">
+                @if(empty($agenda))
+                    <div class="empty-state">Sin turnos pendientes hoy.</div>
+                @else
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">
+                                <th style="padding:6px 8px;width:60px;">Hora</th>
+                                <th style="padding:6px 8px;">Paciente</th>
+                                <th style="padding:6px 8px;width:100px;">DNI</th>
+                                <th style="padding:6px 8px;">Práctica</th>
+                                <th style="padding:6px 8px;width:90px;">Obra Social</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-agenda">
+                            @foreach($agenda as $t)
+                            <tr style="border-bottom:1px solid var(--border);">
+                                <td style="padding:6px 8px;font-weight:700;">{{ $t['hora'] }}</td>
+                                <td style="padding:6px 8px;">
+                                    {{ $t['paciente'] }}
+                                    @if($t['primera_vez'])<span style="font-size:9px;background:color-mix(in srgb,var(--info) 18%,transparent);color:var(--info);padding:1px 5px;border-radius:3px;margin-left:4px;text-transform:uppercase;font-weight:700;">1ra vez</span>@endif
+                                </td>
+                                <td style="padding:6px 8px;color:var(--muted);">{{ $t['dni'] ?: '—' }}</td>
+                                <td style="padding:6px 8px;">{{ $t['practica'] ?: $t['servicio'] }}</td>
+                                <td style="padding:6px 8px;color:var(--muted);">{{ $t['obra_social'] ?: '—' }}</td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+            </div>
+        </div>
+        @endif
+
         <div class="med-section">
             <div class="med-section-title">
                 🪑 En sala de espera
@@ -316,6 +357,37 @@ async function refrescar() {
     if (!j.ok) return;
     renderListaSala(j.en_sala || []);
     renderListaLlamados(j.llamados || []);
+    renderAgenda(j.agenda || []);
+}
+
+function renderAgenda(items) {
+    const wrap = $('lista-agenda');
+    if (!wrap) return;  // no se mostró la sección (médico sin omnia_id)
+    const cnt = $('cnt-agenda');
+    if (cnt) cnt.textContent = items.length;
+    if (!items.length) {
+        wrap.innerHTML = '<div class="empty-state">Sin turnos pendientes hoy.</div>';
+        return;
+    }
+    const rows = items.map(t => `
+        <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:6px 8px;font-weight:700;">${esc(t.hora)}</td>
+            <td style="padding:6px 8px;">${esc(t.paciente)}${t.primera_vez ? '<span style="font-size:9px;background:color-mix(in srgb,var(--info) 18%,transparent);color:var(--info);padding:1px 5px;border-radius:3px;margin-left:4px;text-transform:uppercase;font-weight:700;">1ra vez</span>' : ''}</td>
+            <td style="padding:6px 8px;color:var(--muted);">${esc(t.dni || '—')}</td>
+            <td style="padding:6px 8px;">${esc(t.practica || t.servicio || '')}</td>
+            <td style="padding:6px 8px;color:var(--muted);">${esc(t.obra_social || '—')}</td>
+        </tr>
+    `).join('');
+    wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);">
+            <th style="padding:6px 8px;width:60px;">Hora</th>
+            <th style="padding:6px 8px;">Paciente</th>
+            <th style="padding:6px 8px;width:100px;">DNI</th>
+            <th style="padding:6px 8px;">Práctica</th>
+            <th style="padding:6px 8px;width:90px;">Obra Social</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
 }
 
 // ── Shortcuts de chat: lista de secretarias con presencia online ────
@@ -430,7 +502,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('tarea-modal').classList.contains('open')) cerrarModalTarea();
 });
 
-// Extender refrescar para incluir tareas
+// Extender refrescar para incluir tareas y agenda Omnia
 const _refrescarOrig = refrescar;
 refrescar = async function() {
     const j = await call('/medico/data');
@@ -438,6 +510,7 @@ refrescar = async function() {
     renderListaSala(j.en_sala || []);
     renderListaLlamados(j.llamados || []);
     renderListaTareas(j.tareas_delegadas || []);
+    renderAgenda(j.agenda || []);
 };
 
 refrescar();

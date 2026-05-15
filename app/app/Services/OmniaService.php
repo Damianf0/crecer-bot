@@ -159,6 +159,91 @@ class OmniaService
     }
 
     /**
+     * Agenda del día de un profesional (filtra en cliente sobre el reporte
+     * ambulatorio del centro, que devuelve TODOS los turnos del rango).
+     *
+     * @param string $nombreOmnia  Nombre tal como aparece en Omnia en el
+     *                              campo `NombreDelProfesional` (sin "Dr."/"Dra.").
+     *                              Ej: "Ignacio Cruz", "Mauro Javier García Aurelio".
+     * @param \Carbon\Carbon|null $dia  Día a consultar (default: hoy en zona AR).
+     * @param bool $soloPendientes  Si true (default), filtra estado=pendiente
+     *                               (descarta cancelados, atendidos, etc.).
+     */
+    public function turnosDelDiaPorMedico(string $nombreOmnia, ?\Carbon\Carbon $dia = null, bool $soloPendientes = true): array
+    {
+        $nombreOmnia = trim($nombreOmnia);
+        if ($nombreOmnia === '') return [];
+
+        $tz   = 'America/Argentina/Buenos_Aires';
+        $dia  = $dia ? $dia->copy()->setTimezone($tz) : now($tz);
+        $start = $dia->copy()->startOfDay()->utc()->timestamp;
+        $end   = $dia->copy()->endOfDay()->utc()->timestamp;
+
+        // Cache por rango (compartido entre médicos del mismo día) — el reporte
+        // devuelve TODO el centro, así que pegar una sola vez por día y filtrar
+        // localmente es mucho más eficiente que un GET por médico.
+        $cacheKey = "omnia_ambulatory_{$start}_{$end}";
+        $reporte  = Cache::remember($cacheKey, 60, function () use ($start, $end) {
+            $url  = $this->externalBase() . '/reports/appointments/ambulatory';
+            $data = $this->get($url, ['start' => $start, 'end' => $end]);
+            return is_array($data) ? $data : [];
+        });
+
+        if (empty($reporte)) return [];
+
+        // Normalización del nombre para match laxo (Omnia puede tener
+        // "García" vs nuestra DB "Garcia" sin tilde, etc.)
+        $norm = fn(string $s) => mb_strtolower(strtr(
+            $s,
+            ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
+             'Á' => 'a', 'É' => 'e', 'Í' => 'i', 'Ó' => 'o', 'Ú' => 'u',
+             'ñ' => 'n', 'Ñ' => 'n']
+        ));
+        $needle = $norm($nombreOmnia);
+
+        $turnos = [];
+        foreach ($reporte as $t) {
+            $nomProf = $t['NombreDelProfesional'] ?? '';
+            if ($norm($nomProf) !== $needle) continue;
+
+            $estado = $t['Estado'] ?? '';
+            if ($soloPendientes && $estado !== 'pendiente') continue;
+
+            // FechaYHora viene como "23/4/2026 11:15" (string, hora local AR)
+            $fh = $t['FechaYHora'] ?? '';
+            $hora = null; $tsOrden = 0;
+            try {
+                $dt = \Carbon\Carbon::createFromFormat('j/n/Y H:i', $fh, $tz);
+                $hora = $dt->format('H:i');
+                $tsOrden = $dt->timestamp;
+            } catch (\Throwable $e) {
+                $hora = $fh ?: '—';
+            }
+
+            $turnos[] = [
+                'id'          => $t['Id'] ?? null,
+                'hora'        => $hora,
+                'paciente'    => trim(($t['Nombre'] ?? '') . ' ' . ($t['ApellidoPaterno'] ?? '')),
+                'dni'         => $t['NúmeroDeDocumento'] ?? null,
+                'practica'    => is_array($t['Prácticas'] ?? null) ? implode(', ', $t['Prácticas']) : ($t['Prácticas'] ?? ''),
+                'servicio'    => $t['Servicio'] ?? '',
+                'estado'      => $estado,
+                'modalidad'   => $t['Modalidad'] ?? '',
+                'primera_vez' => !empty($t['PrimeraVez']),
+                'notas'       => $t['Notas'] ?? '',
+                'obra_social' => $t['ObraSocialDelPaciente'] ?? '',
+                '_ts'         => $tsOrden,
+            ];
+        }
+
+        // Orden por hora
+        usort($turnos, fn($a, $b) => $a['_ts'] <=> $b['_ts']);
+        foreach ($turnos as &$t) unset($t['_ts']);
+
+        return $turnos;
+    }
+
+    /**
      * Turnos del día de hoy (zona Argentina) para un paciente, filtrando
      * sobre el array de pendientes que devuelve la API.
      */

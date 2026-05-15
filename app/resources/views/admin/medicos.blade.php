@@ -122,8 +122,11 @@
                 <input type="text" id="f-esp" placeholder="Ginecología">
             </div>
             <div class="med-field">
-                <label>ID en Omnia (opcional)</label>
-                <input type="text" id="f-omnia" placeholder="">
+                <label>Nombre en Omnia (opcional)</label>
+                <input type="text" id="f-omnia" placeholder="Ej: Ignacio Cruz">
+                <div style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;">
+                    Nombre tal como aparece en Omnia (campo <code>NombreDelProfesional</code> del reporte). Se usa para mostrar la agenda del día en <code>/medico</code>. Sin "Dr."/"Dra.".
+                </div>
             </div>
             <div class="med-field">
                 <label>Planta default</label>
