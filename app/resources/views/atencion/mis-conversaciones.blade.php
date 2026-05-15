@@ -112,10 +112,11 @@
 .mode-btn { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
 .mode-btn.active { border-color: var(--accent); background: rgba(192,39,58,.1); color: var(--accent); }
 
-/* Dropdown de respuestas rápidas */
+/* Dropdown de respuestas rápidas — abre hacia ARRIBA (el botón está en el
+   footer del panel; hacia abajo quedaría tapado por el borde del panel). */
 .rr-menu {
     position: absolute;
-    top: calc(100% + 6px);
+    bottom: calc(100% + 6px);
     right: 0;
     min-width: 260px;
     max-width: 380px;
@@ -124,8 +125,8 @@
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    z-index: 50;
+    box-shadow: 0 -8px 24px rgba(0,0,0,.18);
+    z-index: 200;
     padding: 4px 0;
 }
 .rr-menu-item { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--text); transition: background .12s; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }

@@ -349,10 +349,12 @@ audio { height: 32px; width: 210px; display: block; }
 }
 .mode-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
 
-/* Dropdown de respuestas rápidas */
+/* Dropdown de respuestas rápidas — se despliega hacia ARRIBA porque el botón
+   vive en el footer del panel de conversación; hacia abajo quedaría tapado
+   por el borde inferior del panel. */
 .rr-menu {
     position: absolute;
-    top: calc(100% + 6px);
+    bottom: calc(100% + 6px);
     right: 0;
     min-width: 260px;
     max-width: 380px;
@@ -361,8 +363,8 @@ audio { height: 32px; width: 210px; display: block; }
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    z-index: 50;
+    box-shadow: 0 -8px 24px rgba(0,0,0,.18);
+    z-index: 200;
     padding: 4px 0;
 }
 .rr-menu-item {
