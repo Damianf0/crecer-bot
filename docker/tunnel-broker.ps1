@@ -213,6 +213,21 @@ function Stop-Tunnel {
 }
 
 # === HTTP listener ===
+# Si hay urlacl preconfigurada para http://+:9091/, usamos wildcard
+# (escucha en TODAS las interfaces, incl. host.docker.internal desde Docker).
+# Si no, fallback a loopback solamente (solo accesible desde el host).
+#
+# Para habilitar wildcard sin admin recurrente: ejecutar UNA vez como admin:
+#   netsh http add urlacl url=http://+:9091/ user=Everyone
+function Test-WildcardUrlAcl {
+    $out = netsh http show urlacl url=http://+:9091/ 2>&1 | Out-String
+    return ($out -match 'URL reservada|Reserved URL')
+}
+
+if (Test-WildcardUrlAcl) {
+    $ListenPrefix = 'http://+:9091/'
+}
+
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add($ListenPrefix)
 try {
