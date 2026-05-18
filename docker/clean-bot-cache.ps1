@@ -97,8 +97,8 @@ foreach ($b in $Bots) {
     # Primer intento
     $sizes = Invoke-CleanCache $b
     Log ("  Intento 1: cache {0} -> {1}" -f $sizes.Antes, $sizes.Despues)
-    Log "  Esperando que reconecte (hasta 90s)..."
-    $check = Wait-BotListo -Bot $b -TimeoutSec 90 -PollSec 4
+    Log "  Esperando que reconecte (hasta 180s)..."
+    $check = Wait-BotListo -Bot $b -TimeoutSec 180 -PollSec 4
 
     if ($check.Ready) {
         Log ("  OK: listo en {0}s, phone={1}" -f $check.ElapsedSec, $check.Phone)
@@ -111,8 +111,8 @@ foreach ($b in $Bots) {
     # Segundo intento
     $sizes2 = Invoke-CleanCache $b
     Log ("  Intento 2: cache {0} -> {1}" -f $sizes2.Antes, $sizes2.Despues)
-    Log "  Esperando que reconecte (hasta 90s)..."
-    $check2 = Wait-BotListo -Bot $b -TimeoutSec 90 -PollSec 4
+    Log "  Esperando que reconecte (hasta 180s)..."
+    $check2 = Wait-BotListo -Bot $b -TimeoutSec 180 -PollSec 4
 
     if ($check2.Ready) {
         Log ("  OK (al 2do intento): listo en {0}s, phone={1}" -f $check2.ElapsedSec, $check2.Phone)
