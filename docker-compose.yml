@@ -117,12 +117,21 @@ services:
       - BOT_AREA=atencion
       - PORT=3001
       - BOT_PUBLIC_URL=http://192.168.1.125:3001
+      # Bot atención sufre cuelgues frecuentes (sesión grande + alta actividad).
+      # Watchdog más agresivo: chequea c/2 min, 8 min de inactividad y 2 chequeos
+      # sin CONNECTED bastan para reiniciar Chromium. Reduce el gap de mensajes
+      # perdidos de ~30 min a ~5 min.
+      - WATCHDOG_INTERVAL=120000
+      - WATCHDOG_TIMEOUT=480000
+      - WATCHDOG_MAX_SIN_CONNECTED=2
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3001/status"]
-      interval: 15s
-      timeout: 3s
-      retries: 3
-      start_period: 30s
+      # Mira el contenido de /status, no solo HTTP 200 — detecta el estado
+      # "zombie" donde el endpoint responde pero el cliente WA no escucha.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
+      interval: 30s
+      timeout: 5s
+      retries: 4
+      start_period: 180s
     networks:
       - clinica-net
 
@@ -143,11 +152,11 @@ services:
       - PORT=3002
       - BOT_PUBLIC_URL=http://192.168.1.125:3002
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3002/status"]
-      interval: 15s
-      timeout: 3s
-      retries: 3
-      start_period: 30s
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
+      interval: 30s
+      timeout: 5s
+      retries: 4
+      start_period: 180s
     networks:
       - clinica-net
 
@@ -168,11 +177,11 @@ services:
       - PORT=3003
       - BOT_PUBLIC_URL=http://192.168.1.125:3003
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3003/status"]
-      interval: 15s
-      timeout: 3s
-      retries: 3
-      start_period: 30s
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
+      interval: 30s
+      timeout: 5s
+      retries: 4
+      start_period: 180s
     networks:
       - clinica-net
 

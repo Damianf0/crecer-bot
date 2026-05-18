@@ -51,6 +51,7 @@ module.exports.wasOurSent = wasOurSent;
 // Watchdog: si el cliente está "listo" pero no recibió nada en WATCHDOG_TIMEOUT ms, reinicia
 const WATCHDOG_TIMEOUT  = parseInt(process.env.WATCHDOG_TIMEOUT  || String(20 * 60 * 1000)); // 20 min sin actividad (fallback)
 const WATCHDOG_INTERVAL = parseInt(process.env.WATCHDOG_INTERVAL || String(5  * 60 * 1000)); // chequea c/5 min
+const WATCHDOG_MAX_SIN_CONNECTED = parseInt(process.env.WATCHDOG_MAX_SIN_CONNECTED || '3');   // cuántos chequeos seguidos sin CONNECTED antes de matar Chromium
 
 const PUPPETEER_OPTS = {
   headless: true,
@@ -149,9 +150,9 @@ async function iniciarWhatsApp() {
 
     // (a) Chromium congelado: varios getState() seguidos sin CONNECTED (típicamente timeouts
     //     "Runtime.callFunctionOn timed out" por cache de Chromium hinchado). Un solo fallo
-    //     puede ser un getState() lento con un sendMessage en vuelo — por eso exigimos 3 seguidos
-    //     (~15 min) antes de matar. Mucho más rápido que esperar el timeout de inactividad.
-    if (chequeosSinConnected >= 3) {
+    //     puede ser un getState() lento con un sendMessage en vuelo — exigimos N seguidos
+    //     (configurable via WATCHDOG_MAX_SIN_CONNECTED) antes de matar.
+    if (chequeosSinConnected >= WATCHDOG_MAX_SIN_CONNECTED) {
       return reiniciarPorWatchdog(`${chequeosSinConnected} chequeos seguidos sin CONNECTED (Chromium congelado)`);
     }
 
