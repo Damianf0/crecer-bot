@@ -297,7 +297,15 @@ function cerrarPanel() {
 }
 
 async function cargarConversacion(id) {
-    const { conv, mensajes, eventos } = await get(`/atencion/conversacion/${id}`);
+    const datos = await get(`/atencion/conversacion/${id}`);
+    _renderConversacion(id, datos);
+}
+
+// Render puro: separa el fetch del replace para que refrescarConvAbierta()
+// pueda capturar el estado del composer (textarea, foco, cursor) JUSTO antes
+// del replace — sino se pierde lo que el usuario tipeó durante el fetch.
+function _renderConversacion(id, datos) {
+    const { conv, mensajes, eventos } = datos;
     const item = state.items.find(i => i.id === id) || {};
     const panelConv = document.getElementById('panel-conv');
 
@@ -570,22 +578,55 @@ setInterval(fetchConversaciones, 10000);
 async function refrescarConvAbierta() {
     if (document.hidden || !state.panelId) return;
 
-    // Si el usuario está escribiendo en el textarea, abortar — sino se le
-    // borra lo que está tipeando cuando recargamos el panel (bug 14/05).
-    const inpActual = document.getElementById('msg-input');
-    const tieneFoco = inpActual && document.activeElement === inpActual;
-    const textoActual = inpActual?.value ?? '';
-    if (tieneFoco && textoActual.length > 0) return;
+    // Fetch primero, sin tocar DOM. El operador puede seguir tipeando.
+    const idAlFetch = state.panelId;
+    let datos;
+    try {
+        datos = await get(`/atencion/conversacion/${idAlFetch}`);
+    } catch (e) { return; }
+    if (state.panelId !== idAlFetch) return;  // cambió de panel mientras esperaba
+
+    // Captura JUSTO antes del replace: incluye lo que el operador tipeó
+    // durante el fetch.
+    const inpAntes = document.getElementById('msg-input');
+    const textoAntes = inpAntes?.value ?? '';
+    const teniaFoco = inpAntes && document.activeElement === inpAntes;
+    const cursorAntes = (inpAntes && teniaFoco)
+        ? { start: inpAntes.selectionStart, end: inpAntes.selectionEnd }
+        : null;
 
     const list = document.getElementById('msg-list');
     const estabaAlFondo = list
         ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
         : true;
-    try { await cargarConversacion(state.panelId); } catch (e) { return; }
 
-    // Defensa adicional: si alcanzó a tipear algo durante el fetch, restaurarlo.
+    _renderConversacion(idAlFetch, datos);
+
+    // Restaurar composer
     const inpNuevo = document.getElementById('msg-input');
-    if (inpNuevo && textoActual && !inpNuevo.value) inpNuevo.value = textoActual;
+    if (inpNuevo && textoAntes) {
+        inpNuevo.value = textoAntes;
+        if (teniaFoco) {
+            inpNuevo.focus();
+            if (cursorAntes) {
+                try { inpNuevo.setSelectionRange(cursorAntes.start, cursorAntes.end); } catch (_) {}
+            }
+        }
+    }
+
+    // Si hay un archivo adjunto, su preview se perdió con el replace. Restaurarlo.
+    if (typeof _archivoSeleccionado !== 'undefined' && _archivoSeleccionado) {
+        const prev = document.getElementById('file-preview');
+        const nameEl = document.getElementById('file-preview-name');
+        const iconEl = document.getElementById('file-preview-icon');
+        if (prev && nameEl && iconEl) {
+            const f = _archivoSeleccionado;
+            const icons = { 'image': '🖼️', 'video': '🎬', 'audio': '🎵', 'application/pdf': '📕' };
+            iconEl.textContent = icons[f.type.split('/')[0]] || icons[f.type] || '📄';
+            nameEl.textContent = f.name;
+            prev.style.display = 'flex';
+        }
+    }
 
     const listNew = document.getElementById('msg-list');
     if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;

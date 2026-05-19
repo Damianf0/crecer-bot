@@ -1125,7 +1125,17 @@ function renderSeguimiento(eventos) {
 
 // ── Panel WA ─────────────────────────────────────────────────
 async function cargarConversacion(id) {
-    const { conv, mensajes, eventos, has_older } = await get(`/atencion/conversacion/${id}`);
+    const datos = await get(`/atencion/conversacion/${id}`);
+    _renderConversacion(id, datos);
+}
+
+// Render puro: toma los datos ya fetchados y reemplaza el panel. Separado
+// del fetch para que refrescarConvAbierta() pueda capturar el estado del
+// composer (textarea, foco, cursor) JUSTO antes del replace — si capturara
+// antes del fetch, los keystrokes del usuario durante esos ~200-500ms se
+// perderían cuando el textarea viejo se destruye al asignar innerHTML.
+function _renderConversacion(id, datos) {
+    const { conv, mensajes, eventos, has_older } = datos;
     state.panelAsigId = conv.asig_id;
     state.panelHasOlder = !!has_older;
     state.panelConv = conv;       // para el modal "Agregar a contactos"
@@ -2007,26 +2017,62 @@ async function refrescarConvAbierta() {
     if (!state.panelId || !state.panelTipo) return;
     if (state.panelTipo !== 'wa') return;   // las derivaciones del bot no tienen polling útil
 
-    // Si el usuario está escribiendo en el textarea, abortar — sino se le borra
-    // lo que está tipeando cuando recargamos el panel (bug 14/05).
-    const inpActual = document.getElementById('msg-input');
-    const tieneFoco = inpActual && document.activeElement === inpActual;
-    const textoActual = inpActual?.value ?? '';
-    if (tieneFoco && textoActual.length > 0) return;
+    // Fetch primero, SIN tocar el DOM. El usuario puede seguir tipeando
+    // tranquilo durante esta espera (~200-500 ms).
+    const idAlFetch = state.panelId;
+    let datos;
+    try {
+        datos = await get(`/atencion/conversacion/${idAlFetch}`);
+    } catch (e) { return; }
+
+    // Si entre el inicio y el fin del fetch el operador cambió de panel,
+    // descartamos: pisaríamos un panel distinto al que pidió.
+    if (state.panelId !== idAlFetch) return;
+
+    // Captura del estado del composer JUSTO antes del replace. Esto incluye
+    // cualquier cosa que el operador haya tipeado durante el fetch (que el
+    // viejo `textoActual` capturado pre-fetch se perdía con el replace).
+    const inpAntes = document.getElementById('msg-input');
+    const textoAntes = inpAntes?.value ?? '';
+    const teniaFoco = inpAntes && document.activeElement === inpAntes;
+    const cursorAntes = (inpAntes && teniaFoco)
+        ? { start: inpAntes.selectionStart, end: inpAntes.selectionEnd }
+        : null;
 
     const list = document.getElementById('msg-list');
     const estabaAlFondo = list
         ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
         : true;
 
-    try {
-        await cargarConversacion(state.panelId);
-    } catch (e) { return; }
+    // Replace
+    _renderConversacion(idAlFetch, datos);
 
-    // Restaurar lo que el operador hubiera tipeado mientras esperábamos la
-    // respuesta del fetch (defensa adicional aunque ya cortamos arriba).
+    // Restaurar composer
     const inpNuevo = document.getElementById('msg-input');
-    if (inpNuevo && textoActual && !inpNuevo.value) inpNuevo.value = textoActual;
+    if (inpNuevo && textoAntes) {
+        inpNuevo.value = textoAntes;
+        if (teniaFoco) {
+            inpNuevo.focus();
+            if (cursorAntes) {
+                try { inpNuevo.setSelectionRange(cursorAntes.start, cursorAntes.end); } catch (_) {}
+            }
+        }
+    }
+
+    // Si el operador tiene un archivo adjunto (en la variable _archivoSeleccionado),
+    // el preview se borró con el replace. Lo volvemos a mostrar.
+    if (typeof _archivoSeleccionado !== 'undefined' && _archivoSeleccionado) {
+        const prev = document.getElementById('file-preview');
+        const nameEl = document.getElementById('file-preview-name');
+        const iconEl = document.getElementById('file-preview-icon');
+        if (prev && nameEl && iconEl) {
+            const f = _archivoSeleccionado;
+            const icons = { 'image': '🖼️', 'video': '🎬', 'audio': '🎵', 'application/pdf': '📕' };
+            iconEl.textContent = icons[f.type.split('/')[0]] || icons[f.type] || '📄';
+            nameEl.textContent = f.name;
+            prev.style.display = 'flex';
+        }
+    }
 
     const listNew = document.getElementById('msg-list');
     if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
