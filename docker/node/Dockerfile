@@ -1,6 +1,6 @@
 FROM node:20-alpine
 WORKDIR /app
-RUN apk add --no-cache chromium tzdata \
+RUN apk add --no-cache chromium tzdata git \
  && cp /usr/share/zoneinfo/America/Argentina/Buenos_Aires /etc/localtime \
  && echo "America/Argentina/Buenos_Aires" > /etc/timezone
 ENV TZ=America/Argentina/Buenos_Aires

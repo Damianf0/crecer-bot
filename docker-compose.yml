@@ -117,13 +117,6 @@ services:
       - BOT_AREA=atencion
       - PORT=3001
       - BOT_PUBLIC_URL=http://192.168.1.125:3001
-      # Bot atención sufre cuelgues frecuentes (sesión grande + alta actividad).
-      # Watchdog más agresivo: chequea c/2 min, 8 min de inactividad y 2 chequeos
-      # sin CONNECTED bastan para reiniciar Chromium. Reduce el gap de mensajes
-      # perdidos de ~30 min a ~5 min.
-      - WATCHDOG_INTERVAL=120000
-      - WATCHDOG_TIMEOUT=480000
-      - WATCHDOG_MAX_SIN_CONNECTED=2
     healthcheck:
       # Mira el contenido de /status, no solo HTTP 200 — detecta el estado
       # "zombie" donde el endpoint responde pero el cliente WA no escucha.
@@ -166,7 +159,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./bot:/app
-      - wa-session-ovodonacion:/app/.wwebjs_auth
+      - wa-session-ovodonacion:/app/.wwebjs_auth       # sesión legacy (rollback)
+      - wa-baileys-ovodonacion:/app/.baileys_auth      # sesión Baileys
     ports:
       - "3003:3003"
     depends_on:
@@ -176,6 +170,14 @@ services:
       - BOT_AREA=ovodonacion
       - PORT=3003
       - BOT_PUBLIC_URL=http://192.168.1.125:3003
+      # Migración a Baileys probada 2026-05-18 y rollbackeada: los mensajes
+      # salientes llegaban como "Esperando mensaje..." (sesión libsignal no
+      # descifrable por destinatarios), a pesar de assertSessions/onWhatsApp/
+      # presenceSubscribe. Pendiente investigar Baileys 6.6.x vs 6.7.x en
+      # container shadow con número de testing antes de reintentar.
+      # Para reactivar: descomentar la línea (sesión Baileys preservada en
+      # volumen wa-baileys-ovodonacion).
+      # - BOT_WA_CLIENT=baileys
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
@@ -227,9 +229,10 @@ services:
 volumes:
   mysql-data:
   ollama-data:
-  wa-session:                  # sesión WhatsApp del bot de ATENCIÓN
-  wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN
-  wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN
+  wa-session:                  # sesión WhatsApp del bot de ATENCIÓN (wwebjs)
+  wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
+  wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs, legacy)
+  wa-baileys-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (Baileys, activa)
 
 networks:
   clinica-net:

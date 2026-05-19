@@ -287,16 +287,8 @@ app.post('/check-numero', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
   }
   try {
-    const digits = String(numero).replace(/\D/g, '');
-    const numberId = await _waClient.getNumberId(digits);
-    if (!numberId) {
-      return res.json({ ok: true, registered: false, normalizedId: null });
-    }
-    res.json({
-      ok: true,
-      registered: true,
-      normalizedId: numberId._serialized || `${numberId.user}@${numberId.server}`,
-    });
+    const { registered, normalizedId } = await _waClient.checkNumber(numero);
+    res.json({ ok: true, registered, normalizedId });
   } catch (err) {
     console.error('[server] Error en check-numero:', err.message);
     res.status(500).json({ ok: false, error: err.message });
@@ -316,10 +308,7 @@ app.post('/resolve-jid', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
   }
   try {
-    const contact = await _waClient.getContactById(jid);
-    // .number puede venir vacío si WA no expone el teléfono real.
-    const numero = (contact && contact.number) ? String(contact.number).replace(/\D/g, '') : null;
-    const name   = contact?.pushname || contact?.name || null;
+    const { numero, name } = await _waClient.resolveContact(jid);
     res.json({ ok: true, numero, name });
   } catch (err) {
     console.error('[server] Error en resolve-jid:', err.message);
@@ -335,49 +324,12 @@ app.post('/profile-pic', async (req, res) => {
   const { jid } = req.body;
   if (!jid) return res.status(400).json({ ok: false, error: 'jid requerido' });
   if (!_waClient) return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
-
-  // NOTA: al 2026-05-03, WhatsApp Web tiene un bug que rompe todas las APIs de profile pic
-  // con "Cannot read properties of undefined (reading 'isNewsletter')". Probamos varios paths
-  // y devolvemos url:null si todos fallan — el frontend cae al fallback con la inicial.
-  // Cuando WA Web lo arregle, las fotos van a aparecer sin tocar este código.
-  let url = null;
-
-  try { url = await _waClient.getProfilePicUrl(jid); } catch {}
-
-  if (!url) {
-    try {
-      const contact = await _waClient.getContactById(jid);
-      if (contact && typeof contact.getProfilePicUrl === 'function') {
-        url = await contact.getProfilePicUrl();
-      }
-    } catch {}
+  try {
+    const url = await _waClient.getProfilePicUrl(jid);
+    res.json({ ok: true, url: url || null });
+  } catch (err) {
+    res.json({ ok: true, url: null });
   }
-
-  if (!url) {
-    try {
-      url = await _waClient.pupPage.evaluate(async (jid) => {
-        try {
-          const wid = window.Store?.WidFactory?.createWid
-            ? window.Store.WidFactory.createWid(jid)
-            : (window.WWebJS?.getWid ? window.WWebJS.getWid(jid) : null);
-          if (!wid) return null;
-          const pp = window.Store?.ProfilePic;
-          if (!pp) return null;
-          for (const m of ['profilePicFind', 'requestProfilePicFromServer', 'profilePicResync']) {
-            if (typeof pp[m] === 'function') {
-              try {
-                const r = await pp[m](wid);
-                if (r && (r.eurl || r.imgFull || r.url)) return r.eurl || r.imgFull || r.url;
-              } catch {}
-            }
-          }
-          return null;
-        } catch { return null; }
-      }, jid);
-    } catch {}
-  }
-
-  res.json({ ok: true, url: url || null });
 });
 
 app.post('/enviar', async (req, res) => {
@@ -389,11 +341,9 @@ app.post('/enviar', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
   }
   try {
-    const { markSent } = require('./whatsapp');
-    const sent = await _waClient.sendMessage(contacto, texto);
-    markSent(sent?.id?._serialized);   // evita que el handler `message_create` lo guarde como saliente externo
+    const { wa_id } = await _waClient.sendText(contacto, texto);
     console.log(`[server] Mensaje enviado a ${contacto}`);
-    res.json({ ok: true, wa_id: sent?.id?._serialized || null });
+    res.json({ ok: true, wa_id });
   } catch (err) {
     console.error('[server] Error enviando mensaje:', err.message);
     res.status(500).json({ ok: false, error: err.message });
@@ -409,14 +359,9 @@ app.post('/enviar-archivo', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
   }
   try {
-    const { MessageMedia } = require('whatsapp-web.js');
-    const { markSent }     = require('./whatsapp');
-    const media = new MessageMedia(mimetype, base64, filename || 'archivo');
-    const opts  = caption ? { caption } : {};
-    const sent  = await _waClient.sendMessage(contacto, media, opts);
-    markSent(sent?.id?._serialized);
+    const { wa_id } = await _waClient.sendMedia(contacto, { mimetype, base64, filename, caption });
     console.log(`[server] Archivo enviado a ${contacto}: ${filename}`);
-    res.json({ ok: true, wa_id: sent?.id?._serialized || null });
+    res.json({ ok: true, wa_id });
   } catch (err) {
     console.error('[server] Error enviando archivo:', err.message);
     res.status(500).json({ ok: false, error: err.message });

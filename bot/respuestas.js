@@ -37,11 +37,9 @@ function obtenerRespuesta(codigo, { enHorario = true } = {}) {
   return texto.trim();
 }
 
-async function enviarRespuesta(client, contacto, texto) {
+async function enviarRespuesta(cliente, contacto, texto) {
   if (!texto) return;
-  const { markSent } = require('./whatsapp');
-  const sent = await client.sendMessage(contacto, texto);
-  markSent(sent?.id?._serialized);
+  await cliente.sendText(contacto, texto);
 }
 
 module.exports = { obtenerRespuesta, enviarRespuesta };

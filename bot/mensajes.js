@@ -121,8 +121,8 @@ async function procesarYResponder(client, contacto) {
 }
 
 async function extraerTexto(msg) {
-  if (msg.type === 'chat' && msg.body) return msg.body.trim();
-  if (msg.type === 'ptt' || msg.type === 'audio') {
+  if (msg.type === 'texto' && msg.body) return msg.body.trim();
+  if (msg.type === 'audio') {
     try {
       const media = await msg.downloadMedia();
       if (media) {
