@@ -11,6 +11,15 @@ const WHISPER_URL    = process.env.WHISPER_URL    || 'http://whisper:9000';
 const BOT_PUBLIC_URL = process.env.BOT_PUBLIC_URL || ('http://localhost:' + (process.env.PORT || '3001'));
 const MEDIA_DIR      = '/app/media';
 
+// Modo shadow: el container `bot-test` arranca con BOT_AREA=test para validar
+// Baileys con un número personal sin tocar la BD de producción. Cuando estamos
+// en ese modo, los wrappers que guardan en Laravel hacen no-op (los mensajes
+// se loggean pero no se persisten). Ver project_migracion_baileys.md.
+const MODO_SHADOW = BOT_AREA === 'test';
+if (MODO_SHADOW) {
+  console.log('[mensajesApi] MODO SHADOW (area=test) — los mensajes NO se persisten en Laravel');
+}
+
 if (!fs.existsSync(MEDIA_DIR)) {
   fs.mkdirSync(MEDIA_DIR, { recursive: true });
 }
@@ -39,6 +48,7 @@ async function persistirMedia(msg, fallbackExt) {
  * Se llama al instante cuando el adapter emite 'message'.
  */
 async function guardarMensajeEntrante(msg) {
+  if (MODO_SHADOW) { console.log(`[shadow] entrante ${msg.from} (${msg.type}): ${(msg.body || '').slice(0, 60)}`); return; }
   try {
     const contacto = msg.from;
 
@@ -96,6 +106,7 @@ async function guardarMensajeEntrante(msg) {
  * Guarda la respuesta automática del bot como mensaje saliente.
  */
 async function guardarMensajeSaliente(contacto, texto, waId = null) {
+  if (MODO_SHADOW) { console.log(`[shadow] saliente ${contacto}: ${(texto || '').slice(0, 60)}`); return; }
   try {
     await api.post('/bot/mensajes/saliente', {
       contacto,
@@ -115,6 +126,7 @@ async function guardarMensajeSaliente(contacto, texto, waId = null) {
  * El backend deduplica por wa_id.
  */
 async function guardarMensajeSalienteExterno(msg) {
+  if (MODO_SHADOW) { console.log(`[shadow] saliente externo ${msg.to} (${msg.type}): ${(msg.body || '').slice(0, 60)}`); return; }
   try {
     const contacto = msg.to;
     const tipo     = msg.type;

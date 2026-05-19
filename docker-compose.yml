@@ -187,6 +187,34 @@ services:
     networks:
       - clinica-net
 
+  # Bot WhatsApp — SHADOW de testing. Pareado con número personal del usuario
+  # para validar Baileys end-to-end sin tocar producción. BOT_AREA=test
+  # activa MODO_SHADOW en bot/mensajesApi.js y bot/cola.js → los mensajes se
+  # loggean pero NO se persisten en Laravel/BD. Cuando los tests pasen,
+  # detener este servicio con `docker compose stop bot-test`.
+  bot-test:
+    build: ./docker/node
+    restart: unless-stopped
+    volumes:
+      - ./bot:/app
+      - wa-baileys-test:/app/.baileys_auth
+    ports:
+      - "3009:3009"
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+      - BOT_AREA=test
+      - PORT=3009
+      - BOT_PUBLIC_URL=http://192.168.1.125:3009
+      - BOT_WA_CLIENT=baileys
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3009/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
+      interval: 30s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
+    networks:
+      - clinica-net
+
   whisper:
     image: onerahmet/openai-whisper-asr-webservice:latest
     restart: unless-stopped
@@ -233,6 +261,7 @@ volumes:
   wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
   wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs, legacy)
   wa-baileys-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (Baileys, activa)
+  wa-baileys-test:             # sesión WhatsApp del bot SHADOW (Baileys, número personal)
 
 networks:
   clinica-net:

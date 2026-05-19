@@ -3,6 +3,7 @@ const { BOT_AREA } = require('./area');
 
 const LARAVEL_URL   = process.env.LARAVEL_URL   || 'http://web/api';
 const LARAVEL_TOKEN = process.env.LARAVEL_TOKEN || '';
+const MODO_SHADOW   = BOT_AREA === 'test';
 
 const headers = () => ({
   Authorization: `Bearer ${LARAVEL_TOKEN}`,
@@ -14,6 +15,7 @@ const headers = () => ({
  * Agrega nota interna con clasificación y resumen LLM.
  */
 async function derivarConversacion(contacto, codigo, resumen = null) {
+  if (MODO_SHADOW) { console.log(`[shadow] derivar ${contacto} → ${codigo}`); return; }
   try {
     await axios.post(
       `${LARAVEL_URL}/bot/conversacion/derivar`,
@@ -30,6 +32,7 @@ async function derivarConversacion(contacto, codigo, resumen = null) {
  * Recupera el historial LLM persistido para un contacto.
  */
 async function obtenerHistorial(contacto) {
+  if (MODO_SHADOW) return '';
   try {
     const resp = await axios.get(
       `${LARAVEL_URL}/bot/conversacion/historial`,
@@ -45,6 +48,7 @@ async function obtenerHistorial(contacto) {
  * Persiste el historial LLM actualizado para un contacto.
  */
 async function guardarHistorial(contacto, historial) {
+  if (MODO_SHADOW) return;
   try {
     await axios.patch(
       `${LARAVEL_URL}/bot/conversacion/historial`,
@@ -57,6 +61,7 @@ async function guardarHistorial(contacto, historial) {
 }
 
 async function marcarLeido(contacto) {
+  if (MODO_SHADOW) return;
   try {
     await axios.post(
       `${LARAVEL_URL}/bot/mensajes/marcar-leido`,
