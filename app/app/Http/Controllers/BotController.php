@@ -190,7 +190,7 @@ class BotController extends Controller
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
             'area'        => 'nullable|in:atencion,administracion,ovodonacion',
-            'tipo'        => 'required|in:texto,audio,imagen,documento,video',
+            'tipo'        => 'required|in:texto,audio,imagen,documento,video,sticker',
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',
             'wa_id'       => 'nullable|string|max:150',
@@ -318,7 +318,7 @@ class BotController extends Controller
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
             'area'        => 'nullable|in:atencion,administracion,ovodonacion',
-            'tipo'        => 'nullable|in:texto,audio,imagen,documento,video',
+            'tipo'        => 'nullable|in:texto,audio,imagen,documento,video,sticker',
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',
             'wa_id'       => 'nullable|string|max:150',
