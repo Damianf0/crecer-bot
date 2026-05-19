@@ -1,6 +1,6 @@
 # Plataforma Operativa Crecer — Guía operativa
 
-> Documentación consolidada al **2026-04-29**, post sesiones de hardening, features y performance.
+> Documentación consolidada al **2026-04-29** (última actualización mayor 2026-05-19: migración a Baileys).
 > Para contexto histórico y propósito del proyecto: `CLAUDE-clinica.md`.
 
 ---
@@ -14,7 +14,7 @@
 | `nginx` | nginx:alpine | 80 | Reverse proxy a PHP-FPM |
 | `web` | php:8.2-fpm + OPcache + JIT | — | Laravel 11, app principal |
 | `mysql` | mysql:8.0 | (cerrado) | DB `clinica`, accesible solo dentro de la red Docker |
-| `bot` | node:20-alpine + Chromium + tzdata | 3001 | Bot WhatsApp (whatsapp-web.js + Puppeteer) |
+| `bot`, `bot-administracion`, `bot-ovodonacion` | node:20-alpine + Chromium + git + tzdata | 3001/3002/3003 | Bot WhatsApp (Baileys WebSocket por default; whatsapp-web.js + Chromium queda como fallback). Selección por env `BOT_WA_CLIENT=baileys\|wwebjs` |
 | `whisper` | onerahmet/openai-whisper-asr-webservice | — | Transcripción de audios WA (modelo `small`, faster_whisper, español) |
 | `ollama` | ollama/ollama (GPU NVIDIA) | 11434 | LLM local para clasificación (qwen3:4b) |
 
@@ -23,7 +23,9 @@ Todos con `restart: unless-stopped` y healthchecks reales (wget/curl al endpoint
 ### Volúmenes persistentes
 
 - `crecer_mysql-data` — datos MySQL.
-- `crecer_wa-session` — sesión de WhatsApp Web (auth + Chromium profile). **Crítico**: si se borra hay que escanear QR de nuevo.
+- `crecer_wa-baileys-atencion` / `wa-baileys-administracion` / `wa-baileys-ovodonacion` — sesiones Baileys activas de los 3 bots. **Crítico**: si se borran hay que escanear QR de nuevo desde el cel del área.
+- `crecer_wa-session` / `wa-session-administracion` / `wa-session-ovodonacion` — sesiones whatsapp-web.js legacy. Preservadas como fallback. Si querés hacer rollback de un bot a wwebjs, comentás `BOT_WA_CLIENT=baileys` en su servicio y la sesión sigue viva. Cuando la estabilización con Baileys quede confirmada, estos volúmenes se borran (Fase 10 del plan migración).
+- `crecer_wa-baileys-test` — sesión del container `bot-test` (shadow para testing con número personal). Sólo se levanta on-demand con `docker compose up -d bot-test`.
 - `crecer_ollama-data` — modelos LLM descargados.
 - Bind mounts: `./app` → `/var/www/html`, `./bot` → `/app`, `./docker/nginx/default.conf` → nginx config.
 
@@ -143,18 +145,45 @@ docker exec crecer-mysql-1 sh -c 'mysqldump --single-transaction -uroot -p${DB_R
 docker run --rm -v crecer_wa-session:/data -v "$bk\volumes:/backup" alpine tar czf /backup/wa-session.tar.gz -C /data .
 ```
 
-### Limpieza automática de cache del bot
+### Limpieza automática de cache del bot (whatsapp-web.js solamente)
 
 - **Tarea Windows `Crecer\CleanBotCache`** — diaria 04:00 AM. Script `C:\crecer\docker\clean-bot-cache.ps1`.
+- **Aplica solo a bots con `BOT_WA_CLIENT=wwebjs`.** Baileys no usa Chromium así que el script no hace nada útil sobre volúmenes Baileys.
 - Borra Cache, Code Cache, GPUCache, Service Worker/CacheStorage del Chromium del bot **sin tocar IndexedDB ni Cookies** (mantiene la sesión WA).
-- **Crítico**: WhatsApp Web acumula >800 MB de cache en pocos días, satura las operaciones CDP de Puppeteer y rompe `sendMessage` con `Runtime.callFunctionOn timed out`.
+- Cuando los 3 bots queden estables en Baileys (Fase 10 del plan migración), eliminar esta tarea programada y el script.
+
+### Stack WhatsApp: Baileys vs whatsapp-web.js
+
+Desde 2026-05-19 los 3 bots de prod corren con **Baileys** (WebSocket directo al protocolo Multi-Device de WhatsApp), seleccionado por env `BOT_WA_CLIENT=baileys` en `docker-compose.yml`. La implementación wwebjs queda como fallback.
+
+| Backend | RAM/bot | Chromium | Reconexión | Cuelgues |
+|---|---|---|---|---|
+| wwebjs (legacy) | 400-1300 MB | Sí, requiere `apk add chromium` | Vía watchdog + matar Chromium | Frecuentes en sesión grande |
+| **Baileys (activo)** | **40-80 MB** | **No** | **Automática (515 Stream Errored se resuelve solo)** | **Raros** |
+
+**Rollback de un bot a wwebjs** (si Baileys falla con algún destinatario o feature):
+1. Editar `docker-compose.yml`, comentar `BOT_WA_CLIENT=baileys` del servicio del bot
+2. `docker compose up -d <servicio>` — el bot arranca con wwebjs usando el volumen `wa-session-*` que se preservó intacto
+3. La sesión wwebjs sigue viva en su volumen — no requiere QR de nuevo (salvo que haya sido invalidada por la operadora desde el cel)
+
+**Reactivar Baileys** después de rollback: descomentar el env y `docker compose up -d <servicio>`. El volumen `wa-baileys-*` sigue ahí.
+
+### Container shadow `bot-test`
+
+Servicio definido pero **detenido por default** en `docker-compose.yml`. Sirve para validar el adapter Baileys con un número personal antes de tocar prod (puerto 3009, `BOT_AREA=test`, `MODO_SHADOW` activo → no escribe en Laravel/BD).
+
+- Levantar: `docker compose up -d bot-test`
+- Ver QR para escanear: `powershell -File C:\crecer\scripts\show-qr-test.ps1` (abre/refresca `C:\crecer\qr-shadow.png`)
+- Detener: `docker compose stop bot-test`
+- Volumen `wa-baileys-test` persiste entre arranques.
 
 ### Mapeo de contactos / WhatsApp
 
 - **`contactos:mapear-wa`** — para cada contacto sin `wa_id`, consulta al bot y guarda el JID real (`@c.us` o `@lid`). Después vincula conversaciones huérfanas (las que llegaron como `@lid` y no se vincularon con un contacto).
   - `--solo-contactos` o `--solo-conversaciones` para correr una sola fase.
+  - **`--limit=N`** acota la cantidad procesada por corrida. **`--max-errors=N`** (default 10) aborta si hay N timeouts seguidos = bot caído.
+  - El cron diario (Crecer\MapearWA, 4:30 AM) pasa `--limit=300 --max-errors=10` desde 2026-05-19 para evitar correr +6 hs y bombardear el bot durante horario laboral (incidente del 19/05).
   - Throttle 150ms entre llamadas al bot.
-  - Tarda ~3 hs sobre 9k contactos.
 - **`contactos:auditar-telefonos`** — clasifica los contactos sin `wa_id` en `sin_telefono`, `formato_invalido`, `no_es_whatsapp`. Reintenta resolver mientras audita.
   - `--csv=/var/www/html/storage/logs/audit.csv` exporta lista detallada.
 
@@ -179,9 +208,10 @@ docker exec -it crecer-mysql-1 mysql -ucrecer -p${DB_PASSWORD} clinica
 **Causa:** `CACHE_STORE=file` con bind mount NTFS. Docker Desktop Windows ignora `chown`.
 **Fix:** confirmar `CACHE_STORE=database` en `app/.env`. `php artisan config:clear` + restart.
 
-### Bot conectado pero `sendMessage` timeoutea
+### Bot conectado pero `sendMessage` timeoutea (whatsapp-web.js solamente)
+**Aplica a:** bots corriendo con `BOT_WA_CLIENT=wwebjs`. Baileys no usa CDP así que este síntoma no existe.
 **Síntoma:** logs `Runtime.callFunctionOn timed out`. `/status` devuelve `listo` pero los envíos fallan.
-**Causa:** cache de Chromium acumulado (>800 MB) satura las operaciones CDP de Puppeteer.
+**Causa:** cache de Chromium acumulado satura las operaciones CDP de Puppeteer.
 **Fix:** correr el script de limpieza manualmente:
 ```powershell
 docker stop crecer-bot-1
@@ -190,10 +220,20 @@ docker start crecer-bot-1
 ```
 Si ya está la tarea programada `Crecer\CleanBotCache` activa, esto pasa solo cada noche.
 
-### Watchdog del bot reinicia el cliente cada 5 min
-**Síntoma:** logs `[watchdog] Cliente colgado — reiniciando WhatsApp...` muy seguido, mensajes de pacientes se pierden.
-**Causa:** la condición de "colgado" era `state !== 'CONNECTED' OR inactivo > 45m`. Demasiado agresivo.
-**Estado actual:** ya corregido en `bot/whatsapp.js` — exige **AND** (45 min sin actividad **Y** state distinto de CONNECTED) y timeout de `getState()` subido a 30s.
+### Watchdog del bot reinicia el cliente (whatsapp-web.js solamente)
+**Aplica a:** bots con `BOT_WA_CLIENT=wwebjs`. Baileys maneja reconexión a nivel WebSocket, sin watchdog.
+**Síntoma:** logs `[watchdog] Cliente colgado — reiniciando WhatsApp...`.
+**Estado actual:** defaults conservadores en `bot/clientes/wwebjs.js` (5min/3/20min: 15 min sin CONNECTED para matar). Si querés ajustar para un área, env overrides `WATCHDOG_INTERVAL`/`WATCHDOG_MAX_SIN_CONNECTED`/`WATCHDOG_TIMEOUT` en el servicio del compose.
+
+### Mensajes salientes desde Baileys llegan como "Esperando mensaje..."
+**Aplica a:** bots con `BOT_WA_CLIENT=baileys`.
+**Síntoma:** `sendText`/`sendMedia` devuelven `wa_id` válido pero el destinatario ve "Esperando mensaje..." en el chat.
+**Causa:** el destinatario tiene Lid mode y el adapter no usa su `@lid` (envía a `@s.whatsapp.net`).
+**Estado actual:** ya corregido en `bot/clientes/baileys.js` — `resolverJidEnvio()` y `checkNumber()` leen `info.lid` con prioridad. Si volvés a verlo, probablemente sea un caso nuevo de cifrado E2E roto en el receptor; mirar logs por `[baileys] onWhatsApp(...) → @lid` para confirmar que estamos usando el JID correcto.
+
+### Audio del bot Baileys llega como archivo en vez de nota de voz
+**Aplica a:** bots con `BOT_WA_CLIENT=baileys`.
+**Estado actual:** ya corregido — los .ogg se envían con `mimetype: 'audio/ogg; codecs=opus'` + `ptt: true`. Si tu integración envía mp3/mp4 va a llegar como audio file normal (no PTT) — comportamiento esperado.
 
 ### 502 Bad Gateway tras restart del web
 Normal: PHP-FPM hace preload de ~2500 archivos al arrancar. Esperar 8-15 segundos.
