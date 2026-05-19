@@ -19,7 +19,11 @@ function Log($msg) {
 Log "=== Inicio mapear-wa ==="
 
 $tmpErr = [System.IO.Path]::GetTempFileName()
-$out = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan contactos:mapear-wa 2>$tmpErr"
+# --limit=300 + --max-errors=10: corrida acotada para no pisar horario laboral
+# si hay backlog grande, y abortar si el bot atención está colgado (evita el
+# círculo vicioso del 19/05 donde el mapeo bombardeaba el bot y lo colgaba).
+# Si quedan pendientes, los toma la corrida del día siguiente.
+$out = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan contactos:mapear-wa --limit=300 --max-errors=10 2>$tmpErr"
 $out | ForEach-Object { Log $_ }
 
 $err = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue

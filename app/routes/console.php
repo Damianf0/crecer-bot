@@ -364,25 +364,41 @@ Artisan::command('documentos:ocr-rescan {--force} {--limit=}', function () {
  * Uso: docker exec crecer-web-1 php artisan contactos:mapear-wa
  *      docker exec crecer-web-1 php artisan contactos:mapear-wa --solo-contactos
  *      docker exec crecer-web-1 php artisan contactos:mapear-wa --solo-conversaciones
+ *      docker exec crecer-web-1 php artisan contactos:mapear-wa --limit=200
+ *
+ * --limit=N: procesa como mucho N items por sección. Diseñado para corridas
+ *   diarias automáticas que NO deben pisar horario laboral aunque haya cola
+ *   acumulada (19/05: una corrida sin límite duró 6+ horas y colgó el bot
+ *   atención al saturar el CDP de Chromium).
+ * --max-errors=N: si hay N errores/timeouts seguidos resolviendo wa_ids,
+ *   asume que el bot está caído y aborta. Evita bombardear un bot colgado
+ *   acumulando timeouts.
  */
-Artisan::command('contactos:mapear-wa {--solo-contactos} {--solo-conversaciones}', function () {
+Artisan::command('contactos:mapear-wa {--solo-contactos} {--solo-conversaciones} {--limit=} {--max-errors=10}', function () {
     $soloContactos       = $this->option('solo-contactos');
     $soloConversaciones  = $this->option('solo-conversaciones');
     $hacerContactos      = !$soloConversaciones;
     $hacerConversaciones = !$soloContactos;
+    $limit               = $this->option('limit') !== null ? (int) $this->option('limit') : null;
+    $maxErrors           = (int) $this->option('max-errors');
+
+    $abortar = false;  // se setea si maxErrors consecutivos hace que el bot esté evidentemente colgado
 
     if ($hacerContactos) {
         $this->info('=== Mapeando wa_id de contactos sin resolver ===');
-        $contactos = Contacto::whereNull('wa_id')->whereNotNull('telefono')->get();
-        $this->info("Contactos a procesar: {$contactos->count()}");
+        $q = Contacto::whereNull('wa_id')->whereNotNull('telefono');
+        if ($limit) $q->limit($limit);
+        $contactos = $q->get();
+        $this->info("Contactos a procesar: {$contactos->count()}" . ($limit ? " (limit={$limit})" : ''));
 
-        $ok = 0; $sin_wa = 0; $err = 0;
+        $ok = 0; $sin_wa = 0; $err = 0; $errSeguidos = 0;
         $bar = $this->output->createProgressBar($contactos->count());
         $bar->start();
 
         foreach ($contactos as $c) {
             $waId = Contacto::resolverWaId($c->telefono);
             if ($waId) {
+                $errSeguidos = 0;
                 $duplicado = Contacto::where('wa_id', $waId)->where('id', '!=', $c->id)->exists();
                 if ($duplicado) {
                     $err++;
@@ -392,25 +408,33 @@ Artisan::command('contactos:mapear-wa {--solo-contactos} {--solo-conversaciones}
                 }
             } else {
                 $sin_wa++;
+                $errSeguidos++;
+                if ($errSeguidos >= $maxErrors) {
+                    $bar->finish();
+                    $this->newLine();
+                    $this->error("Aborto: {$errSeguidos} resoluciones fallidas seguidas — el bot parece colgado.");
+                    $abortar = true;
+                    break;
+                }
             }
             $bar->advance();
             usleep(150_000);
         }
-        $bar->finish();
-        $this->newLine();
+        if (!$abortar) { $bar->finish(); $this->newLine(); }
         $this->info("Resueltos: {$ok}  ·  Sin WhatsApp: {$sin_wa}  ·  Conflictos: {$err}");
     }
 
-    if ($hacerConversaciones) {
+    if ($hacerConversaciones && !$abortar) {
         $this->info('');
         $this->info('=== Vinculando conversaciones huérfanas (@lid sin nombre) ===');
 
-        $convs = ConversacionWA::where('contacto', 'like', '%@lid')
-            ->where(function ($q) { $q->whereNull('nombre')->orWhere('nombre', ''); })
-            ->get();
-        $this->info("Conversaciones @lid huérfanas: {$convs->count()}");
+        $q = ConversacionWA::where('contacto', 'like', '%@lid')
+            ->where(function ($q) { $q->whereNull('nombre')->orWhere('nombre', ''); });
+        if ($limit) $q->limit($limit);
+        $convs = $q->get();
+        $this->info("Conversaciones @lid huérfanas: {$convs->count()}" . ($limit ? " (limit={$limit})" : ''));
 
-        $vinculadas = 0; $sin_match = 0;
+        $vinculadas = 0; $sin_match = 0; $errSeguidos = 0;
         $bar = $this->output->createProgressBar($convs->count());
         $bar->start();
 
@@ -420,12 +444,24 @@ Artisan::command('contactos:mapear-wa {--solo-contactos} {--solo-conversaciones}
             if (!$hit) {
                 $numero = Contacto::resolverNumeroDesdeJid($conv->contacto);
                 if ($numero) {
+                    $errSeguidos = 0;
                     $telNorm = Contacto::normalizarTelefono($numero);
                     $hit = Contacto::where('telefono', $telNorm)->first();
                     if ($hit && !$hit->wa_id) {
                         $hit->update(['wa_id' => $conv->contacto]);
                     }
+                } else {
+                    $errSeguidos++;
+                    if ($errSeguidos >= $maxErrors) {
+                        $bar->finish();
+                        $this->newLine();
+                        $this->error("Aborto: {$errSeguidos} resoluciones fallidas seguidas — el bot parece colgado.");
+                        $abortar = true;
+                        break;
+                    }
                 }
+            } else {
+                $errSeguidos = 0;
             }
 
             if ($hit) {
@@ -438,13 +474,12 @@ Artisan::command('contactos:mapear-wa {--solo-contactos} {--solo-conversaciones}
             $bar->advance();
             usleep(150_000);
         }
-        $bar->finish();
-        $this->newLine();
+        if (!$abortar) { $bar->finish(); $this->newLine(); }
         $this->info("Vinculadas: {$vinculadas}  ·  Sin match en directorio: {$sin_match}");
     }
 
     $this->info('');
-    $this->info('Listo.');
+    $this->info($abortar ? 'Cortado por errores.' : 'Listo.');
 })->purpose('Resuelve wa_id de contactos existentes y vincula conversaciones @lid huerfanas');
 
 /**
