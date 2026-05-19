@@ -107,7 +107,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./bot:/app
-      - wa-session:/app/.wwebjs_auth
+      - wa-session:/app/.wwebjs_auth                  # sesión wwebjs (legacy, rollback)
+      - wa-baileys-atencion:/app/.baileys_auth        # sesión Baileys (activa)
     ports:
       - "3001:3001"
     depends_on:
@@ -117,6 +118,9 @@ services:
       - BOT_AREA=atencion
       - PORT=3001
       - BOT_PUBLIC_URL=http://192.168.1.125:3001
+      # Migrado a Baileys 2026-05-19 (fix @lid + PTT validados en shadow).
+      # Rollback: comentar la línea + `docker compose up -d bot`.
+      - BOT_WA_CLIENT=baileys
     healthcheck:
       # Mira el contenido de /status, no solo HTTP 200 — detecta el estado
       # "zombie" donde el endpoint responde pero el cliente WA no escucha.
@@ -134,7 +138,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./bot:/app
-      - wa-session-administracion:/app/.wwebjs_auth
+      - wa-session-administracion:/app/.wwebjs_auth         # sesión wwebjs (legacy, rollback)
+      - wa-baileys-administracion:/app/.baileys_auth        # sesión Baileys (activa)
     ports:
       - "3002:3002"
     depends_on:
@@ -144,6 +149,8 @@ services:
       - BOT_AREA=administracion
       - PORT=3002
       - BOT_PUBLIC_URL=http://192.168.1.125:3002
+      # Migrado a Baileys 2026-05-19. Rollback: comentar + docker compose up -d.
+      - BOT_WA_CLIENT=baileys
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
@@ -170,14 +177,10 @@ services:
       - BOT_AREA=ovodonacion
       - PORT=3003
       - BOT_PUBLIC_URL=http://192.168.1.125:3003
-      # Migración a Baileys probada 2026-05-18 y rollbackeada: los mensajes
-      # salientes llegaban como "Esperando mensaje..." (sesión libsignal no
-      # descifrable por destinatarios), a pesar de assertSessions/onWhatsApp/
-      # presenceSubscribe. Pendiente investigar Baileys 6.6.x vs 6.7.x en
-      # container shadow con número de testing antes de reintentar.
-      # Para reactivar: descomentar la línea (sesión Baileys preservada en
-      # volumen wa-baileys-ovodonacion).
-      # - BOT_WA_CLIENT=baileys
+      # Migrado a Baileys 2026-05-19. El intento del 18/05 quedó rollbackeado
+      # por el bug @lid; resuelto en commit 243fe91 y validado en shadow.
+      # Rollback: comentar la línea + docker compose up -d.
+      - BOT_WA_CLIENT=baileys
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
@@ -260,6 +263,8 @@ volumes:
   wa-session:                  # sesión WhatsApp del bot de ATENCIÓN (wwebjs)
   wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
   wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs, legacy)
+  wa-baileys-atencion:         # sesión WhatsApp del bot de ATENCIÓN (Baileys, activa)
+  wa-baileys-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (Baileys, activa)
   wa-baileys-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (Baileys, activa)
   wa-baileys-test:             # sesión WhatsApp del bot SHADOW (Baileys, número personal)
 
