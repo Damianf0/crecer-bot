@@ -219,17 +219,14 @@ class BotController extends Controller
         // legajo del paciente. Si lo limitamos a "conv sin nombre", los archivos
         // de conversaciones recurrentes quedan en documentos_paciente con
         // contacto_id=NULL — bug 06/05/2026.
+        //
+        // Para @lid NO se llama al bot inline (resolverNumeroDesdeJid). Cada
+        // mensaje entrante de un @lid huérfano disparaba una call CDP al bot
+        // atención, saturándolo cuando había ráfagas (incidente 19/05). El
+        // matching de @lid sin contacto previo se hace ahora SOLO via el cron
+        // diario `contactos:mapear-wa` (con --limit). El primer mensaje queda
+        // con contacto_id=null hasta que el cron lo resuelva (24h máximo).
         $contacto = Contacto::buscarPorContacto($data['contacto']);
-        if (!$contacto && str_ends_with($data['contacto'], '@lid')) {
-            $numero = Contacto::resolverNumeroDesdeJid($data['contacto']);
-            if ($numero) {
-                $telNorm = Contacto::normalizarTelefono($numero);
-                $contacto = Contacto::where('telefono', $telNorm)->first();
-                if ($contacto && !$contacto->wa_id) {
-                    $contacto->update(['wa_id' => $data['contacto']]);
-                }
-            }
-        }
         if ($contacto) {
             // Si la conv todavía no tiene nombre, poblarlo desde el directorio.
             if (!$conv->nombre) {

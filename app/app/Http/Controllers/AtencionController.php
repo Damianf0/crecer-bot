@@ -243,15 +243,16 @@ class AtencionController extends Controller
             : null;
 
         // Para sugerir el número en el form de agregado: si el JID es @c.us extraemos
-        // el número directamente; si es @lid, intentamos resolverlo via bot.
+        // el número directamente. Para @lid NO llamamos al bot acá porque:
+        //   1. Este endpoint lo pollea el panel cada 8s por cada conv abierta.
+        //   2. resolverNumeroDesdeJid() es una call CDP a Chromium que satura el
+        //      bot atención si hay varios @lid huérfanos abiertos en paralelo.
+        //   3. La resolución masiva la hace el cron `contactos:mapear-wa` (diario,
+        //      con --limit). El modal "+ Agregar contacto" pide el teléfono a mano
+        //      al operador para @lid no resueltos.
         $telefonoSugerido = null;
-        if ($esHuerfana) {
-            if (str_ends_with($conv->contacto, '@c.us')) {
-                $telefonoSugerido = str_replace('@c.us', '', $conv->contacto);
-            } else if (str_ends_with($conv->contacto, '@lid')) {
-                $num = \App\Models\Contacto::resolverNumeroDesdeJid($conv->contacto);
-                if ($num) $telefonoSugerido = \App\Models\Contacto::normalizarTelefono($num);
-            }
+        if ($esHuerfana && str_ends_with($conv->contacto, '@c.us')) {
+            $telefonoSugerido = str_replace('@c.us', '', $conv->contacto);
         }
 
         return response()->json([

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -127,18 +128,32 @@ class Contacto extends Model
      * Llama al bot /check-numero para resolver el JID real (@c.us o @lid) de un teléfono normalizado.
      * Devuelve null si el bot no responde o el número no está en WhatsApp.
      * Tolera fallos: nunca tira excepción al caller.
+     *
+     * Cacheado: hits positivos 24h, hits negativos (no en WA) 5 min. Las excepciones
+     * (timeout / conn refused) NO se cachean para que el reintento ocurra cuando el
+     * bot vuelva. Timeout corto (3s) porque esto se llama desde flujos sincrónicos
+     * (apertura de conv, modal agregar contacto) y un bot colgado no debe bloquearlos.
      */
     public static function resolverWaId(string $telefonoNormalizado): ?string
     {
         if (!$telefonoNormalizado) return null;
+
+        $cacheKey = "wa:check:{$telefonoNormalizado}";
+        $cached   = Cache::get($cacheKey, '__MISS__');
+        if ($cached !== '__MISS__') return $cached;
+
         try {
-            $r = Http::timeout(15)
+            $r = Http::timeout(3)
                 ->withToken(config('app.bot_ingress_token'))
                 ->post(config('app.bot_url') . '/check-numero', ['numero' => $telefonoNormalizado]);
-            if (!$r->ok() || !$r->json('ok') || !$r->json('registered')) {
+            if (!$r->ok() || !$r->json('ok')) return null;     // bot rechazó: no cacheo (reintenta)
+            if (!$r->json('registered')) {
+                Cache::put($cacheKey, null, now()->addMinutes(5));
                 return null;
             }
-            return $r->json('normalizedId');
+            $val = $r->json('normalizedId');
+            Cache::put($cacheKey, $val, now()->addHours(24));
+            return $val;
         } catch (\Exception $e) {
             Log::warning('Contacto::resolverWaId fallo', ['tel' => $telefonoNormalizado, 'err' => $e->getMessage()]);
             return null;
@@ -148,15 +163,29 @@ class Contacto extends Model
     /**
      * Resuelve el número telefónico real desde un JID @lid usando /resolve-jid del bot.
      * Devuelve null si no se pudo. Tolera fallos.
+     *
+     * Cacheado igual que resolverWaId (24h positivos, 5min negativos). Sin esta caché,
+     * el polling cada 8s del panel de atención llamaba al bot 7.5 veces/min por cada
+     * conversación huérfana @lid abierta → saturaba el CDP de Chromium y colgaba el
+     * bot atención (incidente 19/05).
      */
     public static function resolverNumeroDesdeJid(string $jid): ?string
     {
+        if (!$jid) return null;
+
+        $cacheKey = "wa:jid:{$jid}";
+        $cached   = Cache::get($cacheKey, '__MISS__');
+        if ($cached !== '__MISS__') return $cached;
+
         try {
-            $r = Http::timeout(15)
+            $r = Http::timeout(3)
                 ->withToken(config('app.bot_ingress_token'))
                 ->post(config('app.bot_url') . '/resolve-jid', ['jid' => $jid]);
-            if (!$r->ok() || !$r->json('ok')) return null;
-            return $r->json('numero');
+            if (!$r->ok() || !$r->json('ok')) return null;     // bot rechazó: no cacheo (reintenta)
+            $val = $r->json('numero');
+            $ttl = $val ? now()->addHours(24) : now()->addMinutes(5);
+            Cache::put($cacheKey, $val, $ttl);
+            return $val;
         } catch (\Exception $e) {
             Log::warning('Contacto::resolverNumeroDesdeJid fallo', ['jid' => $jid, 'err' => $e->getMessage()]);
             return null;
