@@ -2040,9 +2040,17 @@ async function refrescarConvAbierta() {
         : null;
 
     const list = document.getElementById('msg-list');
+    const scrollAntes   = list ? list.scrollTop : 0;
     const estabaAlFondo = list
         ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
         : true;
+
+    // Si el operador desplegó el bloque de "Ver historial completo" (mensajes
+    // previos a una resolución anterior), preservar ese estado: el render
+    // siempre genera el bloque con display:none y el toggle vuelve al label
+    // inicial, así que sin esto el polling cada 8s lo cerraba solo.
+    const historialAntes = document.getElementById('msg-historial-previos');
+    const historialEstabaAbierto = historialAntes && historialAntes.style.display !== 'none';
 
     // Replace
     _renderConversacion(idAlFetch, datos);
@@ -2056,6 +2064,17 @@ async function refrescarConvAbierta() {
             if (cursorAntes) {
                 try { inpNuevo.setSelectionRange(cursorAntes.start, cursorAntes.end); } catch (_) {}
             }
+        }
+    }
+
+    // Restaurar histórico expandido si lo estaba antes del replace
+    if (historialEstabaAbierto) {
+        const historialNuevo = document.getElementById('msg-historial-previos');
+        const toggleBtn = document.querySelector('.msg-historial-toggle');
+        if (historialNuevo && toggleBtn) {
+            if (!toggleBtn.dataset.lbl) toggleBtn.dataset.lbl = toggleBtn.textContent;
+            historialNuevo.style.display = '';
+            toggleBtn.textContent = '↓ Ocultar historial anterior';
         }
     }
 
@@ -2074,8 +2093,17 @@ async function refrescarConvAbierta() {
         }
     }
 
+    // Restaurar scroll: si estaba al fondo, ir al fondo (sigue leyendo nuevos
+    // mensajes). Si estaba leyendo más arriba (típicamente histórico expandido),
+    // restaurar la posición exacta para no perder la línea de lectura.
     const listNew = document.getElementById('msg-list');
-    if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
+    if (listNew) {
+        if (estabaAlFondo) {
+            listNew.scrollTop = listNew.scrollHeight;
+        } else {
+            listNew.scrollTop = scrollAntes;
+        }
+    }
 }
 setInterval(refrescarConvAbierta, 8000);
 

@@ -596,6 +596,7 @@ async function refrescarConvAbierta() {
         : null;
 
     const list = document.getElementById('msg-list');
+    const scrollAntes   = list ? list.scrollTop : 0;
     const estabaAlFondo = list
         ? (list.scrollHeight - list.scrollTop - list.clientHeight) < 80
         : true;
@@ -628,8 +629,16 @@ async function refrescarConvAbierta() {
         }
     }
 
+    // Si estaba al fondo, ir al fondo (sigue leyendo nuevos). Si no, restaurar
+    // la posición exacta para no perder la línea de lectura.
     const listNew = document.getElementById('msg-list');
-    if (listNew && estabaAlFondo) listNew.scrollTop = listNew.scrollHeight;
+    if (listNew) {
+        if (estabaAlFondo) {
+            listNew.scrollTop = listNew.scrollHeight;
+        } else {
+            listNew.scrollTop = scrollAntes;
+        }
+    }
 }
 setInterval(refrescarConvAbierta, 8000);
 
