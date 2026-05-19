@@ -113,6 +113,13 @@ function crearClienteBaileys() {
       browser: ['Crecer Bot', 'Chrome', '1.0'],
       syncFullHistory: false,
       markOnlineOnConnect: true,
+      // Cuando un receptor no pudo descifrar un mensaje nuestro, WA le pide
+      // al sender que lo reenvíe. Sin getMessage definido, Baileys no responde
+      // y el receptor puede quedar mostrando "Esperando mensaje..." hasta
+      // que WA caduque el ciclo. Devolviendo undefined explícito, WA descarta
+      // el reintento más rápido. No mantenemos store local de mensajes
+      // enviados así que no podemos retransmitir el contenido real.
+      getMessage: async (_key) => undefined,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -239,6 +246,16 @@ function crearClienteBaileys() {
       return { video: buffer, mimetype, caption };
     }
     if (mimetype?.startsWith('audio/')) {
+      // WhatsApp distingue dos modos para audio:
+      //   - PTT (push-to-talk, "nota de voz"): mimetype debe ser
+      //     'audio/ogg; codecs=opus' y ptt=true. Es el formato natural de los
+      //     audios grabados en WhatsApp. Si llega un .ogg sin codecs declarado,
+      //     WA lo descarta silenciosamente.
+      //   - Archivo de audio (mp3/mp4/wav): ptt=false, mimetype tal cual.
+      const esOgg = /ogg/i.test(mimetype);
+      if (esOgg) {
+        return { audio: buffer, mimetype: 'audio/ogg; codecs=opus', ptt: true };
+      }
       return { audio: buffer, mimetype, ptt: false };
     }
     // documento / fallback
@@ -249,6 +266,13 @@ function crearClienteBaileys() {
   // usuario indexado en @s.whatsapp.net o en @lid según su modo de privacidad;
   // mandar al JID incorrecto resulta en "Esperando mensaje..." del lado del
   // receptor porque la sesión libsignal está atada al otro JID.
+  //
+  // IMPORTANTE: si onWhatsApp devuelve info.lid, ese es el JID preferido del
+  // destinatario y al que su sesión libsignal está vinculada. Mandar a
+  // info.jid (siempre @s.whatsapp.net) en ese caso resulta en paquete cifrado
+  // que el receptor no puede descifrar. Este fue el bug del rollback del
+  // 18/05 — wwebjs hacía esta resolución automáticamente vía contact lookup;
+  // Baileys no, y por eso teníamos que leer info.lid explícitamente.
   // Cache de 10 min para evitar llamar onWhatsApp en cada envío.
   const _jidCache = new Map();
   async function resolverJidEnvio(jid) {
@@ -262,7 +286,13 @@ function crearClienteBaileys() {
 
     try {
       const [info] = await sock.onWhatsApp(num);
+      if (info?.lid) {
+        console.log(`[baileys] onWhatsApp(${num}) → @lid ${info.lid}`);
+        _jidCache.set(num, { jid: info.lid, ts: Date.now() });
+        return info.lid;
+      }
       if (info?.jid) {
+        console.log(`[baileys] onWhatsApp(${num}) → @s ${info.jid}`);
         _jidCache.set(num, { jid: info.jid, ts: Date.now() });
         return info.jid;
       }
@@ -313,9 +343,12 @@ function crearClienteBaileys() {
     const num = String(digits).replace(/\D/g, '');
     const [res] = await sock.onWhatsApp(num);
     if (!res || !res.exists) return { registered: false, normalizedId: null };
+    // Preferimos @lid si existe — es el JID canónico del destinatario para
+    // libsignal (cuando tiene privacy mode). wwebjs ya hace esto via contact
+    // lookup interno; replicamos para que el contrato del adapter sea idéntico.
     return {
       registered: true,
-      normalizedId: aExterno(res.jid),
+      normalizedId: res.lid || aExterno(res.jid),
     };
   };
 
@@ -333,8 +366,14 @@ function crearClienteBaileys() {
   };
 
   emitter.getProfilePicUrl = async (jid) => {
+    // Timeout 3s — si el server WA está lento o el destinatario oculta la
+    // foto, no queremos colgar el endpoint del bot (Laravel pollea profile
+    // pics y un timeout largo satura los workers FPM).
     try {
-      return await sock.profilePictureUrl(aInterno(jid), 'image');
+      return await Promise.race([
+        sock.profilePictureUrl(aInterno(jid), 'image'),
+        new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
     } catch (_) {
       return null;
     }
