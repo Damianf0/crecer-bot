@@ -475,6 +475,11 @@ audio { height: 32px; width: 210px; display: block; }
 .msg-resol-divider { display: flex; align-items: center; gap: 10px; margin: 14px 4px 8px; color: var(--muted); font-size: 11.5px; }
 .msg-resol-divider .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
 .msg-resol-divider .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
+/* Eventos intercalados en el hilo (tomada/delegada/urgente/etc.) — system-message style */
+.msg-evento-inline { display: flex; justify-content: center; margin: 8px 0; }
+.msg-evento-inline > span { padding: 3px 10px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 70%, var(--border)); border: 1px solid var(--border); color: var(--muted); font-size: 11px; max-width: 80%; text-align: center; }
+.msg-evento-inline strong { color: var(--text); font-weight: 600; }
+.msg-evento-inline .ev-time { opacity: .65; margin-left: 6px; font-size: 10.5px; }
 .msg-historial-toggle { display: block; width: 100%; text-align: center; padding: 8px; font-size: 12px; color: var(--muted); cursor: pointer; background: var(--surface); border: 1px dashed var(--border); border-radius: 6px; margin: 6px 0; }
 .msg-historial-toggle:hover { color: var(--text); border-color: var(--info); }
 .seg-toggle {
@@ -1090,10 +1095,42 @@ function toggleHistorialPrevios(btn) {
     btn.textContent = open ? '↓ Ocultar historial anterior' : btn.dataset.lbl;
 }
 
+// ── Eventos intercalados en el hilo ───────────────────────────
+// Render de un evento (tomada/delegada/resuelta/etc.) como "system message"
+// inline en el msg-list, en su posición cronológica entre los mensajes. Reemplaza
+// a la tira de chips horizontal que estaba debajo del hilo y mostraba los eventos
+// fuera de contexto temporal.
+function renderEventoInline(e) {
+    const TIPOS = {
+        tomada:        { icon: '🟢', label: (e) => `Tomó <strong>${esc(e.usuario||'—')}</strong>` },
+        delegada:      { icon: '📤', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> delegó a <strong>${esc(e.destino||'—')}</strong>` },
+        resuelta:      { icon: '✅', label: (e) => `Resolvió <strong>${esc(e.usuario||'—')}</strong>` },
+        reabierta:     { icon: '🔁', label: (e) => `Reabrió <strong>${esc(e.usuario||'—')}</strong>` },
+        urgente_on:    { icon: '⚑',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> marcó urgente` },
+        urgente_off:   { icon: '⚐',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> sacó urgencia` },
+        reenviada:     { icon: '🔁', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> reenvió y archivó` },
+        derivada_area: { icon: '↗',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> derivó a otra área` },
+    };
+    const t = TIPOS[e.tipo] || { icon: '•', label: () => esc(e.tipo) };
+    return `<div class="msg-evento-inline" title="${esc(e.fecha||'')}"><span>${t.icon} ${t.label(e)}<span class="ev-time">${esc(e.hora||'')}</span></span></div>`;
+}
+
+// Combina mensajes y eventos en una sola lista ordenada por timestamp.
+// Cada item lleva __k='msg'|'evt' para que el renderer sepa qué dibujar.
+function mergearMensajesEventos(mensajes, eventos) {
+    const items = [];
+    for (const m of mensajes) items.push(Object.assign({}, m, { __k: 'msg' }));
+    for (const e of eventos)  items.push(Object.assign({}, e, { __k: 'evt' }));
+    items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    return items;
+}
+
 // ── Seguimiento ───────────────────────────────────────────────
-// Una sola línea horizontal con scroll. Cada evento es un chip compacto:
-// [icon nombre · hora]. Si hay muchas delegaciones, se hace scroll horizontal
-// en vez de crecer verticalmente.
+// (LEGACY) Tira de chips horizontal con los eventos del ciclo actual. Se sacó
+// del panel principal de /atencion el 19/05 porque mostraba los eventos fuera
+// de contexto temporal (todos abajo, después del último mensaje). Ahora los
+// eventos van inline vía renderEventoInline(). La función queda para que
+// /mis-conversaciones y /centro-tareas la sigan usando hasta que las migren.
 function renderSeguimiento(eventos) {
     const TIPOS = {
         tomada:      { icon: '🟢', label: (e) => `Tomó <strong>${esc(e.usuario||'—')}</strong>` },
@@ -1177,38 +1214,46 @@ function _renderConversacion(id, datos) {
     const ultResol = (eventos || []).filter(e => e.tipo === 'resuelta').slice(-1)[0] || null;
     const haySegundaParte = ultResol && msgsVisibles.some(m => m.ts > ultResol.ts);
 
-    function renderMsgsSegmento(arr) {
+    // Render de un segmento del hilo (lista de items mensajes+eventos mezclados
+    // cronológicamente). Cada item lleva __k para que sepamos qué dibujar.
+    function renderItemsSegmento(items) {
         let lastFecha = null;
-        return arr.map(m => {
+        return items.map(it => {
             let out = '';
-            if (m.fecha !== lastFecha) {
-                out += `<div class="msg-date">${m.fecha}</div>`;
-                lastFecha = m.fecha;
+            if (it.__k === 'msg') {
+                if (it.fecha !== lastFecha) {
+                    out += `<div class="msg-date">${it.fecha}</div>`;
+                    lastFecha = it.fecha;
+                }
+                out += renderMsgWrap(it, true);
+            } else {
+                out += renderEventoInline(it);
             }
-            out += renderMsgWrap(m, true);
             return out;
         }).join('');
     }
 
     let msgHtml = '';
     if (haySegundaParte) {
-        const previos = msgsVisibles.filter(m => m.ts <= ultResol.ts);
-        const nuevos  = msgsVisibles.filter(m => m.ts >  ultResol.ts);
+        // Partimos por la última resolución: lo previo va al bloque colapsado,
+        // lo nuevo va abierto. La última resolución NO se duplica como inline
+        // (es el divider explícito). El resto de eventos sí va inline.
+        const previos        = msgsVisibles.filter(m => m.ts <= ultResol.ts);
+        const nuevos         = msgsVisibles.filter(m => m.ts >  ultResol.ts);
+        const eventosPrevios = (eventos || []).filter(e => e.ts <  ultResol.ts);
+        const eventosNuevos  = (eventos || []).filter(e => e.ts >  ultResol.ts);
+
+        const itemsPrevios = mergearMensajesEventos(previos, eventosPrevios);
+        const itemsNuevos  = mergearMensajesEventos(nuevos,  eventosNuevos);
+
         const dividerLabel = `✓ Resuelta el ${esc(ultResol.fecha)} por ${esc(ultResol.usuario || '—')}`;
-        const previosBloque = `<div id="msg-historial-previos" style="display:none;">${renderMsgsSegmento(previos)}</div>`;
+        const previosBloque = `<div id="msg-historial-previos" style="display:none;">${renderItemsSegmento(itemsPrevios)}</div>`;
         const toggle = `<button class="msg-historial-toggle" onclick="toggleHistorialPrevios(this)">↑ Ver historial completo (${previos.length} mensajes anteriores · cerrados)</button>`;
         const divider = `<div class="msg-resol-divider"><div class="line"></div><div class="label">${dividerLabel}</div><div class="line"></div></div>`;
-        msgHtml = toggle + previosBloque + divider + renderMsgsSegmento(nuevos);
+        msgHtml = toggle + previosBloque + divider + renderItemsSegmento(itemsNuevos);
     } else {
-        msgHtml = renderMsgsSegmento(msgsVisibles);
+        msgHtml = renderItemsSegmento(mergearMensajesEventos(msgsVisibles, eventos || []));
     }
-
-    // Para el seguimiento (chips horizontales): si hubo resolución previa con
-    // mensajes nuevos, solo mostramos los eventos del ciclo nuevo (los del
-    // ciclo anterior ya están representados en el divider entre mensajes).
-    const eventosVisibles = haySegundaParte
-        ? (eventos || []).filter(e => e.ts > ultResol.ts)
-        : (eventos || []);
 
     const inputHtml = `
         <div class="panel-input" id="panel-input-area">
@@ -1247,7 +1292,6 @@ function _renderConversacion(id, datos) {
             <div class="panel-head-actions">${resumenTag(conv.resumen)} ${headBtns}</div>
         </div>
         <div class="msg-list" id="msg-list" onscroll="onMsgScroll()">${state.panelHasOlder ? '<div id="msg-load-older" style="text-align:center;padding:8px;font-size:11px;color:var(--muted);cursor:pointer;" onclick="cargarMensajesAnteriores()">Ver mensajes anteriores</div>' : ''}${msgHtml || '<div class="col-empty">Sin mensajes</div>'}</div>
-        ${renderSeguimiento(eventosVisibles)}
         ${inputHtml}
     `;
 

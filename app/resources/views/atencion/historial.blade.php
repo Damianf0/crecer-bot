@@ -122,14 +122,14 @@
 .msg-mini-hora { font-size: 10px; color: var(--muted); min-width: 40px; padding-top: 2px; }
 .msg-mini-audio { color: var(--muted); font-style: italic; }
 
-.seg-hist { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
-.seg-hist-title { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .5px; margin-bottom: 6px; text-transform: uppercase; }
-.seg-hist-item { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--muted); padding: 3px 0; border-bottom: 1px solid var(--border); }
-.seg-hist-item:last-child { border-bottom: none; }
-.seg-hist-icon { font-size: 13px; flex-shrink: 0; }
-.seg-hist-text { flex: 1; line-height: 1.4; color: var(--text); }
-.seg-hist-text strong { font-weight: 600; }
-.seg-hist-when { font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* Eventos inline (tomada/delegada/resuelta/etc.) intercalados con los mensajes
+   en el detalle de una conversación archivada. Reemplaza al bloque seg-hist
+   separado que mostraba los eventos al final sin contexto temporal. */
+.msg-mini-evt { display: flex; justify-content: center; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.msg-mini-evt:last-child { border-bottom: none; }
+.msg-mini-evt > span { padding: 2px 10px; border-radius: 9px; background: color-mix(in srgb, var(--bg) 70%, var(--border)); border: 1px solid var(--border); color: var(--muted); font-size: 11px; max-width: 80%; text-align: center; }
+.msg-mini-evt strong { color: var(--text); font-weight: 600; }
+.msg-mini-evt .ev-time { opacity: .65; margin-left: 6px; font-size: 10.5px; }
 
 .reabrir-btn {
     font-size: 11px;
@@ -369,47 +369,48 @@ async function toggleDetalle(tipo, id, item) {
             const msgs     = data.mensajes || [];
             const eventos  = data.eventos  || [];
 
-            const msgsHtml = msgs.length
-                ? `<div style="max-height:220px;overflow-y:auto;">` +
-                  msgs.map(m => {
-                      const dirClass = m.direccion === 'entrante' ? 'dir-in' : m.direccion === 'saliente' ? 'dir-out' : 'dir-nota';
-                      const dirLabel = m.direccion === 'entrante' ? 'Paciente' : m.direccion === 'saliente' ? 'Clínica' : 'Nota';
-                      const cuerpo = m.tipo === 'audio'
-                          ? `<span class="msg-mini-audio">🎤 ${esc(m.contenido || 'Audio sin transcripción')}</span>`
-                          : esc(m.contenido || '');
-                      return `<div class="msg-mini">
-                          <span class="msg-mini-dir ${dirClass}">${dirLabel}</span>
-                          <span class="msg-mini-hora">${m.hora}</span>
-                          <span>${cuerpo}</span>
-                      </div>`;
-                  }).join('') + `</div>`
-                : '<span style="color:var(--muted);font-size:12px;">Sin mensajes</span>';
-
+            // Mezcla cronológica de mensajes + eventos. Cada evento (tomada /
+            // delegada / resuelta / etc.) se renderiza como chip inline en su
+            // posición temporal, en lugar de aparecer en un bloque separado
+            // al final sin contexto.
             const TIPOS_SEG = {
-                tomada:      { icon: '🟢', label: (e) => `Tomada por <strong>${esc(e.usuario||'—')}</strong>` },
-                delegada:    { icon: '📤', label: (e) => `Delegada a <strong>${esc(e.destino||'—')}</strong> por <strong>${esc(e.usuario||'—')}</strong>` },
-                resuelta:    { icon: '✅', label: (e) => `Resuelta por <strong>${esc(e.usuario||'—')}</strong>` },
-                reabierta:   { icon: '🔁', label: (e) => `Reabierta por <strong>${esc(e.usuario||'—')}</strong>` },
-                urgente_on:  { icon: '⚑',  label: (e) => `Marcada urgente por <strong>${esc(e.usuario||'—')}</strong>` },
-                urgente_off: { icon: '⚐',  label: (e) => `Urgencia quitada por <strong>${esc(e.usuario||'—')}</strong>` },
+                tomada:        { icon: '🟢', label: (e) => `Tomó <strong>${esc(e.usuario||'—')}</strong>` },
+                delegada:      { icon: '📤', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> delegó a <strong>${esc(e.destino||'—')}</strong>` },
+                resuelta:      { icon: '✅', label: (e) => `Resolvió <strong>${esc(e.usuario||'—')}</strong>` },
+                reabierta:     { icon: '🔁', label: (e) => `Reabrió <strong>${esc(e.usuario||'—')}</strong>` },
+                urgente_on:    { icon: '⚑',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> marcó urgente` },
+                urgente_off:   { icon: '⚐',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> sacó urgencia` },
+                reenviada:     { icon: '🔁', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> reenvió y archivó` },
+                derivada_area: { icon: '↗',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> derivó a otra área` },
             };
 
-            const segHtml = eventos.length
-                ? `<div class="seg-hist">
-                    <div class="seg-hist-title">Seguimiento (${eventos.length})</div>
-                    ${eventos.map(e => {
-                        const t = TIPOS_SEG[e.tipo] || { icon: '•', label: () => esc(e.tipo) };
-                        return `<div class="seg-hist-item">
-                            <span class="seg-hist-icon">${t.icon}</span>
-                            <span class="seg-hist-text">${t.label(e)}</span>
-                            <span class="seg-hist-when" title="${esc(e.fecha)}">${esc(e.fecha)}</span>
-                        </div>`;
-                    }).join('')}
-                  </div>`
-                : `<div class="seg-hist"><div class="seg-hist-title">Seguimiento</div>
-                   <span style="font-size:12px;color:var(--muted);">Sin acciones registradas.</span></div>`;
+            const items = [];
+            for (const m of msgs)    items.push(Object.assign({}, m, { __k: 'msg' }));
+            for (const e of eventos) items.push(Object.assign({}, e, { __k: 'evt' }));
+            items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
 
-            el.innerHTML = msgsHtml + segHtml;
+            const renderItem = (it) => {
+                if (it.__k === 'msg') {
+                    const dirClass = it.direccion === 'entrante' ? 'dir-in' : it.direccion === 'saliente' ? 'dir-out' : 'dir-nota';
+                    const dirLabel = it.direccion === 'entrante' ? 'Paciente' : it.direccion === 'saliente' ? 'Clínica' : 'Nota';
+                    const cuerpo = it.tipo === 'audio'
+                        ? `<span class="msg-mini-audio">🎤 ${esc(it.contenido || 'Audio sin transcripción')}</span>`
+                        : esc(it.contenido || '');
+                    return `<div class="msg-mini">
+                        <span class="msg-mini-dir ${dirClass}">${dirLabel}</span>
+                        <span class="msg-mini-hora">${it.hora}</span>
+                        <span>${cuerpo}</span>
+                    </div>`;
+                }
+                const t = TIPOS_SEG[it.tipo] || { icon: '•', label: () => esc(it.tipo) };
+                return `<div class="msg-mini-evt" title="${esc(it.fecha||'')}"><span>${t.icon} ${t.label(it)}<span class="ev-time">${esc(it.hora||'')}</span></span></div>`;
+            };
+
+            const itemsHtml = items.length
+                ? `<div style="max-height:220px;overflow-y:auto;">` + items.map(renderItem).join('') + `</div>`
+                : '<span style="color:var(--muted);font-size:12px;">Sin mensajes ni acciones registradas</span>';
+
+            el.innerHTML = itemsHtml;
         }
     } catch(e) { el.textContent = 'Error al cargar detalle.'; }
 }

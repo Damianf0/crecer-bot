@@ -90,6 +90,11 @@
 .msg-wrap.in   { justify-content: flex-start; }
 .msg-wrap.out  { justify-content: flex-end; }
 .msg-wrap.nota { justify-content: center; }
+/* Eventos intercalados (tomada/delegada/resuelta/etc.) — system-message style */
+.msg-evento-inline { display: flex; justify-content: center; margin: 8px 0; }
+.msg-evento-inline > span { padding: 3px 10px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 70%, var(--border)); border: 1px solid var(--border); color: var(--muted); font-size: 11px; max-width: 80%; text-align: center; }
+.msg-evento-inline strong { color: var(--text); font-weight: 600; }
+.msg-evento-inline .ev-time { opacity: .65; margin-left: 6px; font-size: 10.5px; }
 .msg-bubble { max-width: 72%; padding: 7px 11px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
 .msg-bubble.in   { background: var(--bg); border: 1px solid var(--border); border-radius: 0 12px 12px 12px; }
 .msg-bubble.out  { background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 12px 0 12px 12px; }
@@ -312,9 +317,16 @@ function _renderConversacion(id, datos) {
     const resumenHtml = conv.resumen
         ? `<div class="resumen-banner"><span>RESUMEN IA</span>${esc(conv.resumen)}</div>` : '';
 
+    // Merge cronológico de mensajes y eventos: cada evento (tomada/delegada/
+    // resuelta/urgente/etc.) se renderiza como "system message" inline en su
+    // posición temporal, en lugar de aparecer todos juntos abajo. Ver
+    // renderEventoInline() definida más abajo.
+    const items = mergearMensajesEventos(mensajes || [], eventos || []);
     let lastFecha = null;
-    const msgHtml = mensajes.map(m => {
+    const msgHtml = items.map(it => {
         let out = '';
+        if (it.__k === 'evt') return renderEventoInline(it);
+        const m = it;
         if (m.fecha !== lastFecha) { out += `<div class="msg-date">${m.fecha}</div>`; lastFecha = m.fecha; }
         if (m.direccion === 'nota_interna') {
             out += `<div class="msg-wrap nota"><div class="msg-bubble nota">📝 ${linkify(m.contenido)}</div></div>`;
@@ -325,8 +337,6 @@ function _renderConversacion(id, datos) {
         }
         return out;
     }).join('');
-
-    const segHtml = renderSeguimiento(eventos);
 
     const delOpts = USUARIOS
         .filter(u => u.id !== ME_ID)
@@ -354,7 +364,6 @@ function _renderConversacion(id, datos) {
         </div>
         ${resumenHtml}
         <div class="msg-list" id="msg-list">${msgHtml || '<div style="text-align:center;color:var(--muted);padding:32px;font-size:13px;">Sin mensajes aún</div>'}</div>
-        ${segHtml}
         <div class="panel-input">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;position:relative;">
                 <div style="display:flex;gap:6px;">
@@ -396,7 +405,38 @@ function toggleDelDropdown() {
     event.stopPropagation();
 }
 
-// ── Seguimiento ──────────────────────────────────────────────────
+// ── Eventos intercalados en el hilo ──────────────────────────────
+// Renderiza un evento como "system message" inline en el msg-list, en su
+// posición cronológica. Reemplaza a la tira de chips (renderSeguimiento) que
+// quedó como legacy y ya no se incrusta en el panel.
+function renderEventoInline(e) {
+    const TIPOS = {
+        tomada:        { icon: '🟢', label: (e) => `Tomó <strong>${esc(e.usuario||'—')}</strong>` },
+        delegada:      { icon: '📤', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> delegó a <strong>${esc(e.destino||'—')}</strong>` },
+        resuelta:      { icon: '✅', label: (e) => `Resolvió <strong>${esc(e.usuario||'—')}</strong>` },
+        reabierta:     { icon: '🔁', label: (e) => `Reabrió <strong>${esc(e.usuario||'—')}</strong>` },
+        urgente_on:    { icon: '⚑',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> marcó urgente` },
+        urgente_off:   { icon: '⚐',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> sacó urgencia` },
+        reenviada:     { icon: '🔁', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> reenvió y archivó` },
+        derivada_area: { icon: '↗',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> derivó a otra área` },
+    };
+    const t = TIPOS[e.tipo] || { icon: '•', label: () => esc(e.tipo) };
+    return `<div class="msg-evento-inline" title="${esc(e.fecha||'')}"><span>${t.icon} ${t.label(e)}<span class="ev-time">${esc(e.hora||'')}</span></span></div>`;
+}
+
+// Combina mensajes y eventos en una sola lista ordenada por timestamp.
+function mergearMensajesEventos(mensajes, eventos) {
+    const items = [];
+    for (const m of mensajes) items.push(Object.assign({}, m, { __k: 'msg' }));
+    for (const e of eventos)  items.push(Object.assign({}, e, { __k: 'evt' }));
+    items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    return items;
+}
+
+// ── Seguimiento (LEGACY) ────────────────────────────────────────
+// Tira de chips horizontal que el panel ya no muestra (los eventos van
+// inline ahora). La función queda hasta que /centro-tareas se migre
+// también — ahí sigue usándose.
 const TIPO_SEG = {
     tomada:      { icon: '🟢', label: u => `Tomada por ${u}` },
     delegada:    { icon: '📤', label: (u, d) => `Delegada por ${u} → ${d}` },
