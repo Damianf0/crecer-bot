@@ -122,14 +122,14 @@
 .msg-mini-hora { font-size: 10px; color: var(--muted); min-width: 40px; padding-top: 2px; }
 .msg-mini-audio { color: var(--muted); font-style: italic; }
 
-/* Eventos inline (tomada/delegada/resuelta/etc.) intercalados con los mensajes
-   en el detalle de una conversación archivada. Reemplaza al bloque seg-hist
-   separado que mostraba los eventos al final sin contexto temporal. */
-.msg-mini-evt { display: flex; justify-content: center; padding: 5px 0; border-bottom: 1px solid var(--border); }
+/* Eventos inline en el detalle del historial — mismo estilo que el divider
+   "✓ Resuelta" de /atencion (chip verde + líneas). */
+.msg-mini-evt { display: flex; align-items: center; gap: 10px; padding: 8px 0; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
 .msg-mini-evt:last-child { border-bottom: none; }
-.msg-mini-evt > span { padding: 2px 10px; border-radius: 9px; background: color-mix(in srgb, var(--bg) 70%, var(--border)); border: 1px solid var(--border); color: var(--muted); font-size: 11px; max-width: 80%; text-align: center; }
-.msg-mini-evt strong { color: var(--text); font-weight: 600; }
-.msg-mini-evt .ev-time { opacity: .65; margin-left: 6px; font-size: 10.5px; }
+.msg-mini-evt .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.msg-mini-evt .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 9px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
+.msg-mini-evt strong { color: var(--success); font-weight: 700; }
+.msg-mini-evt .ev-time { opacity: .7; margin-left: 6px; font-size: 10.5px; font-weight: 500; }
 
 .reabrir-btn {
     font-size: 11px;
@@ -403,7 +403,7 @@ async function toggleDetalle(tipo, id, item) {
                     </div>`;
                 }
                 const t = TIPOS_SEG[it.tipo] || { icon: '•', label: () => esc(it.tipo) };
-                return `<div class="msg-mini-evt" title="${esc(it.fecha||'')}"><span>${t.icon} ${t.label(it)}<span class="ev-time">${esc(it.hora||'')}</span></span></div>`;
+                return `<div class="msg-mini-evt" title="${esc(it.fecha||'')}"><div class="line"></div><div class="label">${t.icon} ${t.label(it)}<span class="ev-time">${esc(it.hora||'')}</span></div><div class="line"></div></div>`;
             };
 
             const itemsHtml = items.length

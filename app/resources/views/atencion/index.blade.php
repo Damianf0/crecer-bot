@@ -475,11 +475,15 @@ audio { height: 32px; width: 210px; display: block; }
 .msg-resol-divider { display: flex; align-items: center; gap: 10px; margin: 14px 4px 8px; color: var(--muted); font-size: 11.5px; }
 .msg-resol-divider .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
 .msg-resol-divider .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
-/* Eventos intercalados en el hilo (tomada/delegada/urgente/etc.) — system-message style */
-.msg-evento-inline { display: flex; justify-content: center; margin: 8px 0; }
-.msg-evento-inline > span { padding: 3px 10px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 70%, var(--border)); border: 1px solid var(--border); color: var(--muted); font-size: 11px; max-width: 80%; text-align: center; }
-.msg-evento-inline strong { color: var(--text); font-weight: 600; }
-.msg-evento-inline .ev-time { opacity: .65; margin-left: 6px; font-size: 10.5px; }
+/* Eventos intercalados en el hilo (tomada/delegada/urgente/etc.) — mismo
+   estilo exacto que msg-resol-divider (chip verde + líneas) por pedido del
+   operador: que TODOS los eventos del seguimiento se vean igual al divider
+   de "✓ Resuelta el ... por X". */
+.msg-evento-inline { display: flex; align-items: center; gap: 10px; margin: 14px 4px 8px; color: var(--muted); font-size: 11.5px; }
+.msg-evento-inline .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.msg-evento-inline .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
+.msg-evento-inline strong { color: var(--success); font-weight: 700; }
+.msg-evento-inline .ev-time { opacity: .7; margin-left: 6px; font-size: 10.5px; font-weight: 500; }
 .msg-historial-toggle { display: block; width: 100%; text-align: center; padding: 8px; font-size: 12px; color: var(--muted); cursor: pointer; background: var(--surface); border: 1px dashed var(--border); border-radius: 6px; margin: 6px 0; }
 .msg-historial-toggle:hover { color: var(--text); border-color: var(--info); }
 .seg-toggle {
@@ -1112,7 +1116,7 @@ function renderEventoInline(e) {
         derivada_area: { icon: '↗',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> derivó a otra área` },
     };
     const t = TIPOS[e.tipo] || { icon: '•', label: () => esc(e.tipo) };
-    return `<div class="msg-evento-inline" title="${esc(e.fecha||'')}"><span>${t.icon} ${t.label(e)}<span class="ev-time">${esc(e.hora||'')}</span></span></div>`;
+    return `<div class="msg-evento-inline" title="${esc(e.fecha||'')}"><div class="line"></div><div class="label">${t.icon} ${t.label(e)}<span class="ev-time">${esc(e.hora||'')}</span></div><div class="line"></div></div>`;
 }
 
 // Combina mensajes y eventos en una sola lista ordenada por timestamp.

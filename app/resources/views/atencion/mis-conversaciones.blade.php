@@ -90,11 +90,12 @@
 .msg-wrap.in   { justify-content: flex-start; }
 .msg-wrap.out  { justify-content: flex-end; }
 .msg-wrap.nota { justify-content: center; }
-/* Eventos intercalados (tomada/delegada/resuelta/etc.) — system-message style */
-.msg-evento-inline { display: flex; justify-content: center; margin: 8px 0; }
-.msg-evento-inline > span { padding: 3px 10px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 70%, var(--border)); border: 1px solid var(--border); color: var(--muted); font-size: 11px; max-width: 80%; text-align: center; }
-.msg-evento-inline strong { color: var(--text); font-weight: 600; }
-.msg-evento-inline .ev-time { opacity: .65; margin-left: 6px; font-size: 10.5px; }
+/* Eventos intercalados — mismo formato que el divider de "✓ Resuelta" */
+.msg-evento-inline { display: flex; align-items: center; gap: 10px; margin: 14px 4px 8px; color: var(--muted); font-size: 11.5px; }
+.msg-evento-inline .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.msg-evento-inline .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
+.msg-evento-inline strong { color: var(--success); font-weight: 700; }
+.msg-evento-inline .ev-time { opacity: .7; margin-left: 6px; font-size: 10.5px; font-weight: 500; }
 .msg-bubble { max-width: 72%; padding: 7px 11px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
 .msg-bubble.in   { background: var(--bg); border: 1px solid var(--border); border-radius: 0 12px 12px 12px; }
 .msg-bubble.out  { background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 12px 0 12px 12px; }
@@ -421,7 +422,7 @@ function renderEventoInline(e) {
         derivada_area: { icon: '↗',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> derivó a otra área` },
     };
     const t = TIPOS[e.tipo] || { icon: '•', label: () => esc(e.tipo) };
-    return `<div class="msg-evento-inline" title="${esc(e.fecha||'')}"><span>${t.icon} ${t.label(e)}<span class="ev-time">${esc(e.hora||'')}</span></span></div>`;
+    return `<div class="msg-evento-inline" title="${esc(e.fecha||'')}"><div class="line"></div><div class="label">${t.icon} ${t.label(e)}<span class="ev-time">${esc(e.hora||'')}</span></div><div class="line"></div></div>`;
 }
 
 // Combina mensajes y eventos en una sola lista ordenada por timestamp.
