@@ -202,10 +202,11 @@ services:
       - BOT_AREA=ovodonacion
       - PORT=3003
       - BOT_PUBLIC_URL=http://192.168.1.125:3003
-      # Migrado a Baileys 2026-05-19. El intento del 18/05 quedó rollbackeado
-      # por el bug @lid; resuelto en commit 243fe91 y validado en shadow.
-      # Rollback: comentar la línea + docker compose up -d.
-      - BOT_WA_CLIENT=baileys
+      # Migrado a Baileys 2026-05-19. ROLLBACK temporal 2026-05-20: tras un
+      # reset de sesión, los mensajes salientes desde ovo llegaban a algunos
+      # destinatarios como "Esperando mensaje..." (identity keys queman?).
+      # Volvemos a wwebjs hasta que se aclare; vuelve a Baileys descomentando.
+      # - BOT_WA_CLIENT=baileys
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
