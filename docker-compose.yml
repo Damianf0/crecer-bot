@@ -57,6 +57,31 @@ services:
     networks:
       - clinica-net
 
+  # Servidor WebSocket para broadcasts en tiempo real (Laravel Reverb).
+  # Lo usa el chat interno (React) para evitar polling cada 6s. Misma imagen
+  # que web pero corre el server WebSocket en puerto 8080. Expone al host
+  # para que el browser pueda conectarse directo via ws://192.168.1.125:8080.
+  reverb:
+    build: ./docker/php
+    restart: unless-stopped
+    volumes:
+      - ./app:/var/www/html
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+    command: ["sh", "-c", "sleep 6 && php artisan reverb:start --host=0.0.0.0 --port=8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080 || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - clinica-net
+
   # Worker dedicado a la queue 'resumen' (jobs LLM asincrónicos).
   # Comparte la imagen y el código del web pero corre artisan queue:work.
   # Aislado del PHP-FPM para que las llamadas largas a Ollama no afecten respuestas HTTP.

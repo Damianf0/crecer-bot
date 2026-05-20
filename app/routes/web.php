@@ -80,10 +80,12 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Chat interno (equipo + DMs) — disponible para cualquier usuario autenticado.
     Route::prefix('chat')->group(function () {
         Route::get('/canales',                       [ChatController::class, 'canales']);
+        Route::get('/canales/archivados',            [ChatController::class, 'archivados']);
         Route::get('/canales/{id}/mensajes',         [ChatController::class, 'mensajes']);
         Route::post('/canales/{id}/mensajes',        [ChatController::class, 'enviar']);
         Route::post('/canales/{id}/marcar-leido',    [ChatController::class, 'marcarLeido']);
         Route::post('/canales/{id}/cerrar',          [ChatController::class, 'cerrar']);
+        Route::post('/canales/{id}/reabrir',         [ChatController::class, 'reabrir']);
         Route::get('/canales/{id}/buscar',           [ChatController::class, 'buscar']);
         Route::delete('/mensajes/{id}',              [ChatController::class, 'eliminarMensaje']);
         Route::get('/usuarios',                      [ChatController::class, 'usuarios']);

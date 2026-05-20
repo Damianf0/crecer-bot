@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ChatMensajeEliminado;
+use App\Events\ChatMensajeEnviado;
 use App\Models\ChatCanal;
 use App\Models\ChatMensaje;
 use App\Models\User;
@@ -171,6 +173,20 @@ class ChatController extends Controller
             ->where('user_id', $uid)
             ->update(['ultimo_leido_id' => $msg->id, 'updated_at' => now()]);
 
+        // Broadcast a los demás miembros del canal. El emisor ya recibe el
+        // mensaje en la respuesta HTTP, no necesita el evento (->toOthers()).
+        $autor = User::find($uid)?->nombre_completo ?? '?';
+        broadcast(new ChatMensajeEnviado($canalId, [
+            'id'        => $msg->id,
+            'user_id'   => $uid,
+            'autor'     => $autor,
+            'texto'     => $msg->texto,
+            'eliminado' => false,
+            'hora'      => $msg->created_at?->format('H:i'),
+            'fecha'     => $msg->created_at?->format('d/m/Y'),
+            'ts'        => $msg->created_at?->timestamp ?? 0,
+        ]))->toOthers();
+
         return response()->json(['ok' => true, 'id' => $msg->id]);
     }
 
@@ -185,7 +201,13 @@ class ChatController extends Controller
         if ($msg->user_id !== $uid) {
             abort(403, 'Solo podés eliminar tus propios mensajes.');
         }
+        $canalId = $msg->canal_id;
         $msg->delete();
+
+        // Notificar a los miembros del canal que el mensaje fue eliminado,
+        // así actualizan su UI al placeholder gris en vivo.
+        broadcast(new ChatMensajeEliminado($canalId, $msgId));
+
         return response()->json(['ok' => true]);
     }
 
@@ -220,6 +242,92 @@ class ChatController extends Controller
             ->update(['oculto' => true, 'updated_at' => now()]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * POST /chat/canales/{id}/reabrir — desoculta un canal previamente cerrado
+     * por el usuario. Inverso de cerrar(). Usado por la tab "Archivadas" del
+     * widget para que el operador pueda volver a una conversación archivada
+     * sin esperar a que la otra persona escriba.
+     */
+    public function reabrir(int $canalId): JsonResponse
+    {
+        $uid = Auth::id();
+        $this->verificarMiembro($canalId, $uid);
+
+        DB::table('chat_canal_user')
+            ->where('canal_id', $canalId)
+            ->where('user_id', $uid)
+            ->update(['oculto' => false, 'updated_at' => now()]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * GET /chat/canales/archivados — Lista los canales que el usuario cerró
+     * (oculto = true). Mismo shape que canales(), pero sin la lógica de
+     * auto-desocultar: el operador eligió cerrarlos, no los desocultamos
+     * automáticamente solo porque haya mensajes nuevos. Cuando hace click en
+     * uno desde la tab "Archivadas", el frontend llama a /reabrir explícito.
+     */
+    public function archivados(): JsonResponse
+    {
+        $uid = Auth::id();
+
+        $canales = ChatCanal::whereHas('miembros', fn($q) => $q
+            ->where('user_id', $uid)
+            ->where('oculto', true))
+            ->with(['miembros:id,nombre_completo'])
+            ->get();
+
+        $online = array_flip($this->usuariosOnline());
+
+        $data = $canales->map(function ($canal) use ($uid, $online) {
+            $pivot = $canal->miembros->firstWhere('id', $uid)?->pivot;
+            $ultimoLeido = $pivot?->ultimo_leido_id ?? 0;
+
+            $ultimoMsg = ChatMensaje::where('canal_id', $canal->id)
+                ->orderByDesc('id')->first();
+
+            $noLeidos = ChatMensaje::where('canal_id', $canal->id)
+                ->where('id', '>', $ultimoLeido)
+                ->where('user_id', '!=', $uid)
+                ->count();
+
+            $nombre = $canal->nombre;
+            $otroId = null;
+            $otroOnline = null;
+            if ($canal->tipo === 'dm') {
+                $otro = $canal->miembros->firstWhere('id', '!=', $uid);
+                $nombre = $otro?->nombre_completo ?? 'DM';
+                $otroId = $otro?->id;
+                $otroOnline = $otroId ? isset($online[$otroId]) : false;
+            }
+
+            return [
+                'id'          => $canal->id,
+                'tipo'        => $canal->tipo,
+                'nombre'      => $nombre,
+                'otro_id'     => $otroId,
+                'otro_online' => $otroOnline,
+                'oculto'      => true,
+                'no_leidos'   => $noLeidos,
+                'ultimo_msg'  => $ultimoMsg ? [
+                    'texto'   => mb_strimwidth((string) $ultimoMsg->texto, 0, 80, '…'),
+                    'user_id' => $ultimoMsg->user_id,
+                    'hora'    => $ultimoMsg->created_at?->format('H:i'),
+                    'fecha'   => $ultimoMsg->created_at?->format('d/m'),
+                    'ts'      => $ultimoMsg->created_at?->timestamp ?? 0,
+                ] : null,
+            ];
+        })
+        // El canal "equipo" nunca se debería archivar (no aplica), pero por
+        // las dudas lo excluimos. DMs archivados por última actividad desc.
+        ->reject(fn($c) => $c['tipo'] === 'equipo')
+        ->sortByDesc(fn($c) => $c['ultimo_msg']['ts'] ?? 0)
+        ->values();
+
+        return response()->json(['ok' => true, 'data' => $data]);
     }
 
     /**
