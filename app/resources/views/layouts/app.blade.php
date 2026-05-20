@@ -219,15 +219,9 @@
 
     <div style="display:flex;align-items:center;gap:0;flex-shrink:0;">
         @auth
-            {{-- Botón "chat interno" en navbar: ícono + badge de no leídos. Click → abre el panel del chat. --}}
-            <button id="navbar-chat-btn" type="button"
-                onclick="if(window.ChatWidget) window.ChatWidget.toggle();"
-                title="Chat interno"
-                style="position:relative;background:none;border:none;cursor:pointer;padding:0 10px;height:52px;display:inline-flex;align-items:center;gap:5px;color:var(--muted);border-left:1px solid var(--border);transition:color .15s;font-size:16px;line-height:1;">
-                <span style="font-size:17px;">💬</span>
-                <span id="navbar-chat-badge"
-                      style="display:none;position:absolute;top:8px;right:2px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;min-width:18px;text-align:center;line-height:1.3;"></span>
-            </button>
+            {{-- El chat interno ya no tiene botón en el navbar; el punto de
+                 entrada único es el FAB flotante (inferior derecha) del
+                 widget React. Ver resources/js/chat/components/ChatFab.tsx. --}}
             <span style="display:inline-flex;align-items:center;gap:7px;padding:0 10px;border-left:1px solid var(--border);">
                 <span style="width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;"
                       title="{{ auth()->user()->nombre_completo }}{{ session('colas') ? ' · '.implode(', ', array_map(fn($c) => \App\Models\User::COLAS[$c] ?? $c, session('colas', []))) : '' }}">

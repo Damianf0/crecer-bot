@@ -1,5 +1,6 @@
 // Botón flotante (FAB) que abre/cierra el panel del chat. Muestra badge
 // rojo con el total de no leídos cuando hay mensajes pendientes.
+// Punto de entrada único del chat tras sacar el ícono del navbar.
 
 import { useChat } from '../state';
 

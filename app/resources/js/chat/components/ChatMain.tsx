@@ -101,14 +101,41 @@ function BusquedaResultados({ onSalir }: { onSalir: () => void }) {
 function MensajesLista() {
     const { state } = useChat();
     const listRef = useRef<HTMLDivElement | null>(null);
+    const [hayNuevoAbajo, setHayNuevoAbajo] = useState(false);
 
-    // Auto-scroll al fondo cuando cambian los mensajes (entrada normal) o cuando
-    // el operador agrega uno optimista (lo recién tipeado).
+    // Distancia del fondo desde la que consideramos "el operador está al fondo".
+    const ESTA_AL_FONDO_PX = 80;
+
+    function estaAlFondo(el: HTMLDivElement): boolean {
+        return el.scrollHeight - el.scrollTop - el.clientHeight < ESTA_AL_FONDO_PX;
+    }
+
+    // Auto-scroll al fondo SOLO si el operador estaba al fondo.
+    // Si scrolleó arriba (está leyendo histórico), no movemos su vista;
+    // mostramos en cambio el botón "Nuevos mensajes ↓".
     useEffect(() => {
         const el = listRef.current;
         if (!el) return;
-        el.scrollTop = el.scrollHeight;
+        if (estaAlFondo(el)) {
+            el.scrollTop = el.scrollHeight;
+            setHayNuevoAbajo(false);
+        } else {
+            setHayNuevoAbajo(true);
+        }
     }, [state.mensajes.length, state.mensajesOptimisticos.length]);
+
+    // Si el operador scrollea manualmente hasta el fondo, ocultamos el chip.
+    const onScroll = () => {
+        const el = listRef.current;
+        if (el && estaAlFondo(el)) setHayNuevoAbajo(false);
+    };
+
+    const irAlFondo = () => {
+        const el = listRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+        setHayNuevoAbajo(false);
+    };
 
     const mostrarVacio =
         !state.cargandoMensajes &&
@@ -116,13 +143,20 @@ function MensajesLista() {
         state.mensajesOptimisticos.length === 0;
 
     return (
-        <div className="chat-msgs" ref={listRef}>
-            {state.cargandoMensajes && state.mensajes.length === 0 && (
-                <div className="chat-msg-empty">Cargando…</div>
+        <div className="chat-msgs-wrap">
+            <div className="chat-msgs" ref={listRef} onScroll={onScroll}>
+                {state.cargandoMensajes && state.mensajes.length === 0 && (
+                    <div className="chat-msg-empty">Cargando…</div>
+                )}
+                {mostrarVacio && <div className="chat-msg-empty">Aún no hay mensajes</div>}
+                {state.mensajes.map(m => <MensajeBubble key={m.id} mensaje={m} />)}
+                {state.mensajesOptimisticos.map(m => <MensajeOptBubble key={m.tempId} mensaje={m} />)}
+            </div>
+            {hayNuevoAbajo && (
+                <button type="button" className="chat-nuevo-abajo" onClick={irAlFondo}>
+                    Nuevos mensajes ↓
+                </button>
             )}
-            {mostrarVacio && <div className="chat-msg-empty">Aún no hay mensajes</div>}
-            {state.mensajes.map(m => <MensajeBubble key={m.id} mensaje={m} />)}
-            {state.mensajesOptimisticos.map(m => <MensajeOptBubble key={m.tempId} mensaje={m} />)}
         </div>
     );
 }

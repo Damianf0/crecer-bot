@@ -9,17 +9,21 @@ import {
     useEffect,
     useMemo,
     useReducer,
+    useRef,
 } from 'react';
 import type { ReactNode } from 'react';
 import type {
     Canal,
     ChatState,
+    EventoMensajeEliminado,
+    EventoMensajeEnviado,
     Mensaje,
     MensajeOptimistic,
     TabSidebar,
     UsuarioListado,
 } from './types';
 import { ChatApi } from './api';
+import { echo } from './echo';
 
 // ─── Identidad del usuario actual (window.__USER__) ──────────────────
 // El layout principal expone window.__USER__ = { id, nombre } para que el JS
@@ -423,6 +427,61 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         void cargarCanales();
     }, [cargarCanales]);
 
+    // ─── Reverb: subscribir a cada canal activo del usuario ─────────
+    // Cada vez que cambia la lista de canales (canales que agregamos o
+    // ocultamos), recomputamos las subscripciones. La key compuesta evita
+    // re-subscribir si solo cambió un metadata interno (preview, no_leidos)
+    // pero la membresía sigue igual.
+    const canalIdsKey = useMemo(
+        () => state.canales.map(c => c.id).sort((a, b) => a - b).join(','),
+        [state.canales]
+    );
+
+    // Refs estables para evitar resubscripciones cuando cambia un closure.
+    const canalActivoRef = useRef(state.canalActivo);
+    const yoRef          = useRef(state.yo);
+    useEffect(() => { canalActivoRef.current = state.canalActivo; }, [state.canalActivo]);
+    useEffect(() => { yoRef.current = state.yo; }, [state.yo]);
+
+    useEffect(() => {
+        if (!canalIdsKey) return;
+        const ids = canalIdsKey.split(',').filter(Boolean).map(Number);
+        const subs = ids.map(id => {
+            const channel = echo.private(`chat.canal.${id}`);
+
+            channel.listen('.ChatMensajeEnviado', (ev: EventoMensajeEnviado) => {
+                // Ignorar nuestros propios mensajes (los emitimos con ->toOthers
+                // del lado server, pero por las dudas filtramos por user_id).
+                if (yoRef.current && ev.mensaje.user_id === yoRef.current.id) return;
+
+                if (canalActivoRef.current === ev.canal_id) {
+                    // Canal abierto: append directo + marcar leído.
+                    dispatch({ type: 'APPEND_MENSAJE', mensaje: ev.mensaje });
+                    void ChatApi.marcarLeido(ev.canal_id);
+                } else {
+                    // Canal no abierto: incrementar badge.
+                    dispatch({ type: 'INCR_NO_LEIDOS', canalId: ev.canal_id });
+                    // Notificación browser si la pestaña no está enfocada y hay permiso.
+                    notificarMensajeEntrante(ev);
+                }
+            });
+
+            channel.listen('.ChatMensajeEliminado', (ev: EventoMensajeEliminado) => {
+                if (canalActivoRef.current === ev.canal_id) {
+                    dispatch({ type: 'MARK_DELETED', mensajeId: ev.mensaje_id });
+                }
+            });
+
+            return id;
+        });
+
+        return () => {
+            // Limpieza: desuscribirse de cada canal al desmontar o cambiar
+            // de lista. echo.leave() resuelve a no-op si no estamos subscritos.
+            for (const id of subs) echo.leave(`chat.canal.${id}`);
+        };
+    }, [canalIdsKey]);
+
     const value = useMemo<ChatContextValue>(() => ({
         state,
         dispatch,
@@ -452,4 +511,37 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     ]);
 
     return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
+}
+
+// ─── Notificación browser para DM entrante ─────────────────────────
+// Se dispara cuando llega un mensaje en un canal que NO es el activo y la
+// pestaña no está enfocada. Si nunca se pidió permiso, lo pedimos en el
+// primer caso (no en boot, para no molestar antes de que el operador
+// abra el chat).
+let _permisoSolicitado = false;
+
+function notificarMensajeEntrante(ev: EventoMensajeEnviado) {
+    // Si la pestaña está enfocada o no soporta Notification, no molestamos.
+    if (document.hasFocus()) return;
+    if (typeof Notification === 'undefined') return;
+
+    if (Notification.permission === 'default' && !_permisoSolicitado) {
+        _permisoSolicitado = true;
+        Notification.requestPermission().catch(() => {});
+        return;  // primer evento: solo pedimos permiso, no notificamos
+    }
+    if (Notification.permission !== 'granted') return;
+
+    try {
+        const n = new Notification(ev.mensaje.autor || 'Chat interno', {
+            body: ev.mensaje.texto || '',
+            tag: `chat-${ev.canal_id}`,         // coalescing: una sola notif por canal
+            silent: false,
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+        // Auto-cerrar tras 6s si el operador no la toca.
+        setTimeout(() => { try { n.close(); } catch {} }, 6000);
+    } catch (e) {
+        console.warn('[chat] notification error:', e);
+    }
 }
