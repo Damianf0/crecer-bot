@@ -2,8 +2,17 @@
     Widget de chat interno (Equipo + DMs).
     Reusable: solo requiere User autenticado y rutas /chat/*.
     Para portar al repo light: copiar este archivo + ChatController.php + modelos + migraciones + rutas /chat.
+
+    Estado migración (2026-05-19): la UI legacy de abajo (Blade+JS plano, ~700
+    líneas) sigue siendo la activa. En paralelo se está montando el bundle
+    React desde resources/js/chat/index.tsx; por ahora solo muestra un toast
+    discreto abajo-izquierda ("chat-react ready") para validar que el setup
+    de Vite+TS+Echo funciona sin romper el chat viejo. Fase 4 reemplaza la UI
+    legacy por la nueva.
 --}}
 @auth
+<div id="chat-root"></div>
+@vite(['resources/js/chat/index.tsx'])
 <style>
 .chat-fab {
     position: fixed; right: 20px; bottom: 110px; z-index: 9990;
