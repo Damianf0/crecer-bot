@@ -104,6 +104,7 @@ services:
   mysql:
     image: mysql:8.0
     restart: unless-stopped
+    command: --binlog-expire-logs-seconds=259200
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD requerido — copiar .env.example a .env y completar}
       MYSQL_DATABASE: ${DB_DATABASE:-clinica}
