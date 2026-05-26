@@ -66,6 +66,43 @@ function tipoYBody(message) {
   return { tipo: null, body: null };
 }
 
+// Extrae el bloque "quoted" cuando un mensaje es un reply.
+// WhatsApp pone la info en contextInfo, presente en varios sub-tipos (texto
+// extendido, imagen, video, audio, documento). Devuelve null si no aplica.
+//   contextInfo.stanzaId   — wa_id del original
+//   contextInfo.participant — JID del autor original
+//   contextInfo.quotedMessage — el msg original (al menos preview)
+function extraerQuoted(message) {
+  const m = desempaquetar(message);
+  if (!m) return null;
+  const cands = [
+    m.extendedTextMessage?.contextInfo,
+    m.imageMessage?.contextInfo,
+    m.videoMessage?.contextInfo,
+    m.audioMessage?.contextInfo,
+    m.documentMessage?.contextInfo,
+    m.stickerMessage?.contextInfo,
+  ];
+  const ci = cands.find(c => c && c.stanzaId);
+  if (!ci) return null;
+
+  const { tipo, body } = tipoYBody(ci.quotedMessage || null);
+  // Preview corto, normalizado para guardar en BD.
+  let preview = body || '';
+  if (!preview) {
+    if (tipo === 'audio')     preview = '🎤 Audio';
+    else if (tipo === 'imagen')   preview = '🖼️ Imagen';
+    else if (tipo === 'video')    preview = '🎬 Video';
+    else if (tipo === 'documento') preview = '📄 Documento';
+    else if (tipo === 'sticker')   preview = '😀 Sticker';
+  }
+  return {
+    wa_id:   ci.stanzaId,
+    autor:   null,  // El nombre real se resuelve al recibir contra el contacts cache; null si no se conoce.
+    preview: preview.slice(0, 280),
+  };
+}
+
 function crearClienteBaileys() {
   // Carga lazy: solo cuando este wrapper se elige.
   const baileysMod = require('@whiskeysockets/baileys');
@@ -195,6 +232,8 @@ function crearClienteBaileys() {
     const { tipo, body } = tipoYBody(raw.message);
     if (!tipo) return; // tipo no soportado (reaction, protocolMessage, etc.)
 
+    const quoted = extraerQuoted(raw.message);
+
     const ts = typeof raw.messageTimestamp === 'number'
       ? raw.messageTimestamp
       : Number(raw.messageTimestamp?.toNumber?.() || raw.messageTimestamp || Date.now() / 1000);
@@ -206,6 +245,7 @@ function crearClienteBaileys() {
       type: tipo,
       body,
       wa_id: waId,
+      quoted,  // { wa_id, autor, preview } | null — info del mensaje citado si éste es un reply
       timestamp: new Date(ts * 1000),
       downloadMedia: async () => {
         try {

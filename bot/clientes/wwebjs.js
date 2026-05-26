@@ -141,12 +141,44 @@ function crearClienteWwebjs() {
     }
   }
 
-  function envolverMensaje(msg) {
+  // Resuelve el bloque "quoted" cuando el msg es reply. Asíncrono porque
+  // wwebjs trae el original via getQuotedMessage() que ejecuta dentro de
+  // Chromium. Timeout corto: si tarda >2s o falla, devolvemos null sin
+  // bloquear el flow de entrada.
+  async function extraerQuoted(msg) {
+    if (!msg.hasQuotedMsg) return null;
+    try {
+      const quoted = await Promise.race([
+        msg.getQuotedMessage(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('quoted timeout')), 2000)),
+      ]);
+      if (!quoted) return null;
+      const tipoQ = normalizarTipo(quoted.type) || 'texto';
+      let preview = quoted.body || '';
+      if (!preview) {
+        if (tipoQ === 'audio')     preview = '🎤 Audio';
+        else if (tipoQ === 'imagen')   preview = '🖼️ Imagen';
+        else if (tipoQ === 'video')    preview = '🎬 Video';
+        else if (tipoQ === 'documento') preview = '📄 Documento';
+        else if (tipoQ === 'sticker')   preview = '😀 Sticker';
+      }
+      return {
+        wa_id:   quoted.id?._serialized || '',
+        autor:   null,
+        preview: preview.slice(0, 280),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function envolverMensaje(msg) {
     const tipo = normalizarTipo(msg.type);
     if (!tipo) return null;
     let body = null;
     if (tipo === 'texto')   body = msg.body || null;
     else                    body = msg.body || null; // caption (imagen/video/doc) o null
+    const quoted = await extraerQuoted(msg);
     return {
       from: msg.from,
       to:   msg.to,
@@ -154,6 +186,7 @@ function crearClienteWwebjs() {
       type: tipo,
       body,
       wa_id: msg.id?._serialized || '',
+      quoted,
       timestamp: new Date((msg.timestamp || Date.now()/1000) * 1000),
       downloadMedia: async () => {
         try {
@@ -224,7 +257,7 @@ function crearClienteWwebjs() {
       if (msg.isGroupMsg || msg.fromMe) return;
       if (msg.from === 'status@broadcast' || msg.from?.endsWith('@broadcast')) return;
       resetActividad();
-      const m = envolverMensaje(msg);
+      const m = await envolverMensaje(msg);
       if (m) emitter.emit('message', m);
     });
 
@@ -239,7 +272,7 @@ function crearClienteWwebjs() {
       const waId = msg.id?._serialized;
       if (fueEnviadoPorNosotros(waId)) return; // lo mandó el bot por sendText/sendMedia
       console.log(`[whatsapp] saliente externo (celular) → ${msg.to}`);
-      const m = envolverMensaje(msg);
+      const m = await envolverMensaje(msg);
       if (m) emitter.emit('message_outgoing', m);
     });
 

@@ -327,6 +327,31 @@
 .msg-bubble.nota { background: color-mix(in srgb, var(--warning) 10%, var(--card)); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); color: var(--warning); border-radius: 8px; font-size: 12px; }
 .msg-time { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .msg-time.right { text-align: right; }
+/* Bubble de cita estilo WhatsApp: borde izquierdo coloreado + autor en bold + */
+/* preview truncado en 1-2 líneas. Click = scroll al original (si está cargado). */
+.msg-quoted {
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-bottom: 5px;
+    font-size: 12px;
+    line-height: 1.35;
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+}
+.msg-bubble.in  .msg-quoted { border-left-color: var(--info); }
+.msg-bubble.out .msg-quoted { border-left-color: var(--success, #4ade80); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.msg-quoted-autor   { font-weight: 600; color: var(--accent); margin-bottom: 1px; }
+.msg-bubble.in  .msg-quoted .msg-quoted-autor { color: var(--info); }
+.msg-quoted-preview { color: var(--muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+@keyframes msgFlash {
+    0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent) 60%, transparent); }
+    50%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); }
+    100% { box-shadow: 0 0 0 0   transparent; }
+}
+.msg-flash .msg-bubble { animation: msgFlash 1.5s ease-out; }
 .msg-transcripcion { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 4px; }
 audio { height: 32px; width: 210px; display: block; }
 
@@ -1614,23 +1639,58 @@ function _modalEsc(e) { if (e.key === 'Escape') cerrarModal(); }
 // que la paginación encuentre el mensaje más antiguo.
 function renderMsgWrap(m) {
     const cuerpo = renderMsgCuerpo(m);
+    const citado = renderQuoted(m);
     if (m.direccion === 'nota_interna') {
         const autor = m.usuario ? `<span style="font-size:10px;opacity:.7;"> — ${esc(m.usuario)}</span>` : '';
         return `<div class="msg-wrap nota" data-msg-id="${m.id}">
             <div class="msg-bubble nota">📝 ${linkify(m.contenido)}${autor}</div>
         </div>`;
     }
+    const waAttr = m.wa_id ? ` data-wa-id="${esc(m.wa_id)}"` : '';
     if (m.direccion === 'entrante') {
-        return `<div class="msg-wrap in" data-msg-id="${m.id}"><div>
-            <div class="msg-bubble in">${cuerpo}</div>
+        return `<div class="msg-wrap in" data-msg-id="${m.id}"${waAttr}><div>
+            <div class="msg-bubble in">${citado}${cuerpo}</div>
             <div class="msg-time">${m.hora}</div>
         </div></div>`;
     }
     const autor = m.usuario ? `<div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:2px;">${esc(m.usuario)}</div>` : '';
-    return `<div class="msg-wrap out" data-msg-id="${m.id}"><div>
-        ${autor}<div class="msg-bubble out">${cuerpo}</div>
+    return `<div class="msg-wrap out" data-msg-id="${m.id}"${waAttr}><div>
+        ${autor}<div class="msg-bubble out">${citado}${cuerpo}</div>
         <div class="msg-time right">${m.hora}</div>
     </div></div>`;
+}
+
+// Bloque "citado" arriba del cuerpo cuando el msg es reply. Borde izquierdo
+// coloreado + autor + preview truncado. Click hace scroll al original si está
+// cargado en la vista; sino no hace nada (solo lectura).
+function renderQuoted(m) {
+    if (!m.quoted || !m.quoted.preview) return '';
+    const autor = m.quoted.autor ? esc(m.quoted.autor) : 'Mensaje citado';
+    const preview = esc(m.quoted.preview).slice(0, 180);
+    const waId = m.quoted.wa_id ? esc(m.quoted.wa_id) : '';
+    return `<div class="msg-quoted" data-quoted-wa="${waId}" onclick="scrollToQuoted('${waId}')">
+        <div class="msg-quoted-autor">${autor}</div>
+        <div class="msg-quoted-preview">${preview}</div>
+    </div>`;
+}
+
+function scrollToQuoted(waId) {
+    if (!waId) return;
+    const list = document.getElementById('mensajes-lista');
+    if (!list) return;
+    const wraps = list.querySelectorAll('.msg-wrap');
+    for (const w of wraps) {
+        // Buscar por el atributo data-wa-id si lo hubiera, sino buscar el
+        // mensaje cuya burbuja contenga el wa_id (no lo exponemos en el DOM
+        // hoy, así que por ahora no hay match — el highlight queda como
+        // ruta futura. El click no rompe nada).
+        if (w.dataset.waId === waId) {
+            w.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            w.classList.add('msg-flash');
+            setTimeout(() => w.classList.remove('msg-flash'), 1500);
+            return;
+        }
+    }
 }
 
 function renderMsgCuerpo(m) {

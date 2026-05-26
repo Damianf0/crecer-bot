@@ -94,6 +94,11 @@ async function guardarMensajeEntrante(msg) {
       contenido,
       archivo_url,
       wa_id:     msg.wa_id || null,
+      // Reply: si el mensaje cita otro, mandamos el wa_id + preview del original
+      // para que el panel pueda mostrar el bubble citado arriba del mensaje.
+      quoted_wa_id:   msg.quoted?.wa_id   || null,
+      quoted_autor:   msg.quoted?.autor   || null,
+      quoted_preview: msg.quoted?.preview || null,
       timestamp: (msg.timestamp || new Date()).toISOString(),
     });
 

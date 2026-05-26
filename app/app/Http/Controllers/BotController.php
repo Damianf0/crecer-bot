@@ -194,6 +194,11 @@ class BotController extends Controller
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',
             'wa_id'       => 'nullable|string|max:150',
+            // Reply (solo lectura): si el mensaje cita otro, el bot manda el wa_id +
+            // preview del original para que el panel renderee el bubble citado arriba.
+            'quoted_wa_id'   => 'nullable|string|max:150',
+            'quoted_autor'   => 'nullable|string|max:80',
+            'quoted_preview' => 'nullable|string|max:300',
             'timestamp'   => 'required|string',
         ]);
         $area = $data['area'] ?? 'atencion';
@@ -246,6 +251,9 @@ class BotController extends Controller
             'contenido'       => $data['contenido'] ?? null,
             'archivo_url'     => $data['archivo_url'] ?? null,
             'wa_id'           => $data['wa_id'] ?? null,
+            'quoted_wa_id'    => $data['quoted_wa_id']   ?? null,
+            'quoted_autor'    => $data['quoted_autor']   ?? null,
+            'quoted_preview'  => $data['quoted_preview'] ?? null,
             'leido'           => false,
         ]);
 
@@ -322,6 +330,9 @@ class BotController extends Controller
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',
             'wa_id'       => 'nullable|string|max:150',
+            'quoted_wa_id'   => 'nullable|string|max:150',
+            'quoted_autor'   => 'nullable|string|max:80',
+            'quoted_preview' => 'nullable|string|max:300',
             'timestamp'   => 'required|string',
         ]);
         $area = $data['area'] ?? 'atencion';
@@ -344,6 +355,9 @@ class BotController extends Controller
             'contenido'       => $data['contenido']   ?? null,
             'archivo_url'     => $data['archivo_url'] ?? null,
             'wa_id'           => $data['wa_id']       ?? null,
+            'quoted_wa_id'    => $data['quoted_wa_id']   ?? null,
+            'quoted_autor'    => $data['quoted_autor']   ?? null,
+            'quoted_preview'  => $data['quoted_preview'] ?? null,
             'leido'           => true,
         ]);
 

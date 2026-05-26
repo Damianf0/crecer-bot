@@ -102,6 +102,22 @@
 .msg-bubble.nota { background: color-mix(in srgb, var(--warning) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent); color: var(--warning); border-radius: 8px; font-size: 12px; max-width: 80%; }
 .msg-time  { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .msg-time.right { text-align: right; }
+.msg-quoted {
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-bottom: 5px;
+    font-size: 12px;
+    line-height: 1.35;
+    max-width: 100%;
+    overflow: hidden;
+}
+.msg-bubble.in  .msg-quoted { border-left-color: var(--info); }
+.msg-bubble.out .msg-quoted { border-left-color: var(--success, #4ade80); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.msg-quoted-autor   { font-weight: 600; color: var(--accent); margin-bottom: 1px; }
+.msg-bubble.in  .msg-quoted .msg-quoted-autor { color: var(--info); }
+.msg-quoted-preview { color: var(--muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 .seg-strip  { border-top: 1px solid var(--border); flex-shrink: 0; }
 .seg-toggle { display: flex; align-items: center; gap: 6px; padding: 7px 0; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; letter-spacing: .4px; text-transform: uppercase; }
@@ -329,12 +345,13 @@ function _renderConversacion(id, datos) {
         if (it.__k === 'evt') return renderEventoInline(it);
         const m = it;
         if (m.fecha !== lastFecha) { out += `<div class="msg-date">${m.fecha}</div>`; lastFecha = m.fecha; }
+        const citado = renderQuoted(m);
         if (m.direccion === 'nota_interna') {
             out += `<div class="msg-wrap nota"><div class="msg-bubble nota">📝 ${linkify(m.contenido)}</div></div>`;
         } else if (m.direccion === 'entrante') {
-            out += `<div class="msg-wrap in"><div><div class="msg-bubble in">${renderMsgCuerpo(m)}</div><div class="msg-time">${m.hora}</div></div></div>`;
+            out += `<div class="msg-wrap in"><div><div class="msg-bubble in">${citado}${renderMsgCuerpo(m)}</div><div class="msg-time">${m.hora}</div></div></div>`;
         } else {
-            out += `<div class="msg-wrap out"><div><div class="msg-bubble out">${renderMsgCuerpo(m)}</div><div class="msg-time right">${m.hora}</div></div></div>`;
+            out += `<div class="msg-wrap out"><div><div class="msg-bubble out">${citado}${renderMsgCuerpo(m)}</div><div class="msg-time right">${m.hora}</div></div></div>`;
         }
         return out;
     }).join('');
@@ -596,6 +613,16 @@ function renderMsgCuerpo(m) {
                     <span style="font-size:22px;">📄</span><span style="text-decoration:underline;font-size:13px;">${esc(m.contenido||'Documento')}</span></a>`;
     }
     return linkify(m.contenido);
+}
+
+function renderQuoted(m) {
+    if (!m.quoted || !m.quoted.preview) return '';
+    const autor = m.quoted.autor ? esc(m.quoted.autor) : 'Mensaje citado';
+    const preview = esc(m.quoted.preview).slice(0, 180);
+    return `<div class="msg-quoted">
+        <div class="msg-quoted-autor">${autor}</div>
+        <div class="msg-quoted-preview">${preview}</div>
+    </div>`;
 }
 
 function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

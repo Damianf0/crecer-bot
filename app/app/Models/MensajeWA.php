@@ -12,6 +12,7 @@ class MensajeWA extends Model
     protected $fillable = [
         'conversacion_id', 'direccion', 'tipo', 'contenido',
         'archivo_url', 'wa_id', 'usuario_id', 'leido',
+        'quoted_wa_id', 'quoted_autor', 'quoted_preview',
     ];
 
     protected $casts = [

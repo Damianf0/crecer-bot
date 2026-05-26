@@ -209,6 +209,16 @@ class AtencionController extends Controller
             'ts'          => $m->created_at->timestamp,
             'usuario'     => $m->usuario_id ? ($userMap[$m->usuario_id] ?? null) : null,
             'wa_id'       => $m->wa_id,
+            // Reply (solo lectura): el panel renderea el bubble citado arriba del
+            // mensaje cuando quoted_wa_id no es null. quoted_preview es el texto
+            // (o un emoji + tipo para media). autor es nullable: lo poblamos si
+            // pudimos resolverlo desde el msg original; sino el UI muestra
+            // "Mensaje citado" sin nombre.
+            'quoted'      => $m->quoted_wa_id ? [
+                'wa_id'   => $m->quoted_wa_id,
+                'autor'   => $m->quoted_autor,
+                'preview' => $m->quoted_preview,
+            ] : null,
         ]);
 
         // Cuando se piden mensajes anteriores (scroll back), no es necesario re-mandar
