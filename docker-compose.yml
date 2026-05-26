@@ -143,9 +143,13 @@ services:
       - BOT_AREA=atencion
       - PORT=3001
       - BOT_PUBLIC_URL=http://192.168.1.125:3001
-      # Migrado a Baileys 2026-05-19 (fix @lid + PTT validados en shadow).
-      # Rollback: comentar la línea + `docker compose up -d bot`.
-      - BOT_WA_CLIENT=baileys
+      # Migrado a Baileys 2026-05-19. ROLLBACK temporal 2026-05-20: tras un
+      # ciclo de wsl --shutdown + restarts, la sesion Baileys quedo en estado
+      # phantom — `listo` reportando OK pero el server WA no enruta mensajes
+      # nuevos (silencio total). MessageCounterError + Stream Errored (ack).
+      # Reset + reescaneo no destrabo. Igual que ovo, volvemos a wwebjs hasta
+      # que se aclare el bug. Sesion wwebjs preservada en volumen wa-session.
+      # - BOT_WA_CLIENT=baileys
     healthcheck:
       # Mira el contenido de /status, no solo HTTP 200 — detecta el estado
       # "zombie" donde el endpoint responde pero el cliente WA no escucha.
