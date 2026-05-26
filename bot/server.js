@@ -333,7 +333,7 @@ app.post('/profile-pic', async (req, res) => {
 });
 
 app.post('/enviar', async (req, res) => {
-  const { contacto, texto } = req.body;
+  const { contacto, texto, quoted } = req.body;
   if (!contacto || !texto) {
     return res.status(400).json({ ok: false, error: 'contacto y texto requeridos' });
   }
@@ -341,8 +341,11 @@ app.post('/enviar', async (req, res) => {
     return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
   }
   try {
-    const { wa_id } = await _waClient.sendText(contacto, texto);
-    console.log(`[server] Mensaje enviado a ${contacto}`);
+    // quoted: { wa_id, fromMe, preview } | undefined — el adapter lo usa para
+    // construir el contextInfo (Baileys) o pasar quotedMessageId (wwebjs).
+    const opts = quoted && quoted.wa_id ? { quoted } : undefined;
+    const { wa_id } = await _waClient.sendText(contacto, texto, opts);
+    console.log(`[server] Mensaje enviado a ${contacto}${quoted ? ' (reply)' : ''}`);
     res.json({ ok: true, wa_id });
   } catch (err) {
     console.error('[server] Error enviando mensaje:', err.message);

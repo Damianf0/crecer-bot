@@ -353,6 +353,47 @@
 }
 .msg-flash .msg-bubble { animation: msgFlash 1.5s ease-out; }
 .msg-transcripcion { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 4px; }
+
+/* Link "Responder" en su propia fila debajo del bubble. Padding amplio
+   para zona clickeable cómoda y separación del borde de la columna. */
+.msg-reply-link {
+    display: inline-block;
+    color: var(--info);
+    cursor: pointer;
+    user-select: none;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 6px;
+    margin-top: 2px;
+}
+.msg-reply-link:hover { background: color-mix(in srgb, var(--info) 12%, transparent); color: var(--accent); }
+/* Asegura que la línea del link no quede pegada al borde de la columna —
+   el msg-list ya tiene padding 16px, sumamos 4px de margen al link. */
+.msg-wrap.in  .msg-reply-link { margin-left:  4px; }
+.msg-wrap.out .msg-reply-link { margin-right: 4px; }
+
+/* Pill arriba del composer cuando hay un reply activo. */
+.reply-pill {
+    display: flex; align-items: stretch; gap: 0;
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    overflow: hidden;
+}
+.reply-pill-body  { flex: 1; min-width: 0; }
+.reply-pill-autor { font-weight: 600; color: var(--accent); margin-bottom: 1px; }
+.reply-pill-prev  { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-pill-close {
+    background: none; border: none; color: var(--muted);
+    font-size: 18px; line-height: 1; padding: 0 4px 0 8px; cursor: pointer;
+    align-self: flex-start;
+}
+.reply-pill-close:hover { color: var(--text); }
 audio { height: 32px; width: 210px; display: block; }
 
 /* Input */
@@ -675,6 +716,7 @@ let state = {
     delegarOpenId:   null,
     delegarOpenTipo: null,
     filtro:          'todas',
+    replyTo:         null,  // { wa_id, autor, preview } cuando estamos respondiendo a un msg
 };
 
 // ── API helpers ──────────────────────────────────────────────
@@ -1064,6 +1106,8 @@ document.addEventListener('click', e => {
 
 // ── Panel de detalle ─────────────────────────────────────────
 async function verItem(id, tipo) {
+    // Si cambiamos de conversación, el reply pendiente ya no aplica.
+    if (state.panelId !== id || state.panelTipo !== tipo) state.replyTo = null;
     // Marcar seleccionado
     state.panelId   = id;
     state.panelTipo = tipo;
@@ -1084,6 +1128,7 @@ async function verItem(id, tipo) {
 function cerrarPanel() {
     state.panelId   = null;
     state.panelTipo = null;
+    state.replyTo   = null;
     document.getElementById('panel-empty').style.display = '';
     document.getElementById('panel-conv').style.display  = 'none';
     renderColumnas();
@@ -1301,6 +1346,7 @@ function _renderConversacion(id, datos) {
                 <input type="file" id="file-input" style="display:none" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="onFileChange(event)">` : ''}
                 <div id="rr-menu" class="rr-menu" style="display:none;"></div>
             </div>
+            <div id="reply-pill-container">${renderReplyPill()}</div>
             <div class="input-row">
                 <textarea class="msg-textarea" id="msg-input"
                     placeholder="${state.panelModo === 'nota' ? 'Nota interna (no se envía)' : 'Escribir mensaje...'}"
@@ -1475,9 +1521,15 @@ async function enviar() {
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
     inp.disabled = true;
 
+    const payload = { conv_id: state.panelId, texto, modo: state.panelModo };
+    if (state.replyTo?.wa_id && state.panelModo === 'mensaje') {
+        payload.quoted_wa_id = state.replyTo.wa_id;
+    }
+
     try {
-        await post('/atencion/enviar', { conv_id: state.panelId, texto, modo: state.panelModo });
+        await post('/atencion/enviar', payload);
         inp.value = '';
+        cancelReply();  // limpiar antes de re-cargar para que el polling no lo restaure
         await cargarConversacion(state.panelId);
     } catch(e) {
         // No llegó al destinatario — restauramos el texto para reintentar.
@@ -1488,6 +1540,73 @@ async function enviar() {
         inp.focus();
     }
 }
+
+// ── Reply: seleccionar mensaje a citar ───────────────────────
+// El botón ↩ de cada bubble llama a setReply(waId, msgId). Resolvemos el msg
+// en el DOM (más simple que pedirlo al server) para sacar preview/autor.
+function setReply(waId, msgId) {
+    const wrap = document.querySelector(`.msg-wrap[data-msg-id="${msgId}"]`);
+    if (!wrap) return;
+    const bubble = wrap.querySelector('.msg-bubble');
+    if (!bubble) return;
+    // Preview: si la burbuja tiene texto, lo usamos; si no (audio/imagen/doc),
+    // un emoji que matchea con lo que persiste el backend.
+    let preview = bubble.innerText.replace(/\s+/g, ' ').trim();
+    // Quitar el bloque "citado" si la burbuja respondida era a su vez un reply.
+    const qBlock = bubble.querySelector('.msg-quoted');
+    if (qBlock) preview = preview.replace(qBlock.innerText.replace(/\s+/g, ' ').trim(), '').trim();
+    if (!preview) {
+        // Detectar por presencia de elementos media
+        if (bubble.querySelector('audio')) preview = '🎤 Audio';
+        else if (bubble.querySelector('img')) preview = '🖼️ Imagen';
+        else if (bubble.querySelector('video')) preview = '🎬 Video';
+        else preview = '📄 Documento';
+    }
+    const esIn = wrap.classList.contains('in');
+    // Autor: en entrantes lo extraemos del header del panel; en salientes del
+    // <div> chico arriba del bubble (si tiene usuario).
+    let autor = null;
+    if (esIn) {
+        autor = document.querySelector('.panel-head-name')?.innerText?.trim() || null;
+    } else {
+        const u = wrap.querySelector('div[style*="font-size:10px"]');
+        if (u) autor = u.innerText.trim();
+    }
+    state.replyTo = { wa_id: waId, autor, preview: preview.slice(0, 180) };
+    renderReplyPillInto();
+    document.getElementById('msg-input')?.focus();
+}
+
+function cancelReply() {
+    state.replyTo = null;
+    renderReplyPillInto();
+}
+
+function renderReplyPill() {
+    if (!state.replyTo) return '';
+    const autor   = state.replyTo.autor ? esc(state.replyTo.autor) : 'Mensaje citado';
+    const preview = esc(state.replyTo.preview || '');
+    return `<div class="reply-pill">
+        <div class="reply-pill-body">
+            <div class="reply-pill-autor">↩ ${autor}</div>
+            <div class="reply-pill-prev">${preview}</div>
+        </div>
+        <button class="reply-pill-close" title="Cancelar (Esc)" onclick="cancelReply()">×</button>
+    </div>`;
+}
+
+function renderReplyPillInto() {
+    const cont = document.getElementById('reply-pill-container');
+    if (cont) cont.innerHTML = renderReplyPill();
+}
+
+// Esc cancela el reply mientras el composer tiene foco.
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && state.replyTo && document.activeElement?.id === 'msg-input') {
+        e.preventDefault();
+        cancelReply();
+    }
+});
 
 async function enviarConArchivoDerivacion(convId) {
     if (_archivoSeleccionado) {
@@ -1647,16 +1766,26 @@ function renderMsgWrap(m) {
         </div>`;
     }
     const waAttr = m.wa_id ? ` data-wa-id="${esc(m.wa_id)}"` : '';
+    // Link "Responder" en su propia fila debajo del time. Solo si hay wa_id
+    // (sin él el adapter no puede armar el quote). Mensajes auto del bot sin
+    // wa_id no son citables.
+    const replyLine = m.wa_id
+        ? `<div class="msg-reply-row" style="text-align:${m.direccion === 'entrante' ? 'left' : 'right'};">
+             <a class="msg-reply-link" onclick="setReply('${esc(m.wa_id)}', ${m.id})">↩ Responder</a>
+           </div>`
+        : '';
     if (m.direccion === 'entrante') {
         return `<div class="msg-wrap in" data-msg-id="${m.id}"${waAttr}><div>
             <div class="msg-bubble in">${citado}${cuerpo}</div>
             <div class="msg-time">${m.hora}</div>
+            ${replyLine}
         </div></div>`;
     }
     const autor = m.usuario ? `<div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:2px;">${esc(m.usuario)}</div>` : '';
     return `<div class="msg-wrap out" data-msg-id="${m.id}"${waAttr}><div>
         ${autor}<div class="msg-bubble out">${citado}${cuerpo}</div>
         <div class="msg-time right">${m.hora}</div>
+        ${replyLine}
     </div></div>`;
 }
 

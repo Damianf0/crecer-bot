@@ -15,7 +15,11 @@
 //                                              mensajes enviados por sendText/sendMedia
 //
 //   Métodos:
-//     async sendText(jid, texto) → { wa_id }
+//     async sendText(jid, texto, opts?) → { wa_id }
+//        opts.quoted: { wa_id, fromMe, preview } | undefined
+//           Cuando está presente, el mensaje se manda como reply al wa_id.
+//           Baileys arma el contextInfo a partir de los 3 campos; wwebjs solo
+//           usa wa_id (quotedMessageId).
 //     async sendMedia(jid, { mimetype, base64, filename, caption }) → { wa_id }
 //     async checkNumber(digits) → { registered, normalizedId }
 //     async resolveContact(jid) → { numero, name }

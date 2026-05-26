@@ -291,8 +291,13 @@ function crearClienteWwebjs() {
   iniciar();
 
   // ── Métodos expuestos por la interfaz ────────────────────
-  emitter.sendText = async (jid, texto) => {
-    const sent = await client.sendMessage(jid, texto);
+  emitter.sendText = async (jid, texto, opts = {}) => {
+    const sendOpts = {};
+    // wwebjs acepta el wa_id serializado del original directamente; resuelve
+    // adentro la búsqueda en su store de Chromium. Si el original ya no está,
+    // descarta silenciosamente el quote (el mensaje igual se envía).
+    if (opts.quoted?.wa_id) sendOpts.quotedMessageId = opts.quoted.wa_id;
+    const sent = await client.sendMessage(jid, texto, sendOpts);
     const waId = sent?.id?._serialized || '';
     marcarEnviado(waId);
     return { wa_id: waId };

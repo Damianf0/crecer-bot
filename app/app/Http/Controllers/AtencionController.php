@@ -1094,12 +1094,44 @@ class AtencionController extends Controller
     public function enviarMensaje(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'conv_id' => 'required|integer',
-            'texto'   => 'required|string|max:5000',
-            'modo'    => 'required|in:mensaje,nota',
+            'conv_id'      => 'required|integer',
+            'texto'        => 'required|string|max:5000',
+            'modo'         => 'required|in:mensaje,nota',
+            'quoted_wa_id' => 'nullable|string|max:150',
         ]);
 
         $conv = ConversacionWA::findOrFail($data['conv_id']);
+
+        // Si vino quoted_wa_id, resolvemos el original en esta misma conversación
+        // para armar preview/autor/fromMe que necesita el adapter Baileys y los
+        // 3 campos que persistimos en el saliente. Si no encontramos el original,
+        // ignoramos silenciosamente y enviamos sin cita.
+        $quoted = null;
+        if (!empty($data['quoted_wa_id'])) {
+            $orig = MensajeWA::where('conversacion_id', $conv->id)
+                ->where('wa_id', $data['quoted_wa_id'])
+                ->first();
+            if ($orig) {
+                $fromMe  = in_array($orig->direccion, ['saliente', 'nota_interna'], true);
+                $preview = match ($orig->tipo) {
+                    'audio'     => $orig->contenido ?: '🎤 Audio',
+                    'imagen'    => $orig->contenido ?: '🖼️ Imagen',
+                    'video'     => $orig->contenido ?: '🎬 Video',
+                    'documento' => $orig->contenido ?: '📄 Documento',
+                    'sticker'   => '😀 Sticker',
+                    default     => (string) ($orig->contenido ?? ''),
+                };
+                $autor = $fromMe
+                    ? ($orig->usuario_id ? \App\Models\User::find($orig->usuario_id)?->nombre_completo : null)
+                    : ($conv->nombre ?: null);
+                $quoted = [
+                    'wa_id'   => $data['quoted_wa_id'],
+                    'fromMe'  => $fromMe,
+                    'preview' => mb_substr($preview, 0, 280),
+                    'autor'   => $autor,
+                ];
+            }
+        }
 
         if ($data['modo'] === 'nota') {
             MensajeWA::create([
@@ -1117,12 +1149,20 @@ class AtencionController extends Controller
             $botTok = config('app.bot_ingress_token');
             $waIdEnviado = null;
             try {
+                $payload = [
+                    'contacto' => $conv->contacto,
+                    'texto'    => $data['texto'],
+                ];
+                if ($quoted) {
+                    $payload['quoted'] = [
+                        'wa_id'   => $quoted['wa_id'],
+                        'fromMe'  => $quoted['fromMe'],
+                        'preview' => $quoted['preview'],
+                    ];
+                }
                 $resp = Http::timeout(10)
                     ->withToken($botTok)
-                    ->post("{$botUrl}/enviar", [
-                        'contacto' => $conv->contacto,
-                        'texto'    => $data['texto'],
-                    ]);
+                    ->post("{$botUrl}/enviar", $payload);
                 if (!$resp->ok() || $resp->json('ok') !== true) {
                     return response()->json([
                         'ok'    => false,
@@ -1145,6 +1185,9 @@ class AtencionController extends Controller
                 'wa_id'           => $waIdEnviado,
                 'usuario_id'      => Auth::id(),
                 'leido'           => true,
+                'quoted_wa_id'    => $quoted['wa_id']   ?? null,
+                'quoted_autor'    => $quoted['autor']   ?? null,
+                'quoted_preview'  => $quoted['preview'] ?? null,
             ]);
             $conv->update(['ultima_actividad' => now()]);
         }

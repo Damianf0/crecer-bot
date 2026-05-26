@@ -360,10 +360,31 @@ function crearClienteBaileys() {
   }
 
   // ── Métodos expuestos ────────────────────────────────────
-  emitter.sendText = async (jid, texto) => {
+  // Reconstruye el msg "quoted" que necesita sock.sendMessage. Baileys exige
+  // { key, message } completo; no guardamos un store local de mensajes, así
+  // que armamos un fake mínimo: key.id matchea el wa_id original y el message
+  // lleva el preview como conversation. Si el receptor todavía tiene el msg
+  // original en su historial local, WhatsApp lo renderea con el contenido real
+  // (match por key.id); si no, muestra el preview que mandamos acá.
+  function construirQuotedFake(quoted, remoteJid) {
+    if (!quoted?.wa_id) return null;
+    return {
+      key: {
+        id:        quoted.wa_id,
+        remoteJid,
+        fromMe:    !!quoted.fromMe,
+      },
+      message: { conversation: quoted.preview || ' ' },
+    };
+  }
+
+  emitter.sendText = async (jid, texto, opts = {}) => {
     const dest = await resolverJidEnvio(jid);
     await asegurarSesion(dest);
-    const sent = await sock.sendMessage(dest, { text: texto });
+    const sendOpts = {};
+    const quotedFake = construirQuotedFake(opts.quoted, dest);
+    if (quotedFake) sendOpts.quoted = quotedFake;
+    const sent = await sock.sendMessage(dest, { text: texto }, sendOpts);
     const waId = sent?.key?.id || '';
     marcarEnviado(waId);
     return { wa_id: waId };
