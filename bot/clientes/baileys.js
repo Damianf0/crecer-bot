@@ -137,6 +137,37 @@ function crearClienteBaileys() {
   let estadoConexion = 'connecting'; // connecting | open | close
   let phone = null;
 
+  // ── Message store LRU para getMessage (retries) ──────────────
+  // Sin esto, cuando el receptor falla la descifrado del primer paquete cifrado
+  // y pide retry, no podemos retransmitir → queda en "Esperando mensaje..."
+  // (causa raíz del rollback de ovo el 20/05). El store guarda los últimos N
+  // mensajes (in y out) por TTL corto — alcanza porque los retries de WA
+  // pasan en segundos/pocos minutos.
+  const _msgStore = new Map();  // wa_id → { message, ts }
+  const MSG_STORE_TTL_MS  = 10 * 60_000;  // 10 min
+  const MSG_STORE_MAX     = 1000;
+  function guardarEnStore(waId, message) {
+    if (!waId || !message) return;
+    // Evict por TTL (lazy: solo cuando insertamos)
+    const now = Date.now();
+    if (_msgStore.size >= MSG_STORE_MAX) {
+      // Borrar entradas expiradas; si aún quedan demasiadas, borrar las más viejas.
+      for (const [k, v] of _msgStore) if (now - v.ts > MSG_STORE_TTL_MS) _msgStore.delete(k);
+      if (_msgStore.size >= MSG_STORE_MAX) {
+        const sobrantes = _msgStore.size - MSG_STORE_MAX + 50;
+        const ordenadas = [..._msgStore.entries()].sort((a, b) => a[1].ts - b[1].ts);
+        for (let i = 0; i < sobrantes && i < ordenadas.length; i++) _msgStore.delete(ordenadas[i][0]);
+      }
+    }
+    _msgStore.set(waId, { message, ts: now });
+  }
+  function leerDelStore(waId) {
+    const e = _msgStore.get(waId);
+    if (!e) return null;
+    if (Date.now() - e.ts > MSG_STORE_TTL_MS) { _msgStore.delete(waId); return null; }
+    return e.message;
+  }
+
   async function iniciar() {
     if (destruido) return;
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_PATH);
@@ -149,14 +180,20 @@ function crearClienteBaileys() {
       logger: silentLogger,
       browser: ['Crecer Bot', 'Chrome', '1.0'],
       syncFullHistory: false,
-      markOnlineOnConnect: true,
-      // Cuando un receptor no pudo descifrar un mensaje nuestro, WA le pide
-      // al sender que lo reenvíe. Sin getMessage definido, Baileys no responde
-      // y el receptor puede quedar mostrando "Esperando mensaje..." hasta
-      // que WA caduque el ciclo. Devolviendo undefined explícito, WA descarta
-      // el reintento más rápido. No mantenemos store local de mensajes
-      // enviados así que no podemos retransmitir el contenido real.
-      getMessage: async (_key) => undefined,
+      // markOnlineOnConnect: false según recomendación oficial — evita robar
+      // notificaciones del cel pareado y reduce la huella visible del bot.
+      // Antes era true; baja a false como parte del fix de estabilidad.
+      markOnlineOnConnect: false,
+      // Flags de auto-recovery de Baileys. Causa raíz del MessageCounterError
+      // + Stream 515 que tumbó atención el 20/05: sin estos, los MAC failures
+      // de libsignal no disparan recreación de sesión y la conexión queda en
+      // loop de error.
+      enableAutoSessionRecreation: true,
+      enableRecentMessageCache:   true,
+      // Devolver el msg original si lo tenemos cacheado. Si no, undefined.
+      // Esto cierra el ciclo de retries de WA y soluciona el "Esperando
+      // mensaje..." del receptor.
+      getMessage: async (key) => leerDelStore(key?.id) || undefined,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -207,6 +244,10 @@ function crearClienteBaileys() {
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify') return; // ignorar históricos al reconectar
       for (const raw of messages) {
+        // Guardar SIEMPRE en el message store (entrantes y salientes externos)
+        // antes de cualquier filtro. Esto alimenta getMessage para los retries
+        // que WA dispara cuando el receptor no puede descifrar.
+        if (raw.key?.id && raw.message) guardarEnStore(raw.key.id, raw.message);
         try {
           await procesarMensaje(raw);
         } catch (err) {
@@ -387,6 +428,8 @@ function crearClienteBaileys() {
     const sent = await sock.sendMessage(dest, { text: texto }, sendOpts);
     const waId = sent?.key?.id || '';
     marcarEnviado(waId);
+    // Guardar saliente en store para resolver retries del receptor.
+    if (waId && sent?.message) guardarEnStore(waId, sent.message);
     return { wa_id: waId };
   };
 
@@ -397,6 +440,7 @@ function crearClienteBaileys() {
     const sent = await sock.sendMessage(dest, contenido);
     const waId = sent?.key?.id || '';
     marcarEnviado(waId);
+    if (waId && sent?.message) guardarEnStore(waId, sent.message);
     return { wa_id: waId };
   };
 
