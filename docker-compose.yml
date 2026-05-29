@@ -207,10 +207,12 @@ services:
       - BOT_AREA=ovodonacion
       - PORT=3003
       - BOT_PUBLIC_URL=http://192.168.1.125:3003
-      # Migrado a Baileys 2026-05-19, rollback 2026-05-20 por "Esperando mensaje..."
-      # del receptor (faltaba getMessage que retransmitiera). Reactivado 2026-05-29
-      # con el fix del message store + auto session recreation (commit 6bceaa5).
-      - BOT_WA_CLIENT=baileys
+      # Migrado a Baileys 2026-05-19, rollback 2026-05-20 por "Esperando mensaje...".
+      # Reintentado 2026-05-29 con el fix del message store (commit 6bceaa5), pero
+      # el bug NO era del getMessage: era identity key stale del lado del receptor
+      # tras re-pareo del bot. Mi fix no aplica (el cliente del receptor no manda
+      # retry porque la sesion esta rota end-to-end). Rollback otra vez a wwebjs.
+      # - BOT_WA_CLIENT=baileys
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
