@@ -450,13 +450,11 @@ class GestionAtencion extends Component
             default                              => 'documento',
         };
 
-        // Guardar en media local y generar URL pública
-        $ext         = $archivo->getClientOriginalExtension();
+        // Guardar en media local (disk default → storage/app/private/public/wa-media)
+        // y servir con auth de sesión via /wa-media/{filename}.
         $localName   = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename);
-        $mediaPath   = storage_path('app/public/wa-media');
-        if (!is_dir($mediaPath)) mkdir($mediaPath, 0755, true);
         $archivo->storeAs('public/wa-media', $localName);
-        $archivoUrl  = asset("storage/wa-media/{$localName}");
+        $archivoUrl  = '/wa-media/' . $localName;
 
         // Enviar por WhatsApp vía bot del área de la conversación
         $botUrl = $conv->botUrl();

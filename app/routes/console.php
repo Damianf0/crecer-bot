@@ -290,8 +290,8 @@ Artisan::command('documentos:sync {--limit=}', function () {
         if ($m->direccion === 'entrante') {
             $srcAbs = '/bot-media/' . $filename;
         } else {
-            // saliente: storage/app/public/wa-media/<filename>
-            $srcAbs = storage_path('app/public/wa-media/' . $filename);
+            // saliente: disk default (local) → storage/app/private/public/wa-media
+            $srcAbs = \Illuminate\Support\Facades\Storage::path('public/wa-media/' . $filename);
         }
 
         if (!$srcAbs || !file_exists($srcAbs)) {

@@ -1230,9 +1230,13 @@ class AtencionController extends Controller
             default                          => 'documento',
         };
 
+        // El disk default (local) tiene root en storage/app/private — el archivo
+        // queda en storage/app/private/public/wa-media. La URL se sirve con auth
+        // de sesión via /wa-media/{filename} (la vieja asset('storage/...') daba
+        // 404: apuntaba a public/storage que nunca tuvo estos archivos).
         $localName  = time() . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $nombre);
         $archivo->storeAs('public/wa-media', $localName);
-        $archivoUrl = asset("storage/wa-media/{$localName}");
+        $archivoUrl = '/wa-media/' . $localName;
 
         $botUrl = $conv->botUrl();
         $botTok = config('app.bot_ingress_token');
@@ -1270,10 +1274,12 @@ class AtencionController extends Controller
         ]);
         $conv->update(['ultima_actividad' => now()]);
 
-        // Auto-indexar al legajo del paciente
+        // Auto-indexar al legajo del paciente. Storage::path resuelve al disk
+        // default (storage/app/private/...) — el path hardcodeado anterior
+        // (app/public/...) no existía y el indexado de salientes nunca corría.
         try {
             $contacto = \App\Models\Contacto::buscarPorContacto($conv->contacto);
-            $srcAbs   = storage_path('app/public/wa-media/' . $localName);
+            $srcAbs   = \Illuminate\Support\Facades\Storage::path('public/wa-media/' . $localName);
             if (file_exists($srcAbs)) {
                 \App\Services\LegajoStorage::indexar($srcAbs, [
                     'contacto_id'     => $contacto?->id,

@@ -1,6 +1,25 @@
 // Estado compartido entre whatsapp.js, mensajes.js y server.js
 
+const fs = require('fs');
+const path = require('path');
+const { BOT_AREA } = require('./area');
+
 const startTime = Date.now();
+
+// modoPrueba define si el bot manda autorespuestas (false) o solo clasifica y
+// deriva (true). Persistido en disco porque es comportamiento productivo: si
+// vive solo en memoria, cada restart del container (watchdog de Chromium
+// incluido) lo resetea en silencio. Un archivo por área porque los containers
+// comparten el bind mount ./bot.
+const MODO_PRUEBA_PATH = path.join(__dirname, `modo-prueba.${BOT_AREA}.json`);
+
+function cargarModoPrueba() {
+  try {
+    const j = JSON.parse(fs.readFileSync(MODO_PRUEBA_PATH, 'utf-8'));
+    if (typeof j.modoPrueba === 'boolean') return j.modoPrueba;
+  } catch (_) {}
+  return true; // sin archivo: no autorespondemos (default seguro)
+}
 
 const estado = {
   status: 'iniciando', // iniciando | esperando_qr | autenticado | listo | desconectado | error
@@ -9,17 +28,27 @@ const estado = {
   logBuffer: [],
   logListeners: new Set(),
 
-  // Modo prueba — siempre activo hasta que se habilite producción
-  modoPrueba: true,
+  modoPrueba: cargarModoPrueba(),
 
   // Buffer de clasificaciones para el panel de pruebas
   clasificaciones: [],
   clasificacionListeners: new Set(),
 };
 
+console.log(`[estado-bot] modoPrueba=${estado.modoPrueba} (${fs.existsSync(MODO_PRUEBA_PATH) ? 'persistido' : 'default'})`);
+
 function setStatus(s) {
   estado.status = s;
   if (s !== 'esperando_qr') estado.qrDataUrl = null;
+}
+
+function setModoPrueba(v) {
+  estado.modoPrueba = !!v;
+  try {
+    fs.writeFileSync(MODO_PRUEBA_PATH, JSON.stringify({ modoPrueba: estado.modoPrueba }) + '\n', 'utf-8');
+  } catch (err) {
+    console.error('[estado-bot] No se pudo persistir modoPrueba:', err.message);
+  }
 }
 
 function setQR(dataUrl) {
@@ -68,7 +97,7 @@ function getUptime() {
 
 module.exports = {
   estado,
-  setStatus, setQR, setPhone,
+  setStatus, setQR, setPhone, setModoPrueba,
   pushLog, addLogListener, removeLogListener,
   pushClasificacion, addClasificacionListener, removeClasificacionListener,
   getUptime,

@@ -15,6 +15,7 @@ use App\Http\Controllers\LlamadorController;
 use App\Http\Controllers\EstadisticasController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DocumentoController;
+use App\Http\Controllers\WaMediaController;
 use App\Livewire\Login;
 use App\Livewire\Tablet;
 use App\Http\Middleware\SecretariaAuth;
@@ -76,6 +77,11 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Ficha de contacto (read-only) — usada desde /atencion al click en avatar.
     // Disponible para cualquier secretaria autenticada, no requiere permiso:contactos.
     Route::get('/contactos/{id}', [ContactoController::class, 'show'])->whereNumber('id');
+
+    // Media de mensajes WA (audios/imágenes/docs) — servido con auth de sesión.
+    // Reemplaza las URLs públicas del bot (/media sin token). Ver WaMediaController.
+    Route::get('/wa-media/{filename}', [WaMediaController::class, 'show'])
+        ->where('filename', '[A-Za-z0-9._@\-]+'); // @ por archivos legacy "<ts>_<n>@lid.ogg"
 
     // Chat interno (equipo + DMs) — disponible para cualquier usuario autenticado.
     Route::prefix('chat')->group(function () {

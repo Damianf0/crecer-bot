@@ -11,7 +11,10 @@ vendor/
 # ── Sesiones y media ─────────────────────────────────────────────
 bot/.wwebjs_auth/
 bot/.wwebjs_cache/
+bot/.baileys_auth/
 bot/media/
+# Estado runtime persistido del bot (modo prueba por área)
+bot/modo-prueba.*.json
 
 # ── Storage Laravel ──────────────────────────────────────────────
 app/storage/logs/

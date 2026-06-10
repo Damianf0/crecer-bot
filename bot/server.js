@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const {
-  estado,
+  estado, setModoPrueba,
   addLogListener, removeLogListener,
   addClasificacionListener, removeClasificacionListener,
   getUptime,
@@ -36,7 +36,7 @@ const ALLOWED_ORIGINS = (() => {
 })();
 
 if (!BOT_INGRESS_TOKEN) {
-  console.warn('[server] ⚠ BOT_INGRESS_TOKEN no configurado — endpoints quedan abiertos. Configurar en .env');
+  console.error('[server] ✖ BOT_INGRESS_TOKEN no configurado — todos los endpoints (salvo /status) quedan DESHABILITADOS. Configurar en .env y reiniciar.');
 }
 
 const app = express();
@@ -56,17 +56,16 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '20mb' }));
 
-// Servir audios y media estáticos (sin auth — son URLs públicas que se mandan en mensajes)
-app.use('/media', express.static(MEDIA_DIR));
-
 // Middleware de auth: exige Bearer token o ?token= en query (para SSE).
-// Excluye /status (healthcheck público) y /media (servido arriba).
+// Solo /status queda público (healthcheck). Fail-closed: si el token no está
+// configurado se deniega todo en lugar de abrir los endpoints a la LAN.
 const PUBLIC_PATHS = new Set(['/status']);
 
 function requireToken(req, res, next) {
-  if (!BOT_INGRESS_TOKEN) return next();         // si no hay token configurado, no exigimos (evita lockout)
   if (PUBLIC_PATHS.has(req.path)) return next();
-  if (req.path.startsWith('/media/')) return next();
+  if (!BOT_INGRESS_TOKEN) {
+    return res.status(503).json({ ok: false, error: 'BOT_INGRESS_TOKEN no configurado — endpoint deshabilitado' });
+  }
 
   const auth = req.headers.authorization || '';
   const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : '';
@@ -79,15 +78,29 @@ function requireToken(req, res, next) {
 
 app.use(requireToken);
 
+// Media de mensajes (audios/imágenes/docs de pacientes) — detrás del token.
+// El panel NO consume estas URLs directamente: Laravel las sirve con auth de
+// sesión via /wa-media/{filename} leyendo el bind mount /bot-media. Acceso
+// programático directo: ?token=<BOT_INGRESS_TOKEN>.
+app.use('/media', express.static(MEDIA_DIR));
+
 // ── Status ────────────────────────────────────────────────
+// Público (healthcheck). NO incluye el QR: con el dataUrl acá, cualquier
+// dispositivo de la LAN podía capturarlo durante un re-pareo y secuestrar el
+// número. El QR sale solo por /qr (con token).
 app.get('/status', (req, res) => {
   res.json({
     status: estado.status,
-    qrDataUrl: estado.qrDataUrl,
+    has_qr: !!estado.qrDataUrl,
     phone: estado.phone,
     uptime: getUptime(),
     area: BOT_AREA,
   });
+});
+
+// ── QR de pareo (protegido) ───────────────────────────────
+app.get('/qr', (req, res) => {
+  res.json({ ok: true, status: estado.status, qrDataUrl: estado.qrDataUrl });
 });
 
 // ── Logs (SSE) ────────────────────────────────────────────
@@ -239,11 +252,12 @@ app.get('/pruebas/stream', (req, res) => {
   req.on('close', () => removeClasificacionListener(onEntry));
 });
 
-// POST /pruebas/modo — toggle o set explícito { modoPrueba: true|false }
+// POST /pruebas/modo — toggle o set explícito { modoPrueba: true|false }.
+// Persiste en disco: el valor sobrevive reinicios del container.
 app.post('/pruebas/modo', (req, res) => {
   const { modoPrueba } = req.body;
-  estado.modoPrueba = typeof modoPrueba === 'boolean' ? modoPrueba : !estado.modoPrueba;
-  console.log(`[server] Modo prueba: ${estado.modoPrueba}`);
+  setModoPrueba(typeof modoPrueba === 'boolean' ? modoPrueba : !estado.modoPrueba);
+  console.log(`[server] Modo prueba: ${estado.modoPrueba} (persistido)`);
   res.json({ ok: true, modoPrueba: estado.modoPrueba });
 });
 

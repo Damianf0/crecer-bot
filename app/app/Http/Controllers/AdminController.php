@@ -43,7 +43,7 @@ class AdminController extends Controller
             return response()->json([
                 'ok'     => true,
                 'estado' => $j['status'] ?? 'desconocido',
-                'has_qr' => !empty($j['qrDataUrl']),
+                'has_qr' => !empty($j['has_qr']),
             ]);
         } catch (\Exception) {
             return response()->json(['ok' => false, 'estado' => 'sin_respuesta']);
@@ -63,9 +63,23 @@ class AdminController extends Controller
             $url = \App\Models\ConversacionWA::botUrlPara($area);
             try {
                 $r = Http::timeout(6)->get("{$url}/status");
-                $bots[$area] = $r->ok()
-                    ? (['ok' => true] + ($r->json() ?: []))
-                    : ['ok' => false, 'error' => 'Bot no responde (HTTP ' . $r->status() . ')'];
+                if (!$r->ok()) {
+                    $bots[$area] = ['ok' => false, 'error' => 'Bot no responde (HTTP ' . $r->status() . ')'];
+                    continue;
+                }
+                $j = $r->json() ?: [];
+                // El /status público ya no trae el QR (solo has_qr). Acá corre
+                // sesión con permiso:admin, así que lo pedimos con el token y lo
+                // merge-eamos para que el dashboard lo muestre como siempre.
+                if (!empty($j['has_qr'])) {
+                    try {
+                        $q = Http::timeout(6)->withToken($this->botTok())->get("{$url}/qr");
+                        if ($q->ok() && $q->json('qrDataUrl')) {
+                            $j['qrDataUrl'] = $q->json('qrDataUrl');
+                        }
+                    } catch (\Exception) {}
+                }
+                $bots[$area] = ['ok' => true] + $j;
             } catch (\Exception) {
                 $bots[$area] = ['ok' => false, 'error' => 'Bot no responde / contenedor apagado'];
             }

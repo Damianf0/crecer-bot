@@ -109,7 +109,9 @@ bot/
 └── watchdog.js            auto-reinicio si Puppeteer se cuelga (wwebjs)
 ```
 
-**Auth HTTP**: header `Authorization: Bearer <BOT_INGRESS_TOKEN>` (en `bot/.env`). El healthcheck `/status` es público.
+**Auth HTTP**: header `Authorization: Bearer <BOT_INGRESS_TOKEN>` (en `bot/.env`). Fail-closed: sin token configurado, todo se deniega (503) salvo `/status`. El healthcheck `/status` es público pero **no incluye el QR** (solo `has_qr`); el QR sale por `/qr` con token — evita que cualquier dispositivo de la LAN capture el QR durante un pareo. `/media` (audios/imágenes de pacientes) también exige token: el panel lo consume via Laravel `/wa-media/{filename}` con auth de sesión (lee el bind mount `/bot-media`; `MensajeWA::archivo_url` reescribe las URLs históricas al leer).
+
+**Modo prueba**: persistido en `bot/modo-prueba.<area>.json` (gitignored) — sobrevive reinicios del container. `true` = el bot clasifica y deriva pero NO autoresponde. Toggle desde `/admin/pruebas`.
 
 **Selección del cliente WA**: env `BOT_WA_CLIENT=baileys` activa Baileys; sin ese env usa wwebjs (default).
 
