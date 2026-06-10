@@ -128,6 +128,10 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         // Cola y polling por área (constraint para no chocar con las rutas de arriba).
         Route::get('/atencion/{area}',            [AtencionController::class, 'index'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
         Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+
+        // PoC UI V2 — en paralelo a producción, misma data y permisos. Ver docs/DESIGN-SYSTEM.md.
+        Route::get('/v2/atencion', fn() => redirect('/v2/atencion/atencion'));
+        Route::get('/v2/atencion/{area}',         [AtencionController::class, 'indexV2'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
         // Mis conversaciones WA asignadas
         Route::get('/mis-conversaciones',         [AtencionController::class, 'misConversaciones']);
         Route::get('/mis-conversaciones/data',    [AtencionController::class, 'misConversacionesData']);

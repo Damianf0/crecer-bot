@@ -65,6 +65,27 @@ class AtencionController extends Controller
         return view('atencion.index', compact('usuarios', 'itemsData', 'area', 'areaLabel'));
     }
 
+    /**
+     * PoC de la UI V2 (/v2/atencion/{area}): misma data y endpoints que index(),
+     * renderizada con el layout y patrón bandeja|detalle|legajo nuevos. Corre en
+     * paralelo a producción — no reemplaza nada.
+     */
+    public function indexV2(string $area = 'atencion')
+    {
+        $area = isset(ConversacionWA::AREAS[$area]) ? $area : 'atencion';
+        $usuarios  = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
+        $itemsData = $this->buildItems($area);
+        $areaLabel = ConversacionWA::AREAS[$area];
+        return view('v2.atencion', [
+            'usuarios'  => $usuarios,
+            'itemsData' => $itemsData,
+            'area'      => $area,
+            'areaLabel' => $areaLabel,
+            'modulo'    => 'Atención',
+            'title'     => 'Conversaciones',
+        ]);
+    }
+
     public function items(Request $request, string $area = 'atencion')
     {
         $area    = isset(ConversacionWA::AREAS[$area]) ? $area : 'atencion';
