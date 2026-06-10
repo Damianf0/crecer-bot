@@ -132,6 +132,8 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         // PoC UI V2 — en paralelo a producción, misma data y permisos. Ver docs/DESIGN-SYSTEM.md.
         Route::get('/v2/atencion', fn() => redirect('/v2/atencion/atencion'));
         Route::get('/v2/atencion/{area}',         [AtencionController::class, 'indexV2'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+        Route::get('/v2/mis-conversaciones',      [\App\Http\Controllers\V2Controller::class, 'misConversaciones']);
+        Route::get('/v2/centro-tareas',           [\App\Http\Controllers\V2Controller::class, 'centroTareas']);
         // Mis conversaciones WA asignadas
         Route::get('/mis-conversaciones',         [AtencionController::class, 'misConversaciones']);
         Route::get('/mis-conversaciones/data',    [AtencionController::class, 'misConversacionesData']);
@@ -166,6 +168,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Historial
     Route::middleware('permiso:historial')->group(function () {
         Route::get('/historial', [AtencionController::class, 'historial']);
+        Route::get('/v2/historial', [\App\Http\Controllers\V2Controller::class, 'historial']);
     });
 
     // Legajo de documentos por paciente
@@ -184,6 +187,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
 
     // Contactos
     Route::middleware('permiso:contactos')->group(function () {
+        Route::get('/v2/contactos',                 [\App\Http\Controllers\V2Controller::class, 'contactos']);
         Route::get('/contactos',                    [ContactoController::class, 'index']);
         Route::get('/contactos/data',               [ContactoController::class, 'data']);
         Route::post('/contactos',                   [ContactoController::class, 'store']);

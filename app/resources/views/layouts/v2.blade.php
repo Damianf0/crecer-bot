@@ -32,6 +32,7 @@
         ]
     );
     $areaActiva = $area ?? null;
+    $navActiva  = $navActive ?? null;   // mis-conversaciones | tareas | historial | contactos
     $u = auth()->user();
 @endphp
 
@@ -66,22 +67,26 @@
                 @if(($pendByArea[$aKey] ?? 0) > 0)<span class="v2-nav-badge">{{ $pendByArea[$aKey] }}</span>@endif
             </a>
             @endforeach
-            <a class="v2-nav-item" href="/mis-conversaciones" title="Abre en la UI actual">
+            <a class="v2-nav-item {{ $navActiva === 'mis-conversaciones' ? 'active' : '' }}" href="/v2/mis-conversaciones">
                 <span class="ico">👤</span><span class="lbl">Mis conversaciones</span>
                 @if($misConv > 0)<span class="v2-nav-badge">{{ $misConv }}</span>@endif
             </a>
 
             <div class="v2-nav-sec">Trabajo</div>
-            <a class="v2-nav-item" href="/centro-tareas" title="Abre en la UI actual">
+            <a class="v2-nav-item {{ $navActiva === 'tareas' ? 'active' : '' }}" href="/v2/centro-tareas">
                 <span class="ico">✓</span><span class="lbl">Tareas</span>
                 @if($misTareasCnt > 0)<span class="v2-nav-badge" style="background:var(--v2-info);">{{ $misTareasCnt }}</span>@endif
             </a>
-            <a class="v2-nav-item" href="/historial" title="Abre en la UI actual">
+            @if($u && $u->hasPermiso('historial'))
+            <a class="v2-nav-item {{ $navActiva === 'historial' ? 'active' : '' }}" href="/v2/historial">
                 <span class="ico">🕘</span><span class="lbl">Historial</span>
             </a>
-            <a class="v2-nav-item" href="/contactos" title="Abre en la UI actual">
+            @endif
+            @if($u && $u->hasPermiso('contactos'))
+            <a class="v2-nav-item {{ $navActiva === 'contactos' ? 'active' : '' }}" href="/v2/contactos">
                 <span class="ico">📇</span><span class="lbl">Contactos</span>
             </a>
+            @endif
 
             @if($u && $u->hasPermiso('admin'))
             <div class="v2-nav-sec">Supervisión</div>
@@ -151,6 +156,7 @@ window.v2toast = function (msg, tipo = 'ok') {
     el._t = setTimeout(() => el.classList.remove('show'), 3000);
 };
 </script>
+<script src="/js/crecer-v2.js?v={{ filemtime(public_path('js/crecer-v2.js')) }}"></script>
 @stack('scripts')
 </body>
 </html>
