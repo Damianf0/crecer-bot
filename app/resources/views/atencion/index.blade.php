@@ -24,29 +24,7 @@
 .at-title { font-weight: 700; font-size: 15px; }
 .at-counts { font-size: 12px; color: var(--muted); }
 
-/* Chips de filtro */
-.filter-chips { display: flex; gap: 6px; margin-left: 16px; }
-.filter-chip {
-    font-size: 12px;
-    padding: 3px 10px;
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: .12s;
-    user-select: none;
-}
-.filter-chip:hover { color: var(--text); border-color: var(--text); }
-.filter-chip.active {
-    background: var(--info);
-    color: #fff;
-    border-color: var(--info);
-}
-.filter-chip.urg.active {
-    background: var(--accent);
-    border-color: var(--accent);
-}
+/* Chips de filtro: ver crecer-ds.css (§7) */
 
 /* Botón "+ Nueva conversación" */
 .btn-nueva {
@@ -63,88 +41,7 @@
 }
 .btn-nueva:hover { background: color-mix(in srgb, var(--success) 18%, transparent); }
 
-/* Modal genérico */
-.modal-backdrop {
-    position: fixed; inset: 0; z-index: 9000;
-    background: rgba(0,0,0,.5);
-    display: flex; align-items: center; justify-content: center;
-}
-.modal-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    width: min(540px, calc(100vw - 32px));
-    max-height: calc(100vh - 64px);
-    overflow-y: auto;
-    box-shadow: 0 12px 32px rgba(0,0,0,.3);
-}
-.modal-head {
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-}
-.modal-title { font-weight: 700; font-size: 15px; }
-.modal-close {
-    background: none; border: none; color: var(--muted);
-    font-size: 22px; cursor: pointer; padding: 0; line-height: 1;
-}
-.modal-close:hover { color: var(--text); }
-.modal-body { padding: 16px 18px; }
-.modal-foot {
-    padding: 12px 18px;
-    border-top: 1px solid var(--border);
-    display: flex; gap: 8px; justify-content: flex-end;
-}
-
-.modal-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
-.modal-tab {
-    padding: 8px 14px; cursor: pointer; font-size: 13px;
-    color: var(--muted); border-bottom: 2px solid transparent;
-    background: none; border-left: none; border-right: none; border-top: none;
-}
-.modal-tab.active { color: var(--text); border-bottom-color: var(--info); font-weight: 600; }
-
-.modal-label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 4px; }
-.modal-input {
-    width: 100%;
-    padding: 8px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    font-size: 14px;
-    font-family: inherit;
-}
-.modal-input:focus { outline: none; border-color: var(--info); }
-.modal-textarea { min-height: 90px; resize: vertical; }
-
-.modal-search-results {
-    max-height: 180px; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: 6px;
-    margin-top: 6px;
-}
-.modal-search-item {
-    padding: 8px 10px; cursor: pointer; font-size: 13px;
-    border-bottom: 1px solid var(--border);
-}
-.modal-search-item:last-child { border-bottom: none; }
-.modal-search-item:hover { background: var(--surface); }
-.modal-search-item.selected { background: color-mix(in srgb, var(--info) 12%, transparent); }
-.modal-search-item .nombre { font-weight: 600; }
-.modal-search-item .tel { font-size: 11px; color: var(--muted); }
-
-.btn-modal-primary {
-    padding: 8px 16px; border-radius: 6px; border: none;
-    background: var(--success); color: #fff; font-weight: 600;
-    cursor: pointer; font-size: 13px;
-}
-.btn-modal-primary:disabled { opacity: .5; cursor: not-allowed; }
-.btn-modal-secondary {
-    padding: 8px 16px; border-radius: 6px;
-    border: 1px solid var(--border); background: transparent;
-    color: var(--muted); cursor: pointer; font-size: 13px;
-}
-.btn-modal-secondary:hover { color: var(--text); }
+/* Modal genérico + búsqueda + botones de modal: ver crecer-ds.css (§6) */
 
 /* Body */
 .at-body { flex: 1; display: flex; overflow: hidden; }
@@ -191,37 +88,10 @@
     background: var(--surface);
 }
 .at-card.urgente .at-card-head { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.badge {
-    padding: 2px 7px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .4px;
-}
-.badge-bot { background: color-mix(in srgb, var(--info) 12%, transparent); color: var(--info); border: 1px solid color-mix(in srgb, var(--info) 25%, transparent); }
-.badge-wa  { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 25%, transparent); }
-.badge-urg { color: var(--accent); font-weight: 700; }
-.badge-test { border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent); color: var(--warning); }
-.badge-unread { background: var(--accent); color: #fff; border-radius: 10px; padding: 1px 7px; }
+/* Badges y avatares: ver crecer-ds.css (§7, §8) */
 .at-time { margin-left: auto; color: var(--muted); }
 
 .at-card-body { padding: 9px 11px; }
-.av-circle {
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-    background: var(--surface);
-    border: 1px solid var(--border);
-}
-.av-fallback {
-    border-radius: 50%;
-    background: var(--accent);
-    color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700;
-    flex-shrink: 0;
-    user-select: none;
-}
 .at-contact { font-weight: 700; font-size: 15px; margin-bottom: 3px; }
 .at-resumen {
     font-size: 13px; color: var(--muted); line-height: 1.4;
@@ -291,12 +161,9 @@
     background: var(--surface);
     flex-shrink: 0;
 }
-.panel-head-info { flex: 1; min-width: 0; }
-.panel-head-name { font-weight: 600; font-size: 15px; }
-.panel-head-sub  { font-size: 12px; color: var(--muted); }
-.panel-head-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+/* .panel-head-info/-name/-sub/-actions: ver crecer-ds.css (§10) */
 
-/* Mensajes */
+/* Mensajes (las reglas compartidas viven en crecer-ds.css §9; acá las variantes de esta pantalla) */
 .msg-list {
     flex: 1;
     overflow-y: auto;
@@ -311,10 +178,8 @@
     color: var(--muted);
     padding: 6px 0;
 }
-.msg-wrap { display: flex; }
-.msg-wrap.in  { justify-content: flex-start; }
-.msg-wrap.out { justify-content: flex-end; }
-.msg-wrap.nota { justify-content: center; }
+/* .msg-wrap, .msg-bubble.in, .msg-time, .msg-quoted*, msgFlash, .msg-transcripcion,
+   .msg-reply-link, .reply-pill: ver crecer-ds.css (§9, §11) */
 .msg-bubble {
     max-width: 72%;
     padding: 7px 11px;
@@ -322,78 +187,8 @@
     font-size: 14px;
     line-height: 1.4;
 }
-.msg-bubble.in   { background: var(--bg); border: 1px solid var(--border); border-radius: 0 12px 12px 12px; }
 .msg-bubble.out  { background: color-mix(in srgb, var(--accent) 12%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); border-radius: 12px 0 12px 12px; }
 .msg-bubble.nota { background: color-mix(in srgb, var(--warning) 10%, var(--card)); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); color: var(--warning); border-radius: 8px; font-size: 12px; }
-.msg-time { font-size: 11px; color: var(--muted); margin-top: 3px; }
-.msg-time.right { text-align: right; }
-/* Bubble de cita estilo WhatsApp: borde izquierdo coloreado + autor en bold + */
-/* preview truncado en 1-2 líneas. Click = scroll al original (si está cargado). */
-.msg-quoted {
-    background: color-mix(in srgb, var(--text) 6%, transparent);
-    border-left: 3px solid var(--accent);
-    border-radius: 4px;
-    padding: 4px 8px;
-    margin-bottom: 5px;
-    font-size: 12px;
-    line-height: 1.35;
-    cursor: pointer;
-    max-width: 100%;
-    overflow: hidden;
-}
-.msg-bubble.in  .msg-quoted { border-left-color: var(--info); }
-.msg-bubble.out .msg-quoted { border-left-color: var(--success, #4ade80); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.msg-quoted-autor   { font-weight: 600; color: var(--accent); margin-bottom: 1px; }
-.msg-bubble.in  .msg-quoted .msg-quoted-autor { color: var(--info); }
-.msg-quoted-preview { color: var(--muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-@keyframes msgFlash {
-    0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent) 60%, transparent); }
-    50%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent); }
-    100% { box-shadow: 0 0 0 0   transparent; }
-}
-.msg-flash .msg-bubble { animation: msgFlash 1.5s ease-out; }
-.msg-transcripcion { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 4px; }
-
-/* Link "Responder" en su propia fila debajo del bubble. Padding amplio
-   para zona clickeable cómoda y separación del borde de la columna. */
-.msg-reply-link {
-    display: inline-block;
-    color: var(--info);
-    cursor: pointer;
-    user-select: none;
-    font-size: 11px;
-    font-weight: 500;
-    padding: 3px 8px;
-    border-radius: 6px;
-    margin-top: 2px;
-}
-.msg-reply-link:hover { background: color-mix(in srgb, var(--info) 12%, transparent); color: var(--accent); }
-/* Asegura que la línea del link no quede pegada al borde de la columna —
-   el msg-list ya tiene padding 16px, sumamos 4px de margen al link. */
-.msg-wrap.in  .msg-reply-link { margin-left:  4px; }
-.msg-wrap.out .msg-reply-link { margin-right: 4px; }
-
-/* Pill arriba del composer cuando hay un reply activo. */
-.reply-pill {
-    display: flex; align-items: stretch; gap: 0;
-    background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    border-left: 3px solid var(--accent);
-    border-radius: 6px;
-    padding: 6px 8px;
-    margin-bottom: 8px;
-    font-size: 12px;
-    overflow: hidden;
-}
-.reply-pill-body  { flex: 1; min-width: 0; }
-.reply-pill-autor { font-weight: 600; color: var(--accent); margin-bottom: 1px; }
-.reply-pill-prev  { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.reply-pill-close {
-    background: none; border: none; color: var(--muted);
-    font-size: 18px; line-height: 1; padding: 0 4px 0 8px; cursor: pointer;
-    align-self: flex-start;
-}
-.reply-pill-close:hover { color: var(--text); }
 audio { height: 32px; width: 210px; display: block; }
 
 /* Input */
@@ -403,54 +198,7 @@ audio { height: 32px; width: 210px; display: block; }
     flex-shrink: 0;
     background: var(--surface);
 }
-.input-modes { display: flex; gap: 6px; margin-bottom: 7px; }
-.mode-btn {
-    font-size: 11px;
-    padding: 3px 10px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-}
-.mode-btn.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
-
-/* Dropdown de respuestas rápidas — se despliega hacia ARRIBA porque el botón
-   vive en el footer del panel de conversación; hacia abajo quedaría tapado
-   por el borde inferior del panel. */
-.rr-menu {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    right: 0;
-    min-width: 260px;
-    max-width: 380px;
-    max-height: 320px;
-    overflow-y: auto;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 -8px 24px rgba(0,0,0,.18);
-    z-index: 200;
-    padding: 4px 0;
-}
-.rr-menu-item {
-    padding: 8px 14px;
-    font-size: 13px;
-    cursor: pointer;
-    color: var(--text);
-    transition: background .12s;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-}
-.rr-menu-item:last-child { border-bottom: none; }
-.rr-menu-item:hover { background: var(--bg); }
-.rr-menu-item .rr-titulo  { font-weight: 600; }
-.rr-menu-item .rr-preview { font-size: 11px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rr-menu-empty { padding: 14px; font-size: 12px; color: var(--muted); text-align: center; }
-.rr-menu-foot  { padding: 6px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
-.rr-menu-foot a { color: var(--info); text-decoration: none; }
-.rr-menu-foot a:hover { text-decoration: underline; }
-
-.input-row { display: flex; gap: 8px; align-items: flex-end; }
+/* .input-modes, .mode-btn, .rr-menu*, .input-row: ver crecer-ds.css (§11, §12) */
 .msg-textarea {
     flex: 1;
     background: var(--card);
@@ -474,60 +222,14 @@ audio { height: 32px; width: 210px; display: block; }
     height: 40px;
     white-space: nowrap;
 }
-.clip-label {
-    cursor: pointer;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 18px;
-}
-.clip-label:hover { border-color: var(--muted); }
-.file-preview {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 7px 12px;
-    margin-bottom: 8px;
-    font-size: 12px;
-}
-.file-preview-name { flex: 1; word-break: break-all; color: var(--text); }
-.file-preview-clear { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
+/* .clip-label, .file-preview*: ver crecer-ds.css (§11) */
 
 /* Detalle derivación */
 .der-detail { padding: 16px; overflow-y: auto; flex: 1; }
 .der-detail h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .4px; }
 .der-texto { font-size: 14px; color: var(--text); line-height: 1.6; white-space: pre-wrap; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 
-/* Delegar dropdown — position:fixed para escapar el overflow:hidden de las cards.
-   top/left/bottom los setea el JS según la posición del botón. */
-.delegar-wrap { position: relative; display: inline-flex; }
-.delegar-menu {
-    position: fixed;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    min-width: 220px;
-    max-height: min(60vh, 320px);
-    overflow-y: auto;
-    z-index: 2000;
-    box-shadow: 0 8px 24px rgba(0,0,0,.18);
-}
-.delegar-opt {
-    padding: 9px 14px;
-    font-size: 14px;
-    cursor: pointer;
-    color: var(--text);
-}
-.delegar-opt:hover { background: var(--surface); }
+/* Delegar dropdown: ver crecer-ds.css (§13) */
 
 /* Seguimiento */
 .seg-strip { border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
@@ -537,21 +239,7 @@ audio { height: 32px; width: 210px; display: block; }
 .seg-chip strong { color: var(--text); font-weight: 600; }
 .seg-chip-time { color: var(--muted); opacity: .75; font-size: 10.5px; }
 .seg-sep { color: var(--muted); opacity: .4; flex-shrink: 0; }
-/* Divider de "conversación previa resuelta" entre bloques de mensajes */
-.msg-resol-divider { display: flex; align-items: center; gap: 10px; margin: 14px 4px 8px; color: var(--muted); font-size: 11.5px; }
-.msg-resol-divider .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
-.msg-resol-divider .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
-/* Eventos intercalados en el hilo (tomada/delegada/urgente/etc.) — mismo
-   estilo exacto que msg-resol-divider (chip verde + líneas) por pedido del
-   operador: que TODOS los eventos del seguimiento se vean igual al divider
-   de "✓ Resuelta el ... por X". */
-.msg-evento-inline { display: flex; align-items: center; gap: 10px; margin: 14px 4px 8px; color: var(--muted); font-size: 11.5px; }
-.msg-evento-inline .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
-.msg-evento-inline .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
-.msg-evento-inline strong { color: var(--success); font-weight: 700; }
-.msg-evento-inline .ev-time { opacity: .7; margin-left: 6px; font-size: 10.5px; font-weight: 500; }
-.msg-historial-toggle { display: block; width: 100%; text-align: center; padding: 8px; font-size: 12px; color: var(--muted); cursor: pointer; background: var(--surface); border: 1px dashed var(--border); border-radius: 6px; margin: 6px 0; }
-.msg-historial-toggle:hover { color: var(--text); border-color: var(--info); }
+/* .msg-resol-divider, .msg-evento-inline, .msg-historial-toggle: ver crecer-ds.css (§9) */
 .seg-toggle {
     display: flex; align-items: center; gap: 6px;
     padding: 6px 14px; cursor: pointer;
@@ -570,37 +258,18 @@ audio { height: 32px; width: 210px; display: block; }
 .seg-text strong { color: var(--text); font-weight: 600; }
 .seg-when { font-size: 11px; color: var(--muted); white-space: nowrap; margin-top: 1px; }
 
-/* Empty state */
-.col-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 32px 0; }
+/* .col-empty y dark de badges/delegar-menu: ver crecer-ds.css (§14, §15) */
 
 /* Overrides tema oscuro */
-html.dark .badge-bot { background: rgba(88,166,255,.12); color: #58a6ff; border-color: rgba(88,166,255,.25); }
-html.dark .badge-wa  { background: rgba(63,185,80,.12);  color: #3fb950; border-color: rgba(63,185,80,.25); }
 html.dark .btn-ver   { border-color: rgba(88,166,255,.3); color: #58a6ff; }
 html.dark .btn-ver:hover { background: rgba(88,166,255,.1); }
 html.dark .btn-tomar, html.dark .btn-resolver { border-color: rgba(63,185,80,.3); color: #3fb950; }
 html.dark .btn-tomar:hover, html.dark .btn-resolver:hover { background: rgba(63,185,80,.1); }
-html.dark .delegar-menu { box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 html.dark .seg-item { border-bottom-color: rgba(255,255,255,.06); }
 html.dark .toast.ok  { background: rgba(63,185,80,.15); border-color: rgba(63,185,80,.3); }
 html.dark .toast.error { background: rgba(248,81,73,.15); border-color: rgba(248,81,73,.3); }
 
-/* Toast */
-.toast {
-    position: fixed;
-    bottom: 90px;        /* deja espacio para el botón flotante de chat (bottom:20px) */
-    right: 24px;
-    z-index: 9999;
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    opacity: 0;
-    transform: translateY(8px);
-    transition: .2s;
-    pointer-events: none;
-}
-.toast.show { opacity: 1; transform: none; }
+/* Toast base: ver crecer-ds.css (§5). Acá solo las variantes de color de esta vista. */
 .toast.ok    { background: #dcfce7; color: var(--success); border: 1px solid rgba(26,127,55,.3); }
 .toast.error { background: #fee2e2; color: var(--error);   border: 1px solid rgba(207,34,46,.3); }
 </style>

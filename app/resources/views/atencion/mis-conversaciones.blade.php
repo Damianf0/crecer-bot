@@ -53,6 +53,8 @@
     flex-direction: column;
     gap: 10px;
 }
+/* Variante local: sin background y sin padding lateral (panel pegado al borde).
+   .panel-head-name/-sub vienen de crecer-ds.css. */
 .panel-head {
     padding: 10px 0;
     border-bottom: 1px solid var(--border);
@@ -61,8 +63,6 @@
     gap: 10px;
     flex-shrink: 0;
 }
-.panel-head-name { font-weight: 600; font-size: 15px; }
-.panel-head-sub  { font-size: 12px; color: var(--muted); }
 
 .btn { padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); white-space: nowrap; transition: .12s; display: inline-flex; align-items: center; gap: 4px; }
 .btn:hover         { color: var(--text); border-color: var(--text); }
@@ -84,40 +84,13 @@
 .resumen-banner { padding: 8px 12px; background: color-mix(in srgb, var(--info) 7%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--info) 18%, transparent); font-size: 12px; color: var(--text); flex-shrink: 0; line-height: 1.4; }
 .resumen-banner span { font-size: 10px; font-weight: 700; color: var(--info); letter-spacing: .5px; margin-right: 8px; }
 
+/* Hilo de mensajes: lo compartido (.msg-wrap, .msg-evento-inline, .msg-quoted*,
+   .msg-time, .msg-bubble.in) viene de crecer-ds.css §9. Variantes locales: */
 .msg-list { flex: 1; overflow-y: auto; padding: 12px 0; display: flex; flex-direction: column; gap: 6px; }
 .msg-date   { text-align: center; font-size: 11px; color: var(--muted); padding: 4px 0; }
-.msg-wrap   { display: flex; }
-.msg-wrap.in   { justify-content: flex-start; }
-.msg-wrap.out  { justify-content: flex-end; }
-.msg-wrap.nota { justify-content: center; }
-/* Eventos intercalados — mismo formato que el divider de "✓ Resuelta" */
-.msg-evento-inline { display: flex; align-items: center; gap: 10px; margin: 14px 4px 8px; color: var(--muted); font-size: 11.5px; }
-.msg-evento-inline .line { flex: 1; height: 1px; background: color-mix(in srgb, var(--success) 40%, var(--border)); }
-.msg-evento-inline .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 10px; background: color-mix(in srgb, var(--success) 12%, var(--bg)); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); font-weight: 600; }
-.msg-evento-inline strong { color: var(--success); font-weight: 700; }
-.msg-evento-inline .ev-time { opacity: .7; margin-left: 6px; font-size: 10.5px; font-weight: 500; }
 .msg-bubble { max-width: 72%; padding: 7px 11px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
-.msg-bubble.in   { background: var(--bg); border: 1px solid var(--border); border-radius: 0 12px 12px 12px; }
 .msg-bubble.out  { background: color-mix(in srgb, var(--accent) 18%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); border-radius: 12px 0 12px 12px; }
 .msg-bubble.nota { background: color-mix(in srgb, var(--warning) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent); color: var(--warning); border-radius: 8px; font-size: 12px; max-width: 80%; }
-.msg-time  { font-size: 11px; color: var(--muted); margin-top: 3px; }
-.msg-time.right { text-align: right; }
-.msg-quoted {
-    background: color-mix(in srgb, var(--text) 6%, transparent);
-    border-left: 3px solid var(--accent);
-    border-radius: 4px;
-    padding: 4px 8px;
-    margin-bottom: 5px;
-    font-size: 12px;
-    line-height: 1.35;
-    max-width: 100%;
-    overflow: hidden;
-}
-.msg-bubble.in  .msg-quoted { border-left-color: var(--info); }
-.msg-bubble.out .msg-quoted { border-left-color: var(--success, #4ade80); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.msg-quoted-autor   { font-weight: 600; color: var(--accent); margin-bottom: 1px; }
-.msg-bubble.in  .msg-quoted .msg-quoted-autor { color: var(--info); }
-.msg-quoted-preview { color: var(--muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 .seg-strip  { border-top: 1px solid var(--border); flex-shrink: 0; }
 .seg-toggle { display: flex; align-items: center; gap: 6px; padding: 7px 0; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; letter-spacing: .4px; text-transform: uppercase; }
@@ -130,37 +103,9 @@
 .seg-text   { font-size: 12px; color: var(--text); flex: 1; }
 .seg-when   { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
+/* Composer: .mode-btn, .rr-menu*, .input-row vienen de crecer-ds.css (§11, §12).
+   Variantes locales: */
 .panel-input { border-top: 1px solid var(--border); padding: 10px 0 0; flex-shrink: 0; }
-.mode-btn { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
-.mode-btn.active { border-color: var(--accent); background: rgba(192,39,58,.1); color: var(--accent); }
-
-/* Dropdown de respuestas rápidas — abre hacia ARRIBA (el botón está en el
-   footer del panel; hacia abajo quedaría tapado por el borde del panel). */
-.rr-menu {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    right: 0;
-    min-width: 260px;
-    max-width: 380px;
-    max-height: 320px;
-    overflow-y: auto;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 -8px 24px rgba(0,0,0,.18);
-    z-index: 200;
-    padding: 4px 0;
-}
-.rr-menu-item { padding: 8px 14px; font-size: 13px; cursor: pointer; color: var(--text); transition: background .12s; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
-.rr-menu-item:last-child { border-bottom: none; }
-.rr-menu-item:hover { background: var(--bg); }
-.rr-menu-item .rr-titulo  { font-weight: 600; }
-.rr-menu-item .rr-preview { font-size: 11px; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rr-menu-empty { padding: 14px; font-size: 12px; color: var(--muted); text-align: center; }
-.rr-menu-foot  { padding: 6px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
-.rr-menu-foot a { color: var(--info); text-decoration: none; }
-.rr-menu-foot a:hover { text-decoration: underline; }
-.input-row { display: flex; gap: 8px; align-items: flex-end; }
 .msg-textarea { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; color: var(--text); font-size: 13px; resize: none; min-height: 50px; font-family: inherit; }
 .msg-textarea:focus { outline: none; border-color: var(--info); }
 .send-btn { padding: 0 16px; background: var(--accent); border: none; color: #fff; border-radius: 8px; font-size: 13px; cursor: pointer; height: 38px; }
@@ -168,8 +113,7 @@
 .refresh-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); display: inline-block; animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-.toast { position:fixed;bottom:90px;right:24px;z-index:9999;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none; }
-.toast.show { opacity:1;transform:none; }
+/* Toast base: crecer-ds.css §5. Variantes de color locales: */
 .toast.ok    { background:rgba(63,185,80,.15);color:var(--success);border:1px solid rgba(63,185,80,.3); }
 .toast.error { background:rgba(248,81,73,.15);color:var(--error);border:1px solid rgba(248,81,73,.3); }
 </style>

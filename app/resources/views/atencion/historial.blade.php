@@ -74,7 +74,7 @@
 .hist-table tr:hover td { background: var(--surface); }
 .hist-table tr.expanded td { background: var(--surface); }
 
-.badge { padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 700; letter-spacing: .4px; }
+/* .badge base: crecer-ds.css §7. Variantes de color locales (rgba propio): */
 .badge-bot   { background: rgba(5,80,174,.08);  color: var(--info);    border: 1px solid rgba(5,80,174,.2); }
 .badge-wa    { background: rgba(26,127,55,.08); color: var(--success); border: 1px solid rgba(26,127,55,.2); }
 .badge-tarea { background: rgba(192,39,58,.08); color: var(--accent);  border: 1px solid rgba(192,39,58,.2); }

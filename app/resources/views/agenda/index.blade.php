@@ -143,8 +143,7 @@
 .prio-normal { color: var(--info); }
 .prio-baja   { color: var(--muted); }
 
-.toast { position:fixed;bottom:90px;right:24px;z-index:9999;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none; }
-.toast.show { opacity:1;transform:none; }
+/* Toast base: crecer-ds.css §5. Variantes de color locales: */
 .toast.ok    { background:rgba(63,185,80,.15);color:var(--success);border:1px solid rgba(63,185,80,.3); }
 .toast.error { background:rgba(248,81,73,.15);color:var(--error);border:1px solid rgba(248,81,73,.3); }
 </style>

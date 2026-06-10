@@ -86,7 +86,7 @@
 }
 .ct-panel-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; flex-direction: column; gap: 10px; }
 .panel-head { padding: 10px 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.panel-head-name { font-weight: 600; font-size: 15px; }
+/* .panel-head-name: crecer-ds.css */
 
 .btn { padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); white-space: nowrap; transition: .12s; display: inline-flex; align-items: center; gap: 4px; }
 .btn:hover         { color: var(--text); border-color: var(--text); }
@@ -147,8 +147,7 @@
 .refresh-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); display: inline-block; animation: pulse 2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-.toast { position:fixed;bottom:90px;right:24px;z-index:9999;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none; }
-.toast.show { opacity:1;transform:none; }
+/* Toast base: crecer-ds.css §5. Variantes de color locales: */
 .toast.ok    { background:rgba(63,185,80,.15);color:var(--success);border:1px solid rgba(63,185,80,.3); }
 .toast.error { background:rgba(248,81,73,.15);color:var(--error);border:1px solid rgba(248,81,73,.3); }
 </style>
