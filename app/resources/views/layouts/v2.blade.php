@@ -102,7 +102,7 @@
                 <span class="v2-av-fb" style="width:26px;height:26px;font-size:11px;">{{ mb_strtoupper(mb_substr($u->nombre_completo ?? '?', 0, 1)) }}</span>
                 <span class="sb-meta" style="min-width:0;">
                     <span style="display:block;font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;">{{ explode(' ', $u->nombre_completo ?? '')[0] }}</span>
-                    <span style="display:block;font-size:10.5px;color:var(--v2-text-mute);">{{ \App\Models\User::ROLES[$u->rol] ?? $u->rol }}</span>
+                    <span style="display:block;font-size:10.5px;color:var(--v2-text-mute);">{{ \App\Models\User::ROLES[$u?->rol] ?? $u?->rol }}</span>
                 </span>
             </div>
         </aside>

@@ -59,10 +59,17 @@ class V2Controller extends Controller
         ]);
     }
 
-    public function historial()
+    /**
+     * Mismo funcionamiento que /historial (filtros GET + tabla + detalle
+     * expandible + paginación server-side): reusa la query de
+     * AtencionController::historial y solo cambia la vista al shell V2.
+     */
+    public function historial(\Illuminate\Http\Request $request)
     {
-        return view('v2.historial', [
-            'usuarios'  => $this->usuarios(),
+        $resp = app(AtencionController::class)->historial($request);
+        if ($resp instanceof \Illuminate\Http\JsonResponse) return $resp;
+
+        return view('v2.historial', $resp->getData() + [
             'modulo'    => 'Trabajo',
             'title'     => 'Historial',
             'navActive' => 'historial',

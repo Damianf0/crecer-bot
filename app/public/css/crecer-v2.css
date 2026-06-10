@@ -145,6 +145,20 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
 .v2-pill.espera  { color: var(--v2-warn); background: var(--v2-warn-bg); }
 .v2-pill.urgente { color: var(--v2-urg); background: var(--v2-urg-bg); }
 .v2-pill.neutral { color: var(--v2-text-2); background: var(--v2-bg-hover); }
+.v2-pill.accent  { color: var(--v2-accent); background: var(--v2-accent-bg); }
+
+/* ── Tabla densa (listados full-width tipo historial) ───────────────────── */
+.v2-table { width: 100%; border-collapse: collapse; background: var(--v2-bg-card); border: 1px solid var(--v2-border); border-radius: var(--v2-radius); overflow: hidden; }
+.v2-table th {
+    text-align: left; font-size: 10.5px; font-weight: 600;
+    color: var(--v2-text-mute); text-transform: uppercase; letter-spacing: .5px;
+    padding: 9px 12px; border-bottom: 1px solid var(--v2-border-strong);
+    background: var(--v2-bg-app);
+}
+.v2-table td { padding: 9px 12px; border-bottom: 1px solid var(--v2-border); font-size: 13px; vertical-align: top; }
+.v2-table tr:last-child td { border-bottom: none; }
+.v2-table tbody tr.item-row:hover td { background: var(--v2-bg-hover); }
+.v2-table tbody tr.expanded td { background: var(--v2-bg-hover); }
 
 /* ── Botones ────────────────────────────────────────────────────────────── */
 .v2-btn {

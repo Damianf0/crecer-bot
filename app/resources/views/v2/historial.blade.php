@@ -1,172 +1,295 @@
 @extends('layouts.v2')
 @section('title', 'Historial')
 
-{{-- PoC V2 — historial de resueltos (conversaciones WA, derivaciones bot y
-     tareas) sobre GET /historial (JSON). Las conversaciones se abren read-only
-     con el módulo compartido; "Reabrir" las devuelve a la cola. --}}
+{{-- PoC V2 — historial con el MISMO funcionamiento que /historial de
+     producción (filtros GET, tabla densa, detalle expandible por fila con
+     "Ver ▾", reabrir, paginación server-side), renderizado en el shell V2.
+     La query vive en AtencionController::historial (via V2Controller). --}}
+
+@push('styles')
+<style>
+/* Estilos específicos de esta pantalla (detalle expandible y mini-timeline) */
+.detail-row { display: none; }
+.detail-row.open { display: table-row; }
+.detail-cell {
+    background: var(--v2-info-bg) !important;
+    border-left: 3px solid var(--v2-info);
+    padding: 14px 16px !important;
+}
+.detail-texto {
+    font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+    color: var(--v2-text); background: var(--v2-bg-card);
+    border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm);
+    padding: 10px 12px; max-height: 200px; overflow-y: auto; margin-top: 6px;
+}
+.msg-mini { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--v2-border); font-size: 13px; line-height: 1.4; }
+.msg-mini:last-child { border-bottom: none; }
+.msg-mini-dir { font-size: 10px; font-weight: 700; min-width: 60px; padding-top: 2px; }
+.dir-in  { color: var(--v2-text-mute); }
+.dir-out { color: var(--v2-info); }
+.dir-nota { color: var(--v2-warn); }
+.msg-mini-hora { font-size: 10px; color: var(--v2-text-mute); min-width: 40px; padding-top: 2px; font-family: 'JetBrains Mono', monospace; }
+.msg-mini-audio { color: var(--v2-text-mute); font-style: italic; }
+.msg-mini-evt { display: flex; align-items: center; gap: 10px; padding: 8px 0; color: var(--v2-text-mute); font-size: 11px; border-bottom: 1px solid var(--v2-border); }
+.msg-mini-evt:last-child { border-bottom: none; }
+.msg-mini-evt .line { flex: 1; height: 1px; background: var(--v2-border-strong); }
+.msg-mini-evt .label { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 9px; background: var(--v2-ok-bg); color: var(--v2-ok); font-weight: 600; }
+.msg-mini-evt strong { color: var(--v2-ok); font-weight: 700; }
+.msg-mini-evt .ev-time { opacity: .7; margin-left: 6px; font-size: 10.5px; font-weight: 500; }
+.kom-hist { padding: 5px 0; border-bottom: 1px solid var(--v2-border); font-size: 12px; display: flex; gap: 8px; }
+.kom-hist:last-child { border-bottom: none; }
+.kom-hist-autor { font-weight: 600; min-width: 80px; color: var(--v2-text); }
+.kom-hist-hora  { color: var(--v2-text-mute); min-width: 70px; font-size: 11px; padding-top: 1px; font-family: 'JetBrains Mono', monospace; }
+.hist-label-mini { font-size: 10px; font-weight: 700; color: var(--v2-text-mute); letter-spacing: .5px; margin-bottom: 5px; text-transform: uppercase; }
+</style>
+@endpush
 
 @section('content')
-<div class="v2-inbox" id="inbox">
+<div style="flex:1;overflow-y:auto;padding:20px 24px;">
+<div style="max-width:1100px;margin:0 auto;">
 
-    <section class="v2-bandeja" style="min-width:0;">
-        <div class="v2-bandeja-head">
-            <h1>Historial <span class="count" id="b-count"></span></h1>
-            <input type="search" class="v2-search" id="b-search" placeholder="Buscar por contacto o título (Enter)">
-            <div style="display:flex;gap:6px;margin-top:8px;">
-                <input type="date" class="v2-field" id="f-desde" title="Desde" style="margin:0;font-size:12px;">
-                <input type="date" class="v2-field" id="f-hasta" title="Hasta" style="margin:0;font-size:12px;">
-            </div>
+    <h1 style="font-size:17px;font-weight:650;margin-bottom:16px;">Historial</h1>
+
+    {{-- Filtros (GET, igual que producción) --}}
+    <form method="GET" action="/v2/historial" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:14px 16px;margin-bottom:16px;">
+        <div>
+            <label class="v2-label" style="margin-top:0;">Desde</label>
+            <input type="date" name="desde" class="v2-field" style="height:34px;" value="{{ $desde ? $desde->format('Y-m-d') : '' }}">
         </div>
-        <div class="v2-vistas" id="b-vistas"></div>
-        <div class="v2-cards" id="b-cards"></div>
-    </section>
-
-    <section class="v2-detalle" id="detalle">
-        <div class="v2-det-empty" id="det-empty">
-            <span class="ico">🕘</span>
-            <span>Todo lo resuelto, en un solo lugar</span>
-            <span style="font-size:11.5px;">Las conversaciones se abren en modo lectura — podés reabrirlas si hace falta.</span>
+        <div>
+            <label class="v2-label" style="margin-top:0;">Hasta</label>
+            <input type="date" name="hasta" class="v2-field" style="height:34px;" value="{{ $hasta ? $hasta->format('Y-m-d') : '' }}">
         </div>
-        <div id="det-body" style="display:none;flex:1;flex-direction:column;min-height:0;"></div>
-    </section>
+        <div>
+            <label class="v2-label" style="margin-top:0;">Tipo</label>
+            <select name="tipo" class="v2-field" style="height:34px;min-width:110px;">
+                <option value="todos"  {{ $tipo === 'todos' ? 'selected' : '' }}>Todos</option>
+                <option value="bot"    {{ $tipo === 'bot'   ? 'selected' : '' }}>Bot</option>
+                <option value="wa"     {{ $tipo === 'wa'    ? 'selected' : '' }}>WhatsApp</option>
+                <option value="tarea"  {{ $tipo === 'tarea' ? 'selected' : '' }}>Tareas</option>
+            </select>
+        </div>
+        <div>
+            <label class="v2-label" style="margin-top:0;">Área</label>
+            <select name="area" class="v2-field" style="height:34px;min-width:130px;">
+                <option value="todas" {{ ($area ?? 'todas') === 'todas' ? 'selected' : '' }}>Todas</option>
+                @foreach(\App\Models\ConversacionWA::AREAS as $k => $v)
+                    <option value="{{ $k }}" {{ ($area ?? 'todas') === $k ? 'selected' : '' }}>{{ $v }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="v2-label" style="margin-top:0;">Buscar</label>
+            <input type="text" name="q" class="v2-field" style="height:34px;min-width:180px;" placeholder="Contacto / título…" value="{{ $q }}">
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button type="submit" class="v2-btn primary" style="height:34px;">Filtrar</button>
+            <a href="/v2/historial" class="v2-btn" style="height:34px;text-decoration:none;">Limpiar</a>
+        </div>
+    </form>
 
-    <aside class="v2-legajo" id="legajo">
-        <h2>Legajo</h2>
-        <div id="leg-body" style="color:var(--v2-text-mute);font-size:12.5px;">Sin selección.</div>
-    </aside>
+    <div style="font-size:12.5px;color:var(--v2-text-mute);margin-bottom:10px;">
+        {{ $total }} resultado{{ $total !== 1 ? 's' : '' }}
+        @if($pages > 1)<span> · página {{ $page }} de {{ $pages }}</span>@endif
+        @if($desde || $hasta)
+            <span style="color:var(--v2-info);"> · {{ $desde?->format('d/m/Y') ?? '…' }} → {{ $hasta?->format('d/m/Y') ?? 'hoy' }}</span>
+        @endif
+    </div>
+
+    @if($items->isEmpty())
+        <div class="v2-empty" style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);"><span class="ico">🗂</span>Sin resultados para los filtros aplicados.</div>
+    @else
+
+    @php
+        $qsBase = http_build_query(array_filter([
+            'desde' => $desde?->format('Y-m-d'),
+            'hasta' => $hasta?->format('Y-m-d'),
+            'tipo'  => $tipo !== 'todos' ? $tipo : null,
+            'area'  => ($area ?? 'todas') !== 'todas' ? $area : null,
+            'q'     => $q ?: null,
+        ]));
+    @endphp
+    <table class="v2-table">
+        <thead>
+            <tr>
+                <th style="width:95px;">Fecha</th>
+                <th style="width:75px;">Tipo</th>
+                <th style="width:180px;">Contacto / Título</th>
+                <th>Resumen / Descripción</th>
+                <th style="width:130px;">Responsable</th>
+                <th style="width:115px;">Área</th>
+                <th style="width:130px;"></th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach($items as $item)
+        <tr class="item-row" id="row-{{ $item['tipo'] }}-{{ $item['id'] }}">
+            <td style="color:var(--v2-text-mute);white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:11.5px;">{{ $item['resuelto_at'] }}</td>
+            <td>
+                @if($item['tipo'] === 'bot')
+                    <span class="v2-pill nueva">Bot</span>
+                @elseif($item['tipo'] === 'wa')
+                    <span class="v2-pill proceso">WA</span>
+                @else
+                    <span class="v2-pill accent">Tarea</span>
+                @endif
+            </td>
+            <td style="font-weight:600;">
+                {{ $item['contacto'] }}
+                @if($item['tipo'] === 'tarea' && ($item['prioridad'] ?? 'normal') !== 'normal')
+                    <span class="v2-pill {{ $item['prioridad'] === 'alta' ? 'urgente' : 'neutral' }}" style="font-size:10px;">{{ ucfirst($item['prioridad']) }}</span>
+                @endif
+            </td>
+            <td style="color:var(--v2-text-2);max-width:340px;">{{ $item['resumen'] }}</td>
+            <td style="color:var(--v2-text-2);">{{ $item['asig_name'] ?? '—' }}</td>
+            <td style="color:var(--v2-text-2);">{{ $item['area_label'] ?? '—' }}</td>
+            <td style="white-space:nowrap;">
+                <button class="v2-btn sm" onclick="toggleDetalle('{{ $item['tipo'] }}', {{ $item['id'] }}, {{ json_encode($item) }})">Ver ▾</button>
+                @if($item['tipo'] !== 'tarea')
+                <button class="v2-btn sm accent" onclick="reabrir('{{ $item['tipo'] }}', {{ $item['id'] }}, this)">↩ Reabrir</button>
+                @endif
+            </td>
+        </tr>
+        <tr class="detail-row" id="detail-{{ $item['tipo'] }}-{{ $item['id'] }}">
+            <td colspan="7" class="detail-cell">
+                <div id="detail-content-{{ $item['tipo'] }}-{{ $item['id'] }}" style="color:var(--v2-text-mute);font-size:12px;">Cargando…</div>
+            </td>
+        </tr>
+        @endforeach
+        </tbody>
+    </table>
+
+    @if($pages > 1)
+    <div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px;font-size:13px;">
+        @if($page > 1)
+            <a href="?{{ $qsBase }}&page={{ $page - 1 }}" class="v2-btn" style="text-decoration:none;">← Anterior</a>
+        @else
+            <span class="v2-btn" style="opacity:.4;cursor:not-allowed;">← Anterior</span>
+        @endif
+        <span style="color:var(--v2-text-mute);padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:11.5px;">Página {{ $page }} / {{ $pages }}</span>
+        @if($page < $pages)
+            <a href="?{{ $qsBase }}&page={{ $page + 1 }}" class="v2-btn" style="text-decoration:none;">Siguiente →</a>
+        @else
+            <span class="v2-btn" style="opacity:.4;cursor:not-allowed;">Siguiente →</span>
+        @endif
+    </div>
+    @endif
+
+    @endif
+</div>
 </div>
 @endsection
 
 @push('scripts')
 <script>
-const { esc, get, avatarHtml } = V2;
+// Mismo comportamiento que /historial de producción: detalle expandible por
+// fila, cargado on-demand y cacheado; reabrir con feedback inline.
+const { esc, get, post } = V2;
+const _loaded = {};
 
-V2Conv.init({
-    usuarios: @json($usuarios),
-    meId: {{ auth()->id() }},
-    onChanged: () => fetchItems(),
-});
+async function toggleDetalle(tipo, id, item) {
+    const row = document.getElementById(`detail-${tipo}-${id}`);
+    const isOpen = row.classList.contains('open');
 
-let state = { items: [], tipo: 'todos', q: '', page: 1, pages: 1, total: 0, sel: null };
+    document.querySelectorAll('.detail-row.open').forEach(r => r.classList.remove('open'));
+    document.querySelectorAll('.item-row.expanded').forEach(r => r.classList.remove('expanded'));
 
-const TIPO_PILL = {
-    wa:    '<span class="v2-pill proceso">WhatsApp</span>',
-    bot:   '<span class="v2-pill espera">Bot</span>',
-    tarea: '<span class="v2-pill nueva">Tarea</span>',
-};
+    if (isOpen) return;
+    row.classList.add('open');
+    document.getElementById(`row-${tipo}-${id}`).classList.add('expanded');
 
-async function fetchItems() {
-    const p = new URLSearchParams({ tipo: state.tipo, q: state.q, page: state.page, per_page: 50 });
-    const desde = document.getElementById('f-desde').value;
-    const hasta = document.getElementById('f-hasta').value;
-    if (desde) p.set('desde', desde);
-    if (hasta) p.set('hasta', hasta);
-    try {
-        const d = await get('/historial?' + p.toString());
-        state.items = d.data || [];
-        state.pages = d.pages || 1;
-        state.total = d.total || 0;
-        renderBandeja();
-    } catch (e) {}
-}
+    if (_loaded[`${tipo}-${id}`]) return;
+    _loaded[`${tipo}-${id}`] = true;
 
-function renderVistas() {
-    document.getElementById('b-vistas').innerHTML = [['todos','Todos'],['wa','WhatsApp'],['bot','Bot'],['tarea','Tareas']]
-        .map(([k, lbl]) => `<button class="v2-vista ${state.tipo === k ? 'active' : ''}" onclick="setTipo('${k}')">${lbl}</button>`)
-        .join('');
-    document.getElementById('b-count').textContent = state.total;
-}
-async function setTipo(t) { state.tipo = t; state.page = 1; await fetchItems(); }
+    const el = document.getElementById(`detail-content-${tipo}-${id}`);
 
-function renderBandeja() {
-    renderVistas();
-    const cont = document.getElementById('b-cards');
-    if (!state.items.length) {
-        cont.innerHTML = `<div class="v2-empty"><span class="ico">🗂</span>Nada resuelto con estos filtros.</div>`;
-        return;
-    }
-    cont.innerHTML = state.items.map((i, idx) => {
-        const sel = state.sel === idx;
-        return `<div class="v2-card ${sel ? 'selected' : ''}" onclick="abrirItem(${idx})">
-            <div class="v2-card-l1">${TIPO_PILL[i.tipo] || ''}${i.area_label ? `<span class="tipo">${esc(i.area_label)}</span>` : ''}<span class="ago">${esc(i.resuelto_at || '')}</span></div>
-            <div class="v2-card-l2"><span class="nombre">${esc(i.contacto)}</span></div>
-            <div class="resumen">${esc(i.resumen || '—')}</div>
-            ${i.asig_name ? `<div class="v2-card-foot"><span class="who">● Resolvió ${esc(i.asig_name.split(' ')[0])}</span></div>` : ''}
+    if (tipo === 'tarea') {
+        const PRIO = { alta: 'Alta', normal: 'Normal', baja: 'Baja' };
+        const desc = item.resumen && item.resumen !== '—'
+            ? `<div style="margin-bottom:12px;"><div class="hist-label-mini">Descripción</div><div class="detail-texto">${esc(item.resumen)}</div></div>` : '';
+        const meta = `<div style="display:grid;grid-template-columns:110px 1fr;gap:5px 12px;font-size:12px;margin-bottom:12px;">
+            <span class="hist-label-mini" style="margin:0;">Asignada a</span><span>${esc(item.asig_name || '— sin asignar —')}</span>
+            <span class="hist-label-mini" style="margin:0;">Creada por</span><span>${esc(item.creado_por || '—')}</span>
+            <span class="hist-label-mini" style="margin:0;">Prioridad</span><span>${esc(PRIO[item.prioridad] || item.prioridad || 'Normal')}</span>
         </div>`;
-    }).join('') + (state.page < state.pages
-        ? `<button class="more" onclick="masPagina()">Cargar más (página ${state.page + 1} de ${state.pages})</button>` : '');
-}
-
-async function masPagina() {
-    state.page++;
-    const p = new URLSearchParams({ tipo: state.tipo, q: state.q, page: state.page, per_page: 50 });
-    const desde = document.getElementById('f-desde').value, hasta = document.getElementById('f-hasta').value;
-    if (desde) p.set('desde', desde);
-    if (hasta) p.set('hasta', hasta);
-    try {
-        const d = await get('/historial?' + p.toString());
-        state.items = [...state.items, ...(d.data || [])];
-        renderBandeja();
-    } catch (e) {}
-}
-
-async function abrirItem(idx) {
-    state.sel = idx;
-    renderBandeja();
-    const i = state.items[idx];
-    const leg = document.getElementById('leg-body');
-
-    if (i.tipo === 'wa') {
-        await V2Conv.abrir(i.id, { readOnly: true });
+        const koms = item.comentarios && item.comentarios.length
+            ? `<div class="hist-label-mini">Comentarios (${item.comentarios.length})</div>
+               <div style="max-height:180px;overflow-y:auto;">${item.comentarios.map(c =>
+                   `<div class="kom-hist"><span class="kom-hist-autor">${esc(c.usuario||'—')}</span><span class="kom-hist-hora">${esc(c.hora)}</span><span>${esc(c.contenido)}</span></div>`
+               ).join('')}</div>`
+            : `<div style="font-size:12px;color:var(--v2-text-mute);">Sin comentarios.</div>`;
+        el.innerHTML = desc + meta + koms;
         return;
     }
 
-    // bot / tarea: ficha estática
-    document.getElementById('det-empty').style.display = 'none';
-    const body = document.getElementById('det-body');
-    body.style.display = 'flex';
-    leg.innerHTML = 'Sin legajo para este tipo.';
+    try {
+        if (tipo === 'bot') {
+            const d = await get(`/atencion/derivacion/${id}`);
+            el.innerHTML = `
+                ${d.resumen ? `<div style="margin-bottom:10px;"><span class="hist-label-mini" style="color:var(--v2-info);">Resumen</span><div style="margin-top:4px;font-size:13px;color:var(--v2-text);">${esc(d.resumen)}</div></div>` : ''}
+                <div class="hist-label-mini">Conversación</div>
+                <div class="detail-texto">${esc(d.texto || '—')}</div>`;
+        } else {
+            const data = await get(`/atencion/conversacion/${id}`);
+            const msgs    = data.mensajes || [];
+            const eventos = data.eventos  || [];
 
-    if (i.tipo === 'bot') {
-        body.innerHTML = `
-            <div class="v2-det-head">
-                <div class="info"><div class="nombre">${esc(i.contacto)}</div><div class="sub">derivación del bot · resuelta ${esc(i.resuelto_at || '')}</div></div>
-                <span class="v2-pill espera">${esc(i.etiqueta || 'Bot')}</span>
-            </div>
-            <div class="v2-msgs" style="gap:12px;">
-                ${i.resumen ? `<div class="v2-resumen" style="margin:0;max-width:560px;"><span class="tag">Resumen IA</span>${esc(i.resumen)}</div>` : ''}
-                <div class="v2-bubble" style="max-width:560px;white-space:pre-wrap;">${esc(i.texto || '—')}</div>
-                ${i.asig_name ? `<div class="v2-evento">Resuelta por <b>${esc(i.asig_name)}</b></div>` : ''}
-            </div>`;
-    } else {
-        const coms = (i.comentarios || []).map(c => `
-            <div class="v2-leg-row" style="border:none;padding:5px 0;">
-                <span><b>${esc((c.usuario || '—').split(' ')[0])}</b> · <span style="color:var(--v2-text-2);">${esc(c.contenido)}</span></span>
-                <span class="v mono">${esc(c.hora || '')}</span>
-            </div>`).join('');
-        body.innerHTML = `
-            <div class="v2-det-head">
-                <div class="info"><div class="nombre">${esc(i.contacto)}</div><div class="sub">tarea completada · ${esc(i.resuelto_at || '')}</div></div>
-                <span class="v2-pill nueva">Tarea</span>
-            </div>
-            <div class="v2-msgs" style="gap:12px;">
-                <div class="v2-leg-tabla" style="max-width:560px;">
-                    ${i.creado_por ? `<div class="v2-leg-row"><span class="k">Creada por</span><span class="v">${esc(i.creado_por)}</span></div>` : ''}
-                    ${i.asig_name ? `<div class="v2-leg-row"><span class="k">Asignada a</span><span class="v">${esc(i.asig_name)}</span></div>` : ''}
-                    ${i.prioridad ? `<div class="v2-leg-row"><span class="k">Prioridad</span><span class="v">${esc(i.prioridad)}</span></div>` : ''}
-                </div>
-                ${i.resumen && i.resumen !== '—' ? `<div class="v2-bubble" style="max-width:560px;white-space:pre-wrap;">${esc(i.resumen)}</div>` : ''}
-                ${coms ? `<div style="max-width:560px;"><div class="v2-label" style="margin-bottom:4px;">Comentarios</div>${coms}</div>` : ''}
-            </div>`;
-    }
+            const TIPOS_SEG = {
+                tomada:        { icon: '🟢', label: (e) => `Tomó <strong>${esc(e.usuario||'—')}</strong>` },
+                delegada:      { icon: '📤', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> delegó a <strong>${esc(e.destino||'—')}</strong>` },
+                resuelta:      { icon: '✅', label: (e) => `Resolvió <strong>${esc(e.usuario||'—')}</strong>` },
+                reabierta:     { icon: '🔁', label: (e) => `Reabrió <strong>${esc(e.usuario||'—')}</strong>` },
+                urgente_on:    { icon: '⚑',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> marcó urgente` },
+                urgente_off:   { icon: '⚐',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> sacó urgencia` },
+                reenviada:     { icon: '🔁', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> reenvió y archivó` },
+                derivada_area: { icon: '↗',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> derivó a otra área` },
+            };
+
+            const items = [];
+            for (const m of msgs)    items.push(Object.assign({}, m, { __k: 'msg' }));
+            for (const e of eventos) items.push(Object.assign({}, e, { __k: 'evt' }));
+            items.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+
+            const renderItem = (it) => {
+                if (it.__k === 'msg') {
+                    const dirClass = it.direccion === 'entrante' ? 'dir-in' : it.direccion === 'saliente' ? 'dir-out' : 'dir-nota';
+                    const dirLabel = it.direccion === 'entrante' ? 'Paciente' : it.direccion === 'saliente' ? 'Clínica' : 'Nota';
+                    const cuerpo = it.tipo === 'audio'
+                        ? `<span class="msg-mini-audio">🎤 ${esc(it.contenido || 'Audio sin transcripción')}</span>`
+                        : esc(it.contenido || '');
+                    return `<div class="msg-mini">
+                        <span class="msg-mini-dir ${dirClass}">${dirLabel}</span>
+                        <span class="msg-mini-hora">${it.hora}</span>
+                        <span>${cuerpo}</span>
+                    </div>`;
+                }
+                const t = TIPOS_SEG[it.tipo] || { icon: '•', label: () => esc(it.tipo) };
+                return `<div class="msg-mini-evt" title="${esc(it.fecha||'')}"><div class="line"></div><div class="label">${t.icon} ${t.label(it)}<span class="ev-time">${esc(it.hora||'')}</span></div><div class="line"></div></div>`;
+            };
+
+            el.innerHTML = items.length
+                ? `<div style="max-height:220px;overflow-y:auto;">` + items.map(renderItem).join('') + `</div>`
+                : '<span style="color:var(--v2-text-mute);font-size:12px;">Sin mensajes ni acciones registradas</span>';
+        }
+    } catch(e) { el.textContent = 'Error al cargar detalle.'; }
 }
 
-document.getElementById('b-search').addEventListener('keydown', e => {
-    if (e.key === 'Enter') { state.q = e.target.value.trim(); state.page = 1; fetchItems(); }
-});
-document.getElementById('f-desde').addEventListener('change', () => { state.page = 1; fetchItems(); });
-document.getElementById('f-hasta').addEventListener('change', () => { state.page = 1; fetchItems(); });
-
-fetchItems();
+async function reabrir(tipo, id, btn) {
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+        await post('/atencion/reabrir', { id, tipo });
+        v2toast('Reabierto — aparece en Atención');
+        const row = document.getElementById(`row-${tipo}-${id}`);
+        const det = document.getElementById(`detail-${tipo}-${id}`);
+        row.style.opacity = '.4';
+        det.classList.remove('open');
+        btn.textContent = '✓';
+    } catch(e) {
+        v2toast('Error al reabrir', 'err');
+        btn.disabled = false;
+        btn.textContent = '↩ Reabrir';
+    }
+}
 </script>
 @endpush
