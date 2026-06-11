@@ -74,6 +74,9 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Pulso del bot: badge en navbar para cualquier usuario autenticado.
     Route::get('/bot-pulso', [AdminController::class, 'pulso']);
 
+    // PoC V2 — home "Mi día": cualquier autenticado; cada bloque chequea permisos.
+    Route::get('/v2/mi-dia', [\App\Http\Controllers\V2Controller::class, 'miDia']);
+
     // Ficha de contacto (read-only) — usada desde /atencion al click en avatar.
     // Disponible para cualquier secretaria autenticada, no requiere permiso:contactos.
     Route::get('/contactos/{id}', [ContactoController::class, 'show'])->whereNumber('id');

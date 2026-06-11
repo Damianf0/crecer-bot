@@ -94,4 +94,71 @@ class V2Controller extends Controller
             'navActive' => 'agenda',
         ]);
     }
+
+    /**
+     * Mi día: home con saludo + KPIs clickeables y los pendientes accionables
+     * del usuario (tareas que vencen, conversaciones asignadas). Disponible
+     * para cualquier autenticado; cada bloque respeta los permisos del que mira.
+     */
+    public function miDia()
+    {
+        $u   = Auth::user();
+        $uid = $u->id;
+
+        $d = [
+            'modulo'        => 'Mi día',
+            'title'         => 'Mi día',
+            'navActive'     => 'mi-dia',
+            'tieneAtencion' => $u->hasPermiso('atencion'),
+            'tieneAgenda'   => $u->hasPermiso('agenda'),
+        ];
+
+        if ($d['tieneAtencion']) {
+            $mias = \App\Models\ConversacionWA::where('estado', 'activa')->where('asignada_a', $uid);
+
+            $d['convTotal']    = (clone $mias)->count();
+            $d['convUrgentes'] = (clone $mias)->where('urgente', true)->count();
+            $d['convNoLeidos'] = (int) (clone $mias)->sum('no_leidos');
+            $d['misConvs']     = (clone $mias)
+                ->with('ultimoMensaje')
+                ->orderByDesc('urgente')
+                ->orderByDesc('ultima_actividad')
+                ->limit(6)
+                ->get()
+                ->map(fn($c) => [
+                    'id'        => $c->id,
+                    'area'      => $c->area,
+                    'contacto'  => $c->nombreOTelefono,
+                    'resumen'   => $c->resumen_llm ?: ($c->ultimoMensaje?->snippet ?? '—'),
+                    'urgente'   => (bool) $c->urgente,
+                    'no_leidos' => $c->no_leidos,
+                    'hace'      => $c->ultima_actividad?->diffForHumans(),
+                ])->values();
+
+            $d['sinAsignar'] = \App\Models\ConversacionWA::where('estado', 'activa')
+                ->whereNull('asignada_a')->where('no_leidos', '>', 0)->count();
+
+            $d['tareasPend'] = \App\Models\Derivacion::where('estado', 'en_atencion')->where('asignada_a', $uid)->count()
+                + \App\Models\Tarea::where('estado', '!=', 'completada')->where('asignada_a', $uid)->count();
+
+            // Para hoy: mis tareas vencidas o que vencen hoy, en orden de vencimiento.
+            $d['tareasHoy'] = \App\Models\Tarea::where('estado', '!=', 'completada')
+                ->where('asignada_a', $uid)
+                ->whereNotNull('vence_at')
+                ->where('vence_at', '<=', now()->endOfDay())
+                ->orderBy('vence_at')
+                ->limit(10)
+                ->get()
+                ->map(fn($t) => [
+                    'id'        => $t->id,
+                    'titulo'    => $t->titulo,
+                    'prioridad' => $t->prioridad,
+                    'vencida'   => $t->vence_at->lt(now()->startOfDay()),
+                    'hora'      => $t->vence_at->format('H:i'),
+                    'fecha'     => $t->vence_at->format('d/m'),
+                ])->values();
+        }
+
+        return view('v2.mi-dia', $d);
+    }
 }

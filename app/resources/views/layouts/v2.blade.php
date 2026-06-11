@@ -59,9 +59,9 @@
     <div class="v2-body" id="v2-body">
         <aside class="v2-sidebar">
             <div class="v2-nav-sec">Uso diario</div>
-            <span class="v2-nav-item disabled" title="Próximamente — home con tus pendientes del día">
+            <a class="v2-nav-item {{ $navActiva === 'mi-dia' ? 'active' : '' }}" href="/v2/mi-dia">
                 <span class="ico">☀️</span><span class="lbl">Mi día</span>
-            </span>
+            </a>
 
             <div class="v2-nav-sec">WhatsApp</div>
             @foreach(\App\Models\ConversacionWA::AREAS as $aKey => $aLabel)
