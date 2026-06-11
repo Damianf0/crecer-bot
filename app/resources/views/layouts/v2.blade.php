@@ -50,6 +50,9 @@
         </span>
         <button class="tb-btn" id="theme-btn" title="Cambiar tema">🌙</button>
         <a class="tb-btn" href="/atencion" style="text-decoration:none;" title="Volver a la interfaz actual">UI actual ↗</a>
+        @if(auth()->user()?->hasPermiso('secretaria'))
+        <a class="tb-btn" href="/declarar-colas" style="text-decoration:none;" title="Cambiar mis colas">⇄</a>
+        @endif
         <a class="tb-btn" href="/logout" style="text-decoration:none;" onclick="return confirm('¿Cerrar sesión?');">Salir</a>
     </header>
 
@@ -163,5 +166,9 @@ window.v2toast = function (msg, tipo = 'ok') {
 </script>
 <script src="/js/crecer-v2.js?v={{ filemtime(public_path('js/crecer-v2.js')) }}"></script>
 @stack('scripts')
+
+{{-- Chat interno (mismo widget React que producción; sus var(--accent) etc.
+     se resuelven con el puente de variables definido en crecer-v2.css). --}}
+@include('chat._widget')
 </body>
 </html>

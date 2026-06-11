@@ -59,6 +59,24 @@
     --v2-info: #60a5fa;   --v2-info-bg: #1a2540;
 }
 
+/* ── Puente para el widget de chat interno ──────────────────────────────────
+   El bundle React del chat (resources/js/chat/styles.css) usa los tokens de
+   producción (--accent, --surface, …). Acá no cargamos crecer-ds.css, así que
+   los mapeamos a los tokens V2 — siguen el tema claro/oscuro automáticamente.
+   --card queda en bg-app para conservar el contraste card/surface de prod. */
+:root {
+    --accent: var(--v2-accent);
+    --bg: var(--v2-bg-app);
+    --surface: var(--v2-bg-card);
+    --card: var(--v2-bg-app);
+    --border: var(--v2-border);
+    --text: var(--v2-text);
+    --muted: var(--v2-text-2);
+    --success: var(--v2-ok);
+    --error: var(--v2-urg);
+    --info: var(--v2-info);
+}
+
 /* ── Base ───────────────────────────────────────────────────────────────── */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
