@@ -21,6 +21,7 @@
 .c-zoom { position:fixed; inset:0; background:rgba(0,0,0,.85); display:none; align-items:center; justify-content:center; z-index:9999; cursor:zoom-out; }
 .c-zoom img { max-width:90vw; max-height:90vh; border-radius:10px; box-shadow:0 16px 48px rgba(0,0,0,.5); }
 .c-mini-badge { margin-left:5px; font-size:10px; border-radius:4px; padding:1px 5px; font-weight:600; }
+#modal-import[open] { display:flex; flex-direction:column; }
 .import-step { flex:1; text-align:center; font-size:12px; font-weight:600; padding:6px; border-bottom:2px solid var(--v2-border); color:var(--v2-text-mute); }
 .import-step.on { border-bottom-color:var(--v2-accent); color:var(--v2-accent); }
 .import-chip { background:var(--v2-bg-app); border:1px solid var(--v2-border); border-radius:var(--v2-radius-sm); padding:8px 14px; text-align:center; }
@@ -88,13 +89,14 @@
 
     <div id="form-error" style="color:var(--v2-urg);font-size:12px;margin-top:10px;display:none;"></div>
     <div class="v2-dialog-foot">
+        <button class="v2-btn accent" id="btn-form-chat" style="margin-right:auto;display:none;" onclick="chatDesdeForm()" title="Iniciar conversación por WhatsApp">💬 Enviar WhatsApp</button>
         <button class="v2-btn" onclick="cerrarForm()">Cancelar</button>
         <button class="v2-btn primary" onclick="guardar()">Guardar</button>
     </div>
 </dialog>
 
 {{-- Modal importar CSV (3 pasos) --}}
-<dialog class="v2-dialog" id="modal-import" style="width:min(880px,calc(100vw - 40px));max-height:93vh;display:flex;flex-direction:column;">
+<dialog class="v2-dialog" id="modal-import" style="width:min(880px,calc(100vw - 40px));max-height:93vh;">
     <div style="display:flex;align-items:center;margin-bottom:16px;">
         <h3 style="margin:0;">Importar contactos desde CSV de Omnia</h3>
         <button onclick="cerrarImport()" style="margin-left:auto;background:none;border:none;color:var(--v2-text-mute);font-size:20px;cursor:pointer;line-height:1;">×</button>
@@ -322,7 +324,7 @@ function renderListado({ data, total, has_more, page, per_page }, reset) {
 
 function filaHtml(c) {
     return `
-        <tr class="item-row" id="row-${c.id}">
+        <tr class="item-row" id="row-${c.id}" style="cursor:pointer;" title="Ver ficha" onclick='abrirForm(${JSON.stringify(c)})'>
             <td style="font-weight:600;">
                 <div style="display:flex;align-items:center;">
                     ${avatarMiniHtml(c)}
@@ -337,9 +339,9 @@ function filaHtml(c) {
             <td style="font-family:'JetBrains Mono',monospace;font-size:11.5px;">${esc(c.dni ?? '—')}</td>
             <td style="color:var(--v2-text-2);">${fechaCorta(c.fecha_nacimiento)}</td>
             <td style="color:var(--v2-text-2);">${esc(c.email ?? '—')}</td>
-            <td style="text-align:right;white-space:nowrap;">
+            <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation()">
                 <a href="/pacientes/${c.id}/documentos" class="v2-btn sm" style="text-decoration:none;" title="Ver legajo de documentos">📁 Legajo</a>
-                ${c.telefono ? `<button class="v2-btn sm accent" onclick='iniciarChat(${JSON.stringify(c)})' title="Iniciar conversación por WhatsApp">Chatear</button>` : ''}
+                ${c.telefono ? `<button class="v2-btn sm accent" onclick='iniciarChat(${JSON.stringify(c)})' title="Iniciar conversación por WhatsApp">💬 Chat por WhatsApp</button>` : ''}
                 <button class="v2-btn sm" onclick='abrirForm(${JSON.stringify(c)})' title="Editar">✏️</button>
                 <button class="v2-btn sm danger" onclick="eliminar(${c.id})" title="Eliminar">✕</button>
             </td>
@@ -348,10 +350,13 @@ function filaHtml(c) {
 
 // ── Modal crear/editar ────────────────────────────────────────────
 let editId = null;
+let _formContacto = null;
 
 function abrirForm(c) {
     editId = c?.id ?? null;
+    _formContacto = c ?? null;
     document.getElementById('modal-titulo').textContent = editId ? 'Editar contacto' : 'Agregar contacto';
+    document.getElementById('btn-form-chat').style.display = (editId && c?.telefono) ? '' : 'none';
 
     const avRow = document.getElementById('modal-avatar-row');
     const avEl  = document.getElementById('modal-avatar');
@@ -390,6 +395,15 @@ function abrirForm(c) {
 function cerrarForm() {
     document.getElementById('modal-contacto').close();
     editId = null;
+    _formContacto = null;
+}
+
+// Desde la ficha: cierra el form y abre el modal de iniciar chat WA.
+function chatDesdeForm() {
+    const c = _formContacto;
+    if (!c?.telefono) return;
+    cerrarForm();
+    iniciarChat(c);
 }
 
 async function guardar() {

@@ -60,7 +60,7 @@
                 <span class="ico">☀️</span><span class="lbl">Mi día</span>
             </span>
 
-            <div class="v2-nav-sec">Conversaciones</div>
+            <div class="v2-nav-sec">WhatsApp</div>
             @foreach(\App\Models\ConversacionWA::AREAS as $aKey => $aLabel)
             <a class="v2-nav-item {{ $areaActiva === $aKey ? 'active' : '' }}" href="/v2/atencion/{{ $aKey }}">
                 <span class="ico">💬</span><span class="lbl">{{ $aLabel }}</span>

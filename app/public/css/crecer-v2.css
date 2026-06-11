@@ -350,6 +350,9 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
 
 /* ── Formularios y dialog nativo ────────────────────────────────────────── */
 .v2-dialog {
+    /* margin:auto restaura el centrado nativo de <dialog>, que el reset
+       global (* { margin:0 }) de arriba pisa. */
+    margin: auto;
     border: 1px solid var(--v2-border-strong); border-radius: var(--v2-radius);
     background: var(--v2-bg-card); color: var(--v2-text);
     padding: 18px 20px; width: min(480px, calc(100vw - 40px));
