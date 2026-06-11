@@ -84,4 +84,14 @@ class V2Controller extends Controller
             'navActive' => 'contactos',
         ]);
     }
+
+    public function agenda()
+    {
+        return view('v2.agenda', [
+            'usuarios'  => $this->usuarios(),
+            'modulo'    => 'Trabajo',
+            'title'     => 'Agenda',
+            'navActive' => 'agenda',
+        ]);
+    }
 }

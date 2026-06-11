@@ -87,6 +87,11 @@
                 <span class="ico">📇</span><span class="lbl">Contactos</span>
             </a>
             @endif
+            @if($u && $u->hasPermiso('agenda'))
+            <a class="v2-nav-item {{ $navActiva === 'agenda' ? 'active' : '' }}" href="/v2/agenda">
+                <span class="ico">📅</span><span class="lbl">Agenda</span>
+            </a>
+            @endif
 
             @if($u && $u->hasPermiso('admin'))
             <div class="v2-nav-sec">Supervisión</div>

@@ -246,6 +246,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
 
     // Agenda
     Route::middleware('permiso:agenda')->group(function () {
+        Route::get('/v2/agenda',         [\App\Http\Controllers\V2Controller::class, 'agenda']);
         Route::get('/agenda',            [AgendaController::class, 'index']);
         Route::get('/agenda/data',       [AgendaController::class, 'data']);
         Route::post('/agenda',           [AgendaController::class, 'store']);
