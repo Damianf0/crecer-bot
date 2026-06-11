@@ -161,4 +161,41 @@ class V2Controller extends Controller
 
         return view('v2.mi-dia', $d);
     }
+
+    /**
+     * Admin en el shell V2: reusa las vistas de producción (admin/*) tal cual
+     * via layout dinámico (@extends($layout ?? 'layouts.app')) — solo cambia
+     * el cascarón. Los tokens de producción que usan esas vistas resuelven por
+     * el puente de variables de crecer-v2.css. $v2Wrap hace que el layout las
+     * envuelva en un contenedor con scroll y padding (emula el <main> de prod).
+     */
+    public function admin(string $pagina = '')
+    {
+        $mapa = [
+            ''                   => 'dashboard',
+            'textos'             => 'textos',
+            'pruebas'            => 'pruebas',
+            'logs'               => 'logs',
+            'legajo'             => 'legajoConfig',
+            'usuarios'           => 'usuarios',
+            'medicos'            => 'medicos',
+            'respuestas-rapidas' => 'respuestasRapidas',
+            'tunnel'             => 'tunnel',
+        ];
+
+        if ($pagina === 'estadisticas') {
+            $vista = app(EstadisticasController::class)->index();
+        } else {
+            abort_unless(isset($mapa[$pagina]), 404);
+            $vista = app(AdminController::class)->{$mapa[$pagina]}();
+        }
+
+        return $vista->with([
+            'layout'    => 'layouts.v2',
+            'v2Wrap'    => true,
+            'modulo'    => 'Admin',
+            'title'     => $pagina === 'estadisticas' ? 'Reportes' : 'Admin',
+            'navActive' => $pagina === 'estadisticas' ? 'reportes' : 'admin',
+        ]);
+    }
 }

@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends($layout ?? 'layouts.app')
 @section('title', 'Admin · Acceso remoto')
 
 @section('content')

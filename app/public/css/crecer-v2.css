@@ -73,6 +73,7 @@
     --text: var(--v2-text);
     --muted: var(--v2-text-2);
     --success: var(--v2-ok);
+    --warning: var(--v2-warn);
     --error: var(--v2-urg);
     --info: var(--v2-info);
 }

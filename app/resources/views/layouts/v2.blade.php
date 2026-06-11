@@ -98,10 +98,10 @@
 
             @if($u && $u->hasPermiso('admin'))
             <div class="v2-nav-sec">Supervisión</div>
-            <a class="v2-nav-item" href="/admin/estadisticas" title="Abre en la UI actual">
+            <a class="v2-nav-item {{ $navActiva === 'reportes' ? 'active' : '' }}" href="/v2/admin/estadisticas">
                 <span class="ico">📈</span><span class="lbl">Reportes</span>
             </a>
-            <a class="v2-nav-item" href="/admin" title="Abre en la UI actual">
+            <a class="v2-nav-item {{ $navActiva === 'admin' ? 'active' : '' }}" href="/v2/admin">
                 <span class="ico">⚙️</span><span class="lbl">Admin</span>
             </a>
             @endif
@@ -116,7 +116,15 @@
         </aside>
 
         <main class="v2-main">
+            @if(!empty($v2Wrap))
+            {{-- Vistas de producción reusadas (admin/*): emula el <main> con
+                 padding y scroll de layouts/app, que esas vistas asumen. --}}
+            <div style="flex:1;overflow-y:auto;padding:24px;">
+                @yield('content')
+            </div>
+            @else
             @yield('content')
+            @endif
         </main>
     </div>
 </div>

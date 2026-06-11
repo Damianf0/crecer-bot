@@ -1,4 +1,10 @@
-@php $cur = request()->path(); @endphp
+@php
+    // En el shell V2 (/v2/admin/*) los tabs quedan dentro de la V2; en
+    // producción siguen siendo /admin/*. El active-check usa el path sin v2/.
+    $esV2 = str_starts_with(request()->path(), 'v2/');
+    $base = $esV2 ? '/v2/admin' : '/admin';
+    $cur  = preg_replace('#^v2/#', '', request()->path());
+@endphp
 <style>
 .adm-nav {
     display: flex;
@@ -28,14 +34,14 @@
 }
 </style>
 <nav class="adm-nav">
-    <a href="/admin"           class="{{ $cur === 'admin' ? 'active' : '' }}">Estado bot</a>
-    <a href="/admin/textos"    class="{{ str_starts_with($cur, 'admin/textos') ? 'active' : '' }}">Textos</a>
-    <a href="/admin/pruebas"   class="{{ str_starts_with($cur, 'admin/pruebas') ? 'active' : '' }}">Pruebas</a>
-    <a href="/admin/logs"      class="{{ str_starts_with($cur, 'admin/logs') ? 'active' : '' }}">Logs</a>
-    <a href="/admin/usuarios"  class="{{ str_starts_with($cur, 'admin/usuarios') ? 'active' : '' }}">Usuarios</a>
-    <a href="/admin/medicos"   class="{{ str_starts_with($cur, 'admin/medicos') ? 'active' : '' }}">Médicos</a>
-    <a href="/admin/respuestas-rapidas" class="{{ str_starts_with($cur, 'admin/respuestas-rapidas') ? 'active' : '' }}">Respuestas rápidas</a>
-    <a href="/admin/legajo"    class="{{ str_starts_with($cur, 'admin/legajo') ? 'active' : '' }}">Legajo</a>
-    <a href="/admin/estadisticas" class="{{ str_starts_with($cur, 'admin/estadisticas') ? 'active' : '' }}">Estadísticas</a>
-    <a href="/admin/tunnel"    class="{{ str_starts_with($cur, 'admin/tunnel') ? 'active' : '' }}">Acceso remoto</a>
+    <a href="{{ $base }}"           class="{{ $cur === 'admin' ? 'active' : '' }}">Estado bot</a>
+    <a href="{{ $base }}/textos"    class="{{ str_starts_with($cur, 'admin/textos') ? 'active' : '' }}">Textos</a>
+    <a href="{{ $base }}/pruebas"   class="{{ str_starts_with($cur, 'admin/pruebas') ? 'active' : '' }}">Pruebas</a>
+    <a href="{{ $base }}/logs"      class="{{ str_starts_with($cur, 'admin/logs') ? 'active' : '' }}">Logs</a>
+    <a href="{{ $base }}/usuarios"  class="{{ str_starts_with($cur, 'admin/usuarios') ? 'active' : '' }}">Usuarios</a>
+    <a href="{{ $base }}/medicos"   class="{{ str_starts_with($cur, 'admin/medicos') ? 'active' : '' }}">Médicos</a>
+    <a href="{{ $base }}/respuestas-rapidas" class="{{ str_starts_with($cur, 'admin/respuestas-rapidas') ? 'active' : '' }}">Respuestas rápidas</a>
+    <a href="{{ $base }}/legajo"    class="{{ str_starts_with($cur, 'admin/legajo') ? 'active' : '' }}">Legajo</a>
+    <a href="{{ $base }}/estadisticas" class="{{ str_starts_with($cur, 'admin/estadisticas') ? 'active' : '' }}">Estadísticas</a>
+    <a href="{{ $base }}/tunnel"    class="{{ str_starts_with($cur, 'admin/tunnel') ? 'active' : '' }}">Acceso remoto</a>
 </nav>

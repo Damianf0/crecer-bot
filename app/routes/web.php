@@ -200,6 +200,10 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/contactos/import/confirm',    [ContactoController::class, 'importConfirm']);
     });
 
+    // PoC V2 — admin con shell V2 reusando las vistas de producción.
+    Route::middleware('permiso:admin')->get('/v2/admin/{pagina?}', [\App\Http\Controllers\V2Controller::class, 'admin'])
+        ->where('pagina', '[a-z-]+');
+
     // Admin (panel de administración del bot via web)
     Route::middleware('permiso:admin')->prefix('admin')->group(function () {
         Route::get('/',                         [AdminController::class, 'dashboard']);
