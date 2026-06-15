@@ -48,7 +48,9 @@ const WATCHDOG_MAX_SIN_CONNECTED = parseInt(process.env.WATCHDOG_MAX_SIN_CONNECT
 const PUPPETEER_OPTS = {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium-browser',
-  protocolTimeout: 180_000,
+  // 6 min: la primera carga de WA Web con perfil limpio (sin cache, render
+  // por software) puede superar los 3 min y abortar initialize().
+  protocolTimeout: 360_000,
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -207,6 +209,15 @@ function crearClienteWwebjs() {
       authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
       puppeteer: PUPPETEER_OPTS,
       userAgent: USER_AGENT_MODERNO,
+      // Pin de versión de WA Web (12/06: WhatsApp rolleó una build que cuelga
+      // initialize() — Runtime.callFunctionOn sin respuesta. Se fija una build
+      // del 09/06 conocida-buena via el repo wa-version de wppconnect).
+      // Override por env si hay que cambiarla sin tocar código.
+      webVersion: process.env.WA_WEB_VERSION || '2.3000.1041096482-alpha',
+      webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
+      },
     });
 
     client.on('qr', async (qr) => {
