@@ -110,7 +110,7 @@
         <button class="ag-filter-btn" onclick="setFiltroAsig('mias',this)">
             👤 Mis tareas
         </button>
-        <button class="ag-filter-btn" onclick="setFiltroAsig(null,this)">
+        <button class="ag-filter-btn active" onclick="setFiltroAsig(null,this)">
             👥 Todas
         </button>
         @foreach($usuarios as $u)
@@ -125,7 +125,7 @@
         <div class="ag-toolbar">
             <input class="v2-field" style="width:230px;margin:0;" type="text" id="search-input"
                 placeholder="Buscar tarea…" oninput="renderFiltrado()">
-            <button class="v2-btn primary" style="margin-left:auto;" onclick="abrirModal()">＋ Nueva tarea</button>
+            <button class="v2-btn primary" style="margin-left:auto;" onclick="abrirModal()">+ Nueva tarea</button>
         </div>
         <div class="ag-list" id="ag-list">
             <div class="v2-empty">Cargando…</div>

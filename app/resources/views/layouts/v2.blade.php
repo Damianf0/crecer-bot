@@ -98,7 +98,7 @@
 
             @if($u && $u->hasPermiso('admin'))
             <div class="v2-nav-sec">Supervisión</div>
-            <a class="v2-nav-item {{ $navActiva === 'reportes' ? 'active' : '' }}" href="/v2/admin/estadisticas">
+            <a class="v2-nav-item {{ $navActiva === 'reportes' ? 'active' : '' }}" href="/v2/reportes">
                 <span class="ico">📈</span><span class="lbl">Reportes</span>
             </a>
             <a class="v2-nav-item {{ $navActiva === 'admin' ? 'active' : '' }}" href="/v2/admin">

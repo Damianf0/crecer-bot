@@ -203,6 +203,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // PoC V2 — admin con shell V2 reusando las vistas de producción.
     Route::middleware('permiso:admin')->get('/v2/admin/{pagina?}', [\App\Http\Controllers\V2Controller::class, 'admin'])
         ->where('pagina', '[a-z-]+');
+    Route::middleware('permiso:admin')->get('/v2/reportes', [\App\Http\Controllers\V2Controller::class, 'reportes']);
 
     // Admin (panel de administración del bot via web)
     Route::middleware('permiso:admin')->prefix('admin')->group(function () {

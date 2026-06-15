@@ -183,19 +183,29 @@ class V2Controller extends Controller
             'tunnel'             => 'tunnel',
         ];
 
+        // Estadísticas tiene versión V2 nativa (Reportes); el tab de admin va ahí.
         if ($pagina === 'estadisticas') {
-            $vista = app(EstadisticasController::class)->index();
-        } else {
-            abort_unless(isset($mapa[$pagina]), 404);
-            $vista = app(AdminController::class)->{$mapa[$pagina]}();
+            return redirect('/v2/reportes');
         }
+
+        abort_unless(isset($mapa[$pagina]), 404);
+        $vista = app(AdminController::class)->{$mapa[$pagina]}();
 
         return $vista->with([
             'layout'    => 'layouts.v2',
             'v2Wrap'    => true,
             'modulo'    => 'Admin',
-            'title'     => $pagina === 'estadisticas' ? 'Reportes' : 'Admin',
-            'navActive' => $pagina === 'estadisticas' ? 'reportes' : 'admin',
+            'title'     => 'Admin',
+            'navActive' => 'admin',
+        ]);
+    }
+
+    public function reportes()
+    {
+        return view('v2.reportes', [
+            'modulo'    => 'Supervisión',
+            'title'     => 'Reportes',
+            'navActive' => 'reportes',
         ]);
     }
 }
