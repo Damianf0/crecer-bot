@@ -245,9 +245,16 @@ class OmniaService
 
     /**
      * Turnos del día de hoy (zona Argentina) para un paciente, filtrando
-     * sobre el array de pendientes que devuelve la API.
+     * sobre el array que devuelve la API.
+     *
+     * Ojo: el endpoint `/appointments/pending` NO filtra por día y trae los
+     * turnos en estado `pendiente` Y `confirmado` (confirmado por Omnia el
+     * 2026-06-16). El filtro por fecha y por estado lo hacemos acá en cliente.
+     *
+     * @param bool $soloPendientes  Si true (default), descarta todo lo que no
+     *                              sea estado `pendiente` (p.ej. confirmados).
      */
-    public function turnosHoy(int|string $pacienteId): array
+    public function turnosHoy(int|string $pacienteId, bool $soloPendientes = true): array
     {
         $url  = $this->externalBase() . "/patients/{$pacienteId}/appointments/pending";
         $data = $this->get($url);
@@ -260,6 +267,10 @@ class OmniaService
 
         $turnos = [];
         foreach ($data as $t) {
+            // Solo pendientes: descarta confirmados/otros (el campo `state`
+            // del turno viene como "pendiente" en español).
+            if ($soloPendientes && ($t['state'] ?? '') !== 'pendiente') continue;
+
             $begins = (int) ($t['begins'] ?? 0);
             if ($begins < $hoyStart || $begins > $hoyEnd) continue;
 
