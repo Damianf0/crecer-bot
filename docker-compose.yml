@@ -133,8 +133,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./bot:/app
-      - wa-session:/app/.wwebjs_auth                  # sesión wwebjs (legacy, rollback)
-      - wa-baileys-atencion:/app/.baileys_auth        # sesión Baileys (activa)
+      - wa-session:/app/.wwebjs_auth                  # sesión WhatsApp (wwebjs)
     ports:
       - "3001:3001"
     depends_on:
@@ -168,8 +167,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./bot:/app
-      - wa-session-administracion:/app/.wwebjs_auth         # sesión wwebjs (legacy, rollback)
-      - wa-baileys-administracion:/app/.baileys_auth        # sesión Baileys (activa)
+      - wa-session-administracion:/app/.wwebjs_auth         # sesión WhatsApp (wwebjs)
     ports:
       - "3002:3002"
     depends_on:
@@ -179,8 +177,9 @@ services:
       - BOT_AREA=administracion
       - PORT=3002
       - BOT_PUBLIC_URL=http://192.168.1.125:3002
-      # Migrado a Baileys 2026-05-19. Rollback: comentar + docker compose up -d.
-      - BOT_WA_CLIENT=baileys
+      # Migrado a Baileys 2026-05-19. Vuelto a wwebjs 2026-06-16 — decisión: salir
+      # de Baileys del todo (era la raíz del cruce de sesión y de la inestabilidad).
+      # - BOT_WA_CLIENT=baileys
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
@@ -196,8 +195,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./bot:/app
-      - wa-session-ovodonacion:/app/.wwebjs_auth       # sesión legacy (rollback)
-      - wa-baileys-ovodonacion:/app/.baileys_auth      # sesión Baileys
+      - wa-session-ovodonacion:/app/.wwebjs_auth       # sesión WhatsApp (wwebjs)
     ports:
       - "3003:3003"
     depends_on:
@@ -222,12 +220,11 @@ services:
     networks:
       - clinica-net
 
-  # Bot WhatsApp — SHADOW de testing. Pareado con número personal del usuario
-  # para validar Baileys end-to-end sin tocar producción. BOT_AREA=test
-  # activa MODO_SHADOW en bot/mensajesApi.js y bot/cola.js → los mensajes se
-  # loggean pero NO se persisten en Laravel/BD. Cuando los tests pasen,
-  # detener este servicio con `docker compose stop bot-test`.
+  # Bot WhatsApp — SHADOW de testing (Baileys). DESACTIVADO 2026-06-16 al salir
+  # de Baileys. Queda detrás del profile "baileys" para no arrancar con
+  # `docker compose up -d`. Para reactivarlo: `docker compose --profile baileys up -d`.
   bot-test:
+    profiles: ["baileys"]
     build: ./docker/node
     restart: unless-stopped
     volumes:
@@ -294,11 +291,8 @@ volumes:
   ollama-data:
   wa-session:                  # sesión WhatsApp del bot de ATENCIÓN (wwebjs)
   wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
-  wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs, legacy)
-  wa-baileys-atencion:         # sesión WhatsApp del bot de ATENCIÓN (Baileys, activa)
-  wa-baileys-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (Baileys, activa)
-  wa-baileys-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (Baileys, activa)
-  wa-baileys-test:             # sesión WhatsApp del bot SHADOW (Baileys, número personal)
+  wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs)
+  wa-baileys-test:             # sesión del bot SHADOW (Baileys) — sólo si se activa profile "baileys"
 
 networks:
   clinica-net:
