@@ -157,7 +157,30 @@ class V2Controller extends Controller
                     'hora'      => $t->vence_at->format('H:i'),
                     'fecha'     => $t->vence_at->format('d/m'),
                 ])->values();
+
+            // Pulso del equipo: por área, conversaciones abiertas y urgentes sin tomar.
+            $porArea = \App\Models\ConversacionWA::where('estado', 'activa')
+                ->selectRaw('area, count(*) as abiertas, sum(case when urgente = 1 and asignada_a is null then 1 else 0 end) as urg')
+                ->groupBy('area')->get()->keyBy('area');
+            $d['pulso'] = collect(\App\Models\ConversacionWA::AREAS)
+                ->map(fn($label, $key) => [
+                    'key'      => $key,
+                    'label'    => $label,
+                    'abiertas' => (int) ($porArea[$key]->abiertas ?? 0),
+                    'urgentes' => (int) ($porArea[$key]->urg ?? 0),
+                ])->values();
+
+            // En línea: quién estuvo activo en los últimos 5 minutos.
+            $d['enLinea'] = \App\Models\User::where('activo', true)
+                ->whereNotNull('last_seen_at')
+                ->where('last_seen_at', '>=', now()->subMinutes(5))
+                ->orderBy('nombre_completo')
+                ->pluck('nombre_completo', 'id');
         }
+
+        // Para los modales de acción rápida (+ Tarea / + Conversación).
+        $d['usuarios'] = $this->usuarios();
+        $d['areas']    = \App\Models\ConversacionWA::AREAS;
 
         return view('v2.mi-dia', $d);
     }

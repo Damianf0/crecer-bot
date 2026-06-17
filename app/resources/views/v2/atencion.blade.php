@@ -40,6 +40,7 @@ const { esc, avatarHtml } = V2;
 V2Conv.init({
     usuarios: @json($usuarios),
     meId: {{ auth()->id() }},
+    area: AREA,
     onChanged: () => { state.etag = null; pollItems(); },
 });
 

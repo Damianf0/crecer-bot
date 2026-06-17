@@ -42,8 +42,10 @@ window.V2 = (function () {
 window.V2Conv = (function () {
     const { esc, get, post, avatarHtml } = V2;
 
-    let cfg   = { usuarios: [], meId: 0, onChanged: null };
+    let cfg   = { usuarios: [], meId: 0, area: null, onChanged: null };
     let state = { panelId: null, conv: null, readOnly: false, modo: 'mensaje' };
+    let respuestas = [];          // respuestas rápidas del área, cacheadas por área
+    const rrCache  = {};
 
     const EVENTO_LBL = {
         tomada: 'tomó la conversación', delegada: 'la delegó', resuelta: 'la resolvió',
@@ -104,6 +106,34 @@ window.V2Conv = (function () {
         return html || `<div class="v2-empty">Sin mensajes</div>`;
     }
 
+    // Respuestas rápidas del área (mismo endpoint y cache que producción).
+    async function cargarRespuestas(area) {
+        respuestas = [];
+        if (!area) return;
+        if (rrCache[area]) { respuestas = rrCache[area]; return; }
+        try {
+            const r = await get(`/atencion/respuestas-rapidas/${area}`);
+            respuestas = r.data || [];
+            rrCache[area] = respuestas;
+        } catch (e) { /* sin respuestas — el menú lo muestra */ }
+    }
+
+    function rrRender() {
+        const menu = document.getElementById('rr-menu');
+        if (!menu) return;
+        if (!respuestas.length) {
+            menu.innerHTML = `<div class="v2-rr-empty">Sin respuestas rápidas para esta área.</div>
+                <a class="v2-rr-foot" href="/admin/respuestas-rapidas" target="_blank">+ Agregar</a>`;
+            return;
+        }
+        menu.innerHTML = respuestas.map(r =>
+            `<div class="v2-rr-item" onclick="V2Conv.rrInsertar(${r.id})">
+                <div class="rr-t">${esc(r.titulo)}</div>
+                <div class="rr-p">${esc((r.texto || '').slice(0, 90))}</div>
+            </div>`
+        ).join('') + `<a class="v2-rr-foot" href="/admin/respuestas-rapidas" target="_blank">Administrar respuestas</a>`;
+    }
+
     function renderDetalle(d) {
         const c = d.conv;
         const esMia = c.asig_id === cfg.meId;
@@ -129,6 +159,10 @@ window.V2Conv = (function () {
                 <div class="v2-compose-modos">
                     <button class="v2-compose-modo active" id="modo-msg" onclick="V2Conv.setModo('mensaje')">Responder</button>
                     <button class="v2-compose-modo" id="modo-nota" onclick="V2Conv.setModo('nota')">Nota interna</button>
+                    <div class="v2-rr-wrap">
+                        <button type="button" class="v2-rr-btn" id="btn-rr" onclick="V2Conv.rrToggle(event)" title="Insertar una respuesta rápida">📋 Respuestas</button>
+                        <div class="v2-rr-menu" id="rr-menu" style="display:none;"></div>
+                    </div>
                 </div>
                 <div class="v2-compose-row">
                     <textarea id="compose" placeholder="Escribí tu respuesta…"></textarea>
@@ -218,6 +252,7 @@ window.V2Conv = (function () {
                 state.conv = d;
                 renderDetalle(d);
                 renderLegajo(d);
+                cargarRespuestas(cfg.area || (d.conv && d.conv.area));
             } catch (e) {
                 body.innerHTML = `<div class="v2-det-empty"><span>No se pudo cargar la conversación.</span></div>`;
             }
@@ -331,6 +366,32 @@ window.V2Conv = (function () {
             btn.classList.toggle('open');
             const panel = btn.nextElementSibling;
             panel.style.display = panel.style.display === 'none' ? '' : 'none';
+        },
+
+        rrToggle(ev) {
+            ev.stopPropagation();
+            const menu = document.getElementById('rr-menu');
+            if (!menu) return;
+            if (menu.style.display === 'block') { menu.style.display = 'none'; return; }
+            rrRender();
+            menu.style.display = 'block';
+            const cerrar = e => {
+                if (!menu.contains(e.target) && e.target.id !== 'btn-rr') {
+                    menu.style.display = 'none';
+                    document.removeEventListener('click', cerrar);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', cerrar), 0);
+        },
+
+        rrInsertar(id) {
+            const r = respuestas.find(x => x.id === id);
+            if (!r) return;
+            if (state.modo !== 'mensaje') this.setModo('mensaje');
+            const ta = document.getElementById('compose');
+            if (ta) { ta.value = r.texto; ta.focus(); ta.dispatchEvent(new Event('input')); }
+            const menu = document.getElementById('rr-menu');
+            if (menu) menu.style.display = 'none';
         },
     };
 })();
