@@ -326,24 +326,35 @@ class AtencionController extends Controller
             return response()->json(['ok' => false, 'error' => 'Teléfono inválido'], 422);
         }
 
-        // Evitar duplicados
-        if (\App\Models\Contacto::where('telefono', $tel)->exists()) {
-            return response()->json(['ok' => false, 'error' => 'Ya existe un contacto con ese teléfono'], 422);
+        // Si ya existe un contacto con ese teléfono, no creamos uno nuevo: le
+        // asociamos este @lid (wa_id) para que futuras conversaciones desde el mismo
+        // JID lo reconozcan. El @lid de esta conv es libre (la conv es huérfana, o
+        // sea ningún contacto lo tenía), así que no choca con el índice único.
+        $existente = \App\Models\Contacto::where('telefono', $tel)->first();
+        if ($existente) {
+            if ($existente->wa_id !== $conv->contacto) {
+                $existente->update(['wa_id' => $conv->contacto]);
+            }
+            $contacto = $existente;
+        } else {
+            $contacto = \App\Models\Contacto::create([
+                'nombre'   => $data['nombre'],
+                'telefono' => $tel,
+                'dni'      => $data['dni'] ?: null,
+                'wa_id'    => $conv->contacto,  // ya tenemos el JID exacto
+            ]);
         }
-
-        $contacto = \App\Models\Contacto::create([
-            'nombre'   => $data['nombre'],
-            'telefono' => $tel,
-            'dni'      => $data['dni'] ?: null,
-            'wa_id'    => $conv->contacto,  // ya tenemos el JID exacto
-        ]);
 
         // Vincular la conversación: poblar el nombre para que deje de ser huérfana
         $conv->update(['nombre' => $contacto->nombre]);
 
         ConversacionWA::invalidarColaCache();
 
-        return response()->json(['ok' => true, 'contacto_id' => $contacto->id]);
+        return response()->json([
+            'ok'          => true,
+            'contacto_id' => $contacto->id,
+            'vinculado'   => (bool) $existente,  // true = se asoció a un contacto ya existente
+        ]);
     }
 
     public function derivacion(int $id): JsonResponse

@@ -21,8 +21,14 @@ window.V2 = (function () {
         const opts = { method, headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } };
         if (body) opts.body = JSON.stringify(body);
         const r = await fetch(url, opts);
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
+        const data = await r.json().catch(() => null);
+        if (!r.ok) {
+            // Propaga el mensaje del server (ej: validación 422 con {error}) para que el UI lo muestre.
+            const err = new Error((data && (data.error || data.message)) || ('HTTP ' + r.status));
+            err.status = r.status; err.data = data;
+            throw err;
+        }
+        return data;
     }
     function avatarHtml(url, nombre, size) {
         if (url) return `<img class="v2-av" src="${esc(url)}" width="${size}" height="${size}" alt="">`;
@@ -230,8 +236,47 @@ window.V2Conv = (function () {
             ${c.contacto_id ? `
                 <a class="v2-leg-link" href="/pacientes/${c.contacto_id}/documentos" title="Abre en la UI actual">📄 Documentos del paciente ↗</a>
                 <a class="v2-leg-link" href="/v2/contactos?sel=${c.contacto_id}">📇 Ficha en Contactos</a>` : `
-                <div style="font-size:11.5px;color:var(--v2-text-mute);padding:6px 2px;">Para ver legajo completo, agregalo a contactos desde la UI actual.</div>`}
+                <button class="v2-btn primary" style="width:100%;margin-top:8px;" onclick="V2Conv.modalAgregarContacto()">+ Agregar a contactos</button>
+                <div style="font-size:11px;color:var(--v2-text-mute);margin-top:6px;padding:0 2px;">No está en el directorio. Al agregarlo, esta conversación queda vinculada.</div>`}
         `;
+    }
+
+    // Modal "Agregar a contactos" — <dialog> nativo creado una sola vez y reusado.
+    // Mismo patrón (.v2-dialog) que el resto de la v2; pega contra el endpoint de
+    // producción /atencion/conversacion/{id}/agregar-contacto.
+    function ensureModalContacto() {
+        let dlg = document.getElementById('v2-modal-contacto');
+        if (dlg) return dlg;
+        dlg = document.createElement('dialog');
+        dlg.className = 'v2-dialog';
+        dlg.id = 'v2-modal-contacto';
+        dlg.style.width = 'min(440px, calc(100vw - 40px))';
+        dlg.innerHTML = `
+            <h3>Agregar a contactos</h3>
+            <div id="v2-mc-jid" class="mono" style="font-size:11px;color:var(--v2-text-mute);margin-bottom:2px;"></div>
+            <label class="v2-label">Nombre completo *</label>
+            <input class="v2-field" id="v2-mc-nombre" placeholder="Ej: Juan Pérez" autocomplete="off">
+            <div class="v2-grid2">
+                <div>
+                    <label class="v2-label">Teléfono *</label>
+                    <input class="v2-field" id="v2-mc-tel" placeholder="549..." autocomplete="off" inputmode="numeric">
+                </div>
+                <div>
+                    <label class="v2-label">DNI</label>
+                    <input class="v2-field" id="v2-mc-dni" placeholder="Sin puntos" autocomplete="off" inputmode="numeric">
+                </div>
+            </div>
+            <div id="v2-mc-aviso" style="display:none;font-size:11.5px;color:var(--v2-warn);margin-top:8px;line-height:1.4;"></div>
+            <div class="v2-dialog-foot">
+                <button class="v2-btn" onclick="document.getElementById('v2-modal-contacto').close()">Cancelar</button>
+                <button class="v2-btn primary" id="v2-mc-guardar" onclick="V2Conv.guardarContactoNuevo()">Guardar contacto</button>
+            </div>`;
+        document.body.appendChild(dlg);
+        // Enter en cualquier input guarda; Escape lo cierra el <dialog> nativo.
+        dlg.addEventListener('keydown', e => {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); V2Conv.guardarContactoNuevo(); }
+        });
+        return dlg;
     }
 
     // ── API pública del módulo ────────────────────────────────────
@@ -264,6 +309,51 @@ window.V2Conv = (function () {
             document.getElementById('det-empty').style.display = '';
             const leg = document.getElementById('leg-body');
             if (leg) leg.innerHTML = 'Sin conversación seleccionada.';
+        },
+
+        // Abre el modal para dar de alta en el directorio a quien escribe en una
+        // conversación huérfana. Precarga el teléfono si el JID es @c.us.
+        modalAgregarContacto() {
+            if (!state.conv) return;
+            const c = state.conv.conv;
+            const dlg = ensureModalContacto();
+            document.getElementById('v2-mc-nombre').value = '';
+            document.getElementById('v2-mc-tel').value    = c.telefono_sugerido || '';
+            document.getElementById('v2-mc-dni').value    = '';
+            document.getElementById('v2-mc-jid').textContent = c.jid ? ('WhatsApp: ' + c.jid) : '';
+            const aviso = document.getElementById('v2-mc-aviso');
+            // Para @lid (la mayoría) WhatsApp no expone el número real, así que se
+            // carga a mano. Para @c.us el teléfono ya viene precargado del JID.
+            if ((c.jid || '').endsWith('@lid') && !c.telefono_sugerido) {
+                aviso.style.display = '';
+                aviso.textContent = 'Este chat usa un ID interno de WhatsApp (@lid): cargá el teléfono a mano.';
+            } else {
+                aviso.style.display = 'none';
+            }
+            dlg.showModal();
+            document.getElementById('v2-mc-nombre').focus();
+        },
+
+        async guardarContactoNuevo() {
+            if (!state.panelId) return;
+            const nombre   = document.getElementById('v2-mc-nombre').value.trim();
+            const telefono = document.getElementById('v2-mc-tel').value.trim();
+            const dni      = document.getElementById('v2-mc-dni').value.trim();
+            if (!nombre || !telefono) { v2toast('Nombre y teléfono son obligatorios', 'err'); return; }
+            const btn = document.getElementById('v2-mc-guardar');
+            btn.disabled = true;
+            try {
+                const r = await post(`/atencion/conversacion/${state.panelId}/agregar-contacto`, { nombre, telefono, dni });
+                document.getElementById('v2-modal-contacto').close();
+                v2toast(r.vinculado ? 'Vinculado a un contacto existente' : 'Contacto agregado y conversación vinculada');
+                await V2Conv.refrescar();           // recarga legajo: ya no es huérfana
+                if (cfg.onChanged) cfg.onChanged('contacto');  // refresca la bandeja (muestra el nombre)
+            } catch (e) {
+                // api() propaga el {error} del server (ej: teléfono duplicado / inválido).
+                v2toast(e.message || 'No se pudo agregar el contacto', 'err');
+            } finally {
+                btn.disabled = false;
+            }
         },
 
         // Refresco preservando lo tipeado en el composer.
