@@ -73,8 +73,12 @@ services:
     environment:
       - TZ=America/Argentina/Buenos_Aires
     command: ["sh", "-c", "sleep 6 && php artisan reverb:start --host=0.0.0.0 --port=8080"]
+    labels:
+      - autoheal=true
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080 || exit 1"]
+      # nc no está en la imagen php → daba falso "unhealthy". fsockopen prueba
+      # el puerto 8080 con el PHP que ya está en el container.
+      test: ["CMD-SHELL", "php -r \"exit(@fsockopen('127.0.0.1',8080)?0:1);\""]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -150,6 +154,8 @@ services:
       # Reset + reescaneo no destrabo. Igual que ovo, volvemos a wwebjs hasta
       # que se aclare el bug. Sesion wwebjs preservada en volumen wa-session.
       # - BOT_WA_CLIENT=baileys
+    labels:
+      - autoheal=true
     healthcheck:
       # Mira el contenido de /status, no solo HTTP 200 — detecta el estado
       # "zombie" donde el endpoint responde pero el cliente WA no escucha.
@@ -157,7 +163,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 4
-      start_period: 180s
+      start_period: 300s
     networks:
       - clinica-net
 
@@ -180,12 +186,14 @@ services:
       # Migrado a Baileys 2026-05-19. Vuelto a wwebjs 2026-06-16 — decisión: salir
       # de Baileys del todo (era la raíz del cruce de sesión y de la inestabilidad).
       # - BOT_WA_CLIENT=baileys
+    labels:
+      - autoheal=true
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
       timeout: 5s
       retries: 4
-      start_period: 180s
+      start_period: 300s
     networks:
       - clinica-net
 
@@ -211,12 +219,14 @@ services:
       # tras re-pareo del bot. Mi fix no aplica (el cliente del receptor no manda
       # retry porque la sesion esta rota end-to-end). Rollback otra vez a wwebjs.
       # - BOT_WA_CLIENT=baileys
+    labels:
+      - autoheal=true
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
       interval: 30s
       timeout: 5s
       retries: 4
-      start_period: 180s
+      start_period: 300s
     networks:
       - clinica-net
 
@@ -244,6 +254,27 @@ services:
       timeout: 5s
       retries: 4
       start_period: 60s
+    networks:
+      - clinica-net
+
+  # Watchdog EXTERNO de containers. El watchdog interno de cada bot vive en el
+  # mismo proceso Node: si el event loop se congela (cuelgue CDP/Chromium), se
+  # congela con él y no puede recuperar. Peor: restart=unless-stopped NO actúa
+  # sobre estado `unhealthy` — solo reinicia containers que SALEN con error, no
+  # vivos-pero-trabados. Resultado real: el bot de administración quedó frozen
+  # 10 días (16/06→26/06) sin que nada lo levantara. autoheal cierra ese hueco:
+  # reinicia cualquier container con label `autoheal=true` que esté unhealthy.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+      - AUTOHEAL_CONTAINER_LABEL=autoheal   # solo toca containers con label autoheal=true
+      - AUTOHEAL_INTERVAL=15                 # revisa cada 15s
+      - AUTOHEAL_START_PERIOD=300            # gracia inicial (los bots tardan en parear)
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=20     # margen para cerrar Chromium antes del kill
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - clinica-net
 
