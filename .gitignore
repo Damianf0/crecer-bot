@@ -15,6 +15,8 @@ bot/.baileys_auth/
 bot/media/
 # Estado runtime persistido del bot (modo prueba por área)
 bot/modo-prueba.*.json
+# Logs a archivo del bot (logger.js) — un archivo por área + rotados
+bot/logs/
 
 # ── Storage Laravel ──────────────────────────────────────────────
 app/storage/logs/

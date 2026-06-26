@@ -1,17 +1,20 @@
 require('dotenv').config();
 
 const { pushLog } = require('./estado-bot');
+const { logToFile } = require('./logger');
 const { iniciarServidor } = require('./server');
 const { iniciarWhatsApp } = require('./whatsapp');
 
-// Redirigir console al buffer de logs (para que el panel los muestre)
+// Redirigir console a 3 destinos: stdout (docker logs, cuando WSL no lo rompe),
+// el buffer en memoria (panel) y un archivo en volumen (./bot/logs, sobrevive a
+// los hipos de WSL que congelan docker logs — ver logger.js).
 const _log   = console.log.bind(console);
 const _error = console.error.bind(console);
 const _warn  = console.warn.bind(console);
 
-console.log   = (...a) => { _log(...a);   pushLog(a.join(' ')); };
-console.error = (...a) => { _error(...a); pushLog('[ERROR] ' + a.join(' ')); };
-console.warn  = (...a) => { _warn(...a);  pushLog('[WARN] '  + a.join(' ')); };
+console.log   = (...a) => { const m = a.join(' '); _log(...a);   pushLog(m);            logToFile(m); };
+console.error = (...a) => { const m = a.join(' '); _error(...a); pushLog('[ERROR] ' + m); logToFile('[ERROR] ' + m); };
+console.warn  = (...a) => { const m = a.join(' '); _warn(...a);  pushLog('[WARN] '  + m); logToFile('[WARN] '  + m); };
 
 // Handlers globales: loggean antes de morir para que el incidente quede
 // en docker logs en lugar de un exit silencioso. Caso real 04/05/2026:
