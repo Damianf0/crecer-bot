@@ -289,10 +289,13 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
 .v2-msg.in { justify-content: flex-start; }
 .v2-msg.out { justify-content: flex-end; }
 .v2-bubble {
-    max-width: 70%; padding: 7px 11px;
+    width: fit-content; max-width: 70%; padding: 7px 11px;
     border-radius: 10px; font-size: 13.5px; line-height: 1.5;
     border: 1px solid var(--v2-border); background: var(--v2-bg-card);
-    white-space: pre-wrap; word-break: break-word;
+    /* overflow-wrap (no word-break) parte solo palabras imposibles sin colapsar el
+       tamaño intrínseco; con word-break:break-word la burbuja se encogía a 1 char
+       dentro del flex y rompía "Buen día" → "Bue\nn día". */
+    white-space: pre-wrap; overflow-wrap: break-word;
 }
 .v2-msg.out .v2-bubble { background: var(--v2-accent-bg); border-color: var(--v2-border); border-radius: 10px 10px 3px 10px; }
 .v2-msg.in  .v2-bubble { border-radius: 10px 10px 10px 3px; }
