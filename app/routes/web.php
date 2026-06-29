@@ -113,6 +113,24 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/secretaria', ColaSecretaria::class);
         Route::get('/cola-bot',   ColaBot::class);
         Route::get('/inbox-wa',   InboxWA::class);
+
+        // Recepción en el shell V2 — reescribe ColaSecretaria + ColaBot a
+        // JS+endpoints (InboxWA queda cubierto por /v2/atencion). Ver RecepcionController.
+        $rc = \App\Http\Controllers\RecepcionController::class;
+        Route::get('/v2/recepcion',                       [$rc, 'indexV2']);
+        // Cola de sala (ColaSecretaria)
+        Route::get('/v2/recepcion/cola',                  [$rc, 'cola']);
+        Route::post('/v2/recepcion/cola/reordenar',       [$rc, 'reordenar']);
+        Route::post('/v2/recepcion/cola/{id}/abrir',      [$rc, 'abrirPaciente'])->whereNumber('id');
+        Route::post('/v2/recepcion/cola/{id}/checklist',  [$rc, 'toggleChecklist'])->whereNumber('id');
+        Route::post('/v2/recepcion/cola/{id}/nota',       [$rc, 'notaPaciente'])->whereNumber('id');
+        Route::post('/v2/recepcion/cola/{id}/liberar',    [$rc, 'liberar'])->whereNumber('id');
+        Route::post('/v2/recepcion/cola/{id}/resolver',   [$rc, 'resolverPaciente'])->whereNumber('id');
+        // Cola del bot (ColaBot / derivaciones)
+        Route::get('/v2/recepcion/bot',                   [$rc, 'bot']);
+        Route::post('/v2/recepcion/bot/{id}/abrir',       [$rc, 'abrirBot'])->whereNumber('id');
+        Route::post('/v2/recepcion/bot/{id}/nota',        [$rc, 'notaBot'])->whereNumber('id');
+        Route::post('/v2/recepcion/bot/{id}/resolver',    [$rc, 'resolverBot'])->whereNumber('id');
     });
 
     // Atención y mis tareas

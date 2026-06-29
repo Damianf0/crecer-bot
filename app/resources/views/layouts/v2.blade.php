@@ -96,6 +96,13 @@
             </a>
             @endif
 
+            @if($u && $u->hasPermiso('secretaria'))
+            <div class="v2-nav-sec">Recepción</div>
+            <a class="v2-nav-item {{ $navActiva === 'recepcion' ? 'active' : '' }}" href="/v2/recepcion">
+                <span class="ico">🪑</span><span class="lbl">Recepción</span>
+            </a>
+            @endif
+
             @if($u && $u->hasPermiso('medico'))
             <div class="v2-nav-sec">Consultorio</div>
             <a class="v2-nav-item {{ $navActiva === 'medico' ? 'active' : '' }}" href="/v2/medico">

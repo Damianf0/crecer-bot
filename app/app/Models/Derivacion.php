@@ -20,6 +20,7 @@ class Derivacion extends Model
         'estado',
         'nota',
         'bot_at',
+        'atendido_at',
     ];
 
     protected $casts = [

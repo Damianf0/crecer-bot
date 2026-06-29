@@ -27,7 +27,7 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 | 8 | Agenda | `/agenda` | `/v2/agenda` | ✅ | |
 | 9 | Reportes / Estadísticas | `/admin/estadisticas` | `/v2/reportes` | ✅ | Nativo, 3 tabs |
 | 10 | Admin (10 subpáginas) | `/admin/*` | `/v2/admin/{pag}` | 🟡 | **Shell-wrap**: vistas de prod dentro del layout V2, no rediseñadas |
-| 11 | Recepción / Secretaría (turnos) | `/secretaria`, `/cola-bot`, `/inbox-wa` | — | 🔴 | Subsistema de turnos de sala; Livewire |
+| 11 | Recepción / Secretaría (turnos) | `/secretaria`, `/cola-bot`, `/inbox-wa` | `/v2/recepcion` | ✅ | 2 tabs (sala + bot). `InboxWA` lo absorbe `/v2/atencion` (no se porta) |
 | 12 | Médico (Mi consultorio) | `/medico` | `/v2/medico` | ✅ | Reusa endpoints `/medico/*`; sala/llamar/rellamar/atendido + tareas + agenda Omnia |
 | 13 | Documentos de paciente | `/pacientes/{id}/documentos` | — | 🔴 | V2 hoy linkea a la UI de prod |
 | 14 | Chat interno | widget | (widget en layout V2) | ✅ | Mismo widget React, ya incluido |
@@ -35,9 +35,10 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 | 16 | Llamador (TV pública) | `/llamador` | — | ⚪ | Pantalla pública, no usa el shell |
 | 17 | Tablet (sala pública) | `/tablet` | — | ⚪ | Pantalla pública, no usa el shell |
 
-**Resumen:** 10 áreas con paridad V2, 1 shell-wrap (Admin), 2 gaps reales
-(Recepción, Login/Declarar), 2 fuera de alcance (pantallas públicas).
-Documentos (13) y Médico (12) ya migrados.
+**Resumen:** 11 áreas con paridad V2, 1 shell-wrap (Admin), 1 gap real
+(Login/Declarar, cosmético), 2 fuera de alcance (pantallas públicas).
+Documentos (13), Médico (12) y Recepción (11) ya migrados. `InboxWA` queda
+absorbido por `/v2/atencion`.
 
 ---
 
@@ -45,11 +46,13 @@ Documentos (13) y Médico (12) ya migrados.
 
 ### Bloque A — Gaps de paridad (lo que falta para que V2 tenga TODO)
 
-- [ ] **Recepción / Turnos** (`/v2/recepcion`)
-  - [ ] Portar `ColaSecretaria` (cola de recepción / turnos de sala)
-  - [ ] Portar `ColaBot` (derivaciones del bot a recepción)
-  - [ ] Portar `InboxWA` si sigue en uso (evaluar si se solapa con Atención V2)
-  - [ ] Definir: ¿se reescribe el Livewire a JS+endpoints como el resto de V2, o se shell-wrappea como Admin?
+- [x] **Recepción / Turnos** (`/v2/recepcion`) — *2026-06-29*
+  - [x] Portar `ColaSecretaria` (cola de recepción / turnos de sala) → tab "Sala de espera"
+  - [x] Portar `ColaBot` (derivaciones del bot a recepción) → tab "Mensajes del bot"
+  - [x] `InboxWA`: **NO se porta** — se solapa 1:1 con `/v2/atencion` (mismas tablas ConversacionWA/MensajeWA/TareaWA). La gestión de chat WA vive en Atención V2.
+  - [x] Decisión tomada: **reescrito Livewire → JS + endpoints** (`RecepcionController`, 12 rutas). Los Livewire no exponían REST, así que se crearon endpoints JSON que replican cada acción.
+  - [x] Bugfix de paso: `Derivacion::$fillable` no incluía `atendido_at` (el `ColaBot` de prod nunca lo seteaba al resolver); agregado.
+  - [ ] Pulido: drag-drop real (hoy reordena con ↑/▼); `confirm()` de "resolver sin liberar" → modal V2
 - [x] **Médico / Mi consultorio** (`/v2/medico`) — *2026-06-29*
   - [x] Lista de pacientes en espera + llamar / rellamar / atendido
   - [x] Crear tarea desde el panel (modal V2)
@@ -114,7 +117,8 @@ los 4 gaps, no en el backend.
 | **4. Retiro V1 (Bloque D)** | Borrar V1 cuando esté estable | Una sola UI | Bajo si se esperó |
 
 **Orden recomendado dentro de Fase 2:** ~~Documentos~~ ✅ → ~~Médico~~ ✅ →
-**Recepción/Turnos (el próximo, el más grande)** → Admin (decidir shell vs nativo).
+~~Recepción/Turnos~~ ✅ → **Admin (decidir shell vs nativo) — único pendiente
+de Fase 2**. Con Recepción cerrado, V2 cubre el 100% del uso operativo diario.
 
 > Nota sobre Médico: resultó de bajo riesgo porque la UI de prod ya era JS+endpoints
 > (no Livewire real). El port reusó `/medico/data` + `/medico/{id}/llamar|rellamar|
@@ -136,5 +140,5 @@ Tomadas (2026-06-29):
 
 Abiertas:
 - [ ] **Admin**: ¿shell-wrap definitivo o rediseño nativo? (esfuerzo alto, valor estético)
-- [ ] **InboxWA**: ¿sigue vivo o lo absorbió Atención V2?
+- ✅ **InboxWA**: resuelto — lo absorbe `/v2/atencion` (mismas tablas, mismo chat). No se porta.
 - [ ] **Pantallas públicas** (Llamador/Tablet): ¿entran al restyle o quedan como están?
