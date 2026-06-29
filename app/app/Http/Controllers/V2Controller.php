@@ -231,4 +231,22 @@ class V2Controller extends Controller
             'navActive' => 'reportes',
         ]);
     }
+
+    /**
+     * Legajo de documentos del paciente en el shell V2. Reusa los mismos
+     * endpoints de producción (DocumentoController); solo cambia el cascarón.
+     */
+    public function documentos(int $id)
+    {
+        $contacto = \App\Models\Contacto::findOrFail($id);
+
+        return response()->view('v2.documentos', [
+            'contacto'  => $contacto,
+            'modulo'    => 'Trabajo',
+            'title'     => 'Legajo · ' . $contacto->nombre,
+            'navActive' => 'contactos',
+            'v2Wrap'    => true,
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+          ->header('Pragma', 'no-cache');
+    }
 }

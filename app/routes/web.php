@@ -176,6 +176,8 @@ Route::middleware([SecretariaAuth::class])->group(function () {
 
     // Legajo de documentos por paciente
     Route::middleware('permiso:contactos')->group(function () {
+        // Shell V2 (mismos endpoints de data/acciones que producción).
+        Route::get('/v2/pacientes/{id}/documentos',       [\App\Http\Controllers\V2Controller::class, 'documentos'])->whereNumber('id');
         Route::get('/pacientes/{id}/documentos',          [DocumentoController::class, 'indexPaciente']);
         Route::get('/pacientes/{id}/documentos/data',     [DocumentoController::class, 'dataPaciente']);
         Route::post('/pacientes/{id}/documentos/upload',  [DocumentoController::class, 'uploadManual']);

@@ -260,7 +260,7 @@ window.V2Conv = (function () {
                 ${eventos.length ? eventos.map(e => `<div class="ev"><span><b>${esc((e.usuario || 'Sistema').split(' ')[0])}</b> ${esc(EVENTO_LBL[e.tipo] || e.tipo)}</span><span class="t">${esc(e.hace || e.fecha)}</span></div>`).join('') : '<div style="padding:6px 0;">Sin actividad registrada.</div>'}
             </div>
             ${c.contacto_id ? `
-                <a class="v2-leg-link" href="/pacientes/${c.contacto_id}/documentos" title="Abre en la UI actual">📄 Documentos del paciente ↗</a>
+                <a class="v2-leg-link" href="/v2/pacientes/${c.contacto_id}/documentos">📄 Documentos del paciente</a>
                 <a class="v2-leg-link" href="/v2/contactos?sel=${c.contacto_id}">📇 Ficha en Contactos</a>` : `
                 <button class="v2-btn primary" style="width:100%;margin-top:8px;" onclick="V2Conv.modalAgregarContacto()">+ Agregar a contactos</button>
                 <div style="font-size:11px;color:var(--v2-text-mute);margin-top:6px;padding:0 2px;">No está en el directorio. Al agregarlo, esta conversación queda vinculada.</div>`}
