@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Conversacional — Brochure</title>
+<style>
+  /* Fuentes de la V2 (Inter + JetBrains Mono) */
+  @font-face{font-family:'Inter';font-weight:400;font-display:swap;src:url('fonts/inter-400.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-weight:500;font-display:swap;src:url('fonts/inter-500.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-weight:600;font-display:swap;src:url('fonts/inter-600.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-weight:700;font-display:swap;src:url('fonts/inter-700.woff2') format('woff2')}
+  @font-face{font-family:'JetBrains Mono';font-weight:600;font-display:swap;src:url('fonts/jbmono-600.woff2') format('woff2')}
+
+  /* Tokens tomados de crecer-v2.css (tema claro) */
+  :root{
+    --bg-app:#f7f7f5; --card:#ffffff; --hover:#f0f0ec;
+    --border:#e5e5e0; --border-strong:#d4d4cd;
+    --text:#1a1a1a; --text-2:#5a5a55; --mute:#8a8a82;
+    --accent:#4F46E5; --accent-bg:#eef0fe;
+    --ok:#1a7f37; --ok-bg:#e7f4ea;
+    --warn:#b86e00; --warn-bg:#fdf3e4;
+    --urg:#c8312b; --urg-bg:#fbe8e6;
+    --info:#2563eb; --info-bg:#e6efff;
+    --r:8px; --r-sm:5px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{
+    font-family:'Inter',-apple-system,'Segoe UI',system-ui,sans-serif;
+    color:var(--text); background:#52525b; line-height:1.5; font-size:14px;
+  }
+  .page{
+    width:210mm; min-height:296mm; background:var(--card);
+    margin:18px auto; padding:17mm 15mm; position:relative; overflow:hidden;
+    box-shadow:0 8px 40px rgba(0,0,0,.35);
+    display:flex; flex-direction:column;
+  }
+  @page{ size:A4; margin:0; }
+  @media print{
+    body{background:#fff}
+    .page{margin:0; box-shadow:none; page-break-after:always; width:auto; min-height:auto; height:296mm}
+    .no-print{display:none}
+  }
+  h1{font-size:40px; line-height:1.07; font-weight:700; letter-spacing:-.6px}
+  h2{font-size:26px; font-weight:700; letter-spacing:-.4px}
+  h3{font-size:15.5px; font-weight:600}
+  .eyebrow{ text-transform:uppercase; letter-spacing:2px; font-size:10.5px; font-weight:700; color:var(--accent) }
+  .lead{font-size:16px; color:var(--text-2)}
+  .small{font-size:12.5px; color:var(--text-2)}
+  .mute{color:var(--mute)}
+  p{font-size:14px}
+  b{font-weight:600}
+  .mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+  .row{display:flex; gap:16px}
+  .grow{flex:1}
+  .center{align-items:center}
+  .mt8{margin-top:8px}.mt16{margin-top:16px}.mt24{margin-top:24px}.mt32{margin-top:32px}.mt40{margin-top:40px}
+  /* chips/pills al estilo V2 */
+  .pill{display:inline-flex; align-items:center; gap:6px; background:var(--accent-bg); color:var(--accent);
+        font-weight:600; font-size:12px; padding:5px 11px; border-radius:999px}
+  .pill.dark{background:var(--text); color:#fff}
+  .pill.ok{background:var(--ok-bg); color:var(--ok)}
+  .pill.info{background:var(--info-bg); color:var(--info)}
+  .pill.warn{background:var(--warn-bg); color:var(--warn)}
+  .pill.urg{background:var(--urg-bg); color:var(--urg)}
+  .pill.neutral{background:var(--bg-app); color:var(--text-2); border:1px solid var(--border)}
+  .ic{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .ic-lg{width:28px;height:28px}
+  .card{border:1px solid var(--border); border-radius:var(--r); padding:18px; background:var(--card)}
+  .card .ico{width:42px;height:42px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+             background:var(--accent-bg); color:var(--accent); margin-bottom:11px}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  .grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px}
+  .stat{font-size:38px; font-weight:700; line-height:1; color:var(--accent); letter-spacing:-1px}
+  .stat .u{font-size:17px; color:var(--text)}
+  .foot{margin-top:auto; padding-top:16px; border-top:1px solid var(--border);
+        display:flex; justify-content:space-between; align-items:center; color:var(--mute); font-size:11px}
+  .brandmark{display:inline-flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.2px;color:var(--text)}
+  .logo{width:30px;height:30px;border-radius:7px;background:var(--accent);
+        display:flex;align-items:center;justify-content:center}
+  .logo svg{width:17px;height:17px;stroke:#fff;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .logo.sm{width:18px;height:18px;border-radius:5px}
+  .logo.sm svg{width:11px;height:11px}
+  .check{display:flex;gap:9px;align-items:flex-start;margin-top:10px}
+  .check svg{flex:none;color:var(--ok);margin-top:1px}
+  .tag{display:inline-block;background:var(--bg-app);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:11.5px;font-weight:600;color:var(--text-2)}
+  .bar{height:8px;border-radius:5px;background:var(--bg-app);overflow:hidden;border:1px solid var(--border)}
+  .bar > i{display:block;height:100%;background:var(--accent)}
+  .hint{background:var(--bg-app);border-left:3px solid var(--accent);border-radius:0 var(--r) var(--r) 0;padding:13px 15px}
+  .toolbar{position:fixed;top:14px;right:14px;z-index:9}
+  .btn{background:var(--text);color:#fff;border:none;border-radius:var(--r-sm);padding:10px 15px;font-weight:600;font-size:13px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.3)}
+
+  /* Mock auténtico de la bandeja V2 */
+  .ui{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--bg-app);box-shadow:0 10px 30px rgba(0,0,0,.06)}
+  .ui-top{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;background:var(--card);border-bottom:1px solid var(--border)}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .ui-conv{display:flex;gap:10px;align-items:center;padding:10px 12px;background:var(--card);border-bottom:1px solid var(--border)}
+  .ui-conv:last-child{border-bottom:none}
+  .av{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;background:var(--accent)}
+  .av.b{background:#7c3aed}.av.c{background:#0e7490}.av.d{background:#b45309}
+  .ui-name{font-weight:600;font-size:13px}
+  .ui-msg{font-size:11.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+</style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <button class="btn" onclick="window.print()">⬇ Descargar PDF</button>
+</div>
+
+<!-- ============ PÁGINA 1 — PORTADA ============ -->
+<section class="page" style="background:
+   radial-gradient(1000px 480px at 80% -10%, #eef0fe 0%, rgba(238,240,254,0) 62%),
+   linear-gradient(180deg,#ffffff 0%,#ffffff 62%,#fcfcfb 100%);">
+  <div class="row center" style="justify-content:space-between">
+    <div class="brandmark"><span class="logo"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg></span> <span style="font-size:17px">CRM Conversacional</span></div>
+    <span class="pill neutral">Instalación propia · llave en mano</span>
+  </div>
+
+  <div style="margin-top:52px">
+    <span class="eyebrow">Comunicaciones · WhatsApp · Fuerza de ventas · Seguimiento</span>
+    <h1 class="mt16">Toda la conversación con<br>tus clientes y todo tu equipo,<br>en <span style="color:var(--accent)">un solo lugar</span>.</h1>
+    <p class="lead mt24" style="max-width:60ch">
+      Un CRM construido sobre WhatsApp: centralizá la comunicación con clientes y
+      prospectos, repartí el trabajo entre tu equipo y seguí cada caso hasta el
+      cierre — con todo el historial guardado. <b>En tu propia infraestructura.</b>
+    </p>
+  </div>
+
+  <!-- mock bandeja V2 -->
+  <div class="ui mt32">
+    <div class="ui-top">
+      <span class="dot" style="background:var(--urg)"></span>
+      <span class="dot" style="background:var(--warn)"></span>
+      <span class="dot" style="background:var(--ok)"></span>
+      <span class="small" style="margin-left:6px;font-weight:600;color:var(--text)">Bandeja</span>
+      <span class="pill urg" style="margin-left:auto;padding:3px 9px;font-size:11px">2 urgentes</span>
+      <span class="pill" style="padding:3px 9px;font-size:11px">5 nuevas</span>
+    </div>
+    <div class="ui-conv">
+      <span class="av">M</span>
+      <div class="grow" style="min-width:0"><div class="ui-name">Martín R. <span class="pill neutral" style="padding:1px 7px;font-size:10px;font-weight:600">Lucía</span></div><div class="ui-msg">¿Me pasás la cotización del plan anual?</div></div>
+      <span class="pill urg" style="padding:2px 8px;font-size:10px">urgente</span>
+    </div>
+    <div class="ui-conv">
+      <span class="av b">S</span>
+      <div class="grow" style="min-width:0"><div class="ui-name">Sofía L.</div><div class="ui-msg">🎤 Audio · "necesito cambiar la fecha de…"</div></div>
+      <span class="pill info" style="padding:2px 8px;font-size:10px">nueva</span>
+    </div>
+    <div class="ui-conv">
+      <span class="av c">J</span>
+      <div class="grow" style="min-width:0"><div class="ui-name">Juan P. <span class="pill neutral" style="padding:1px 7px;font-size:10px;font-weight:600">Diego</span></div><div class="ui-msg">Perfecto, gracias. Quedo a la espera 👍</div></div>
+      <span class="pill ok" style="padding:2px 8px;font-size:10px">en proceso</span>
+    </div>
+  </div>
+
+  <div class="grid3 mt32">
+    <div class="card" style="text-align:center"><div class="stat">N<span class="u"> en 1</span></div><p class="small mt8">Varios números de WhatsApp y equipos en una bandeja</p></div>
+    <div class="card" style="text-align:center"><div class="stat">100%</div><p class="small mt8">Tus datos viven en tu servidor</p></div>
+    <div class="card" style="text-align:center"><div class="stat">0<span class="u"> cuotas</span></div><p class="small mt8">Sin tarifa por mensaje ni por usuario</p></div>
+  </div>
+
+  <div class="foot">
+    <span>Propuesta comercial</span>
+    <span class="brandmark" style="font-size:12px"><span class="logo sm"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg></span> CRM Conversacional</span>
+  </div>
+</section>
+
+<!-- ============ PÁGINA 2 — PROBLEMA / CAPACIDADES ============ -->
+<section class="page">
+  <span class="eyebrow">De los celulares sueltos a una central de relación con el cliente</span>
+  <h2 class="mt8">Un solo lugar para atender, vender y dar seguimiento</h2>
+  <p class="lead mt16" style="max-width:64ch">
+    Hoy la relación con el cliente vive repartida en teléfonos personales, capturas
+    de pantalla y “pasámelo por privado”. Lo unificamos en una bandeja donde el
+    equipo ve todo, se reparte los contactos y nada queda sin responder.
+  </p>
+
+  <div class="row mt32" style="gap:16px">
+    <div class="grow card">
+      <span class="pill urg">Antes</span>
+      <div class="check" style="margin-top:13px"><svg class="ic" viewBox="0 0 24 24" style="color:var(--urg)"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg><span>Conversaciones atrapadas en el celular de cada persona</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24" style="color:var(--urg)"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg><span>Leads que se enfrían sin que nadie los siga</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24" style="color:var(--urg)"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg><span>Si alguien se va, se lleva los contactos y el historial</span></div>
+    </div>
+    <div class="grow card">
+      <span class="pill ok">Con la plataforma</span>
+      <div class="check" style="margin-top:13px"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>Una bandeja única para todo el equipo</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>Cada contacto asignado a un responsable, con seguimiento</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>El historial es de la empresa, no del teléfono de nadie</span></div>
+    </div>
+  </div>
+
+  <h3 class="mt40 mute" style="text-transform:uppercase;letter-spacing:1.5px;font-size:11.5px">Capacidades clave</h3>
+  <div class="grid3 mt16">
+    <div class="card"><div class="ico"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg></div><h3>Bandeja unificada</h3><p class="small mt8">Conversaciones ordenadas por nuevas, en proceso y urgentes.</p></div>
+    <div class="card"><div class="ico"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg></div><h3>Asignación de contactos</h3><p class="small mt8">Repartí leads y consultas. Cada uno ve lo suyo y responde.</p></div>
+    <div class="card"><div class="ico"><svg class="ic ic-lg" viewBox="0 0 24 24"><polyline points="13 2 13 9 20 9"/><path d="M13 2 20 9v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/></svg></div><h3>Respuestas rápidas</h3><p class="small mt8">Plantillas para lo de siempre. Menos tipeo, más cierres.</p></div>
+    <div class="card"><div class="ico"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><polyline points="12 6 12 12 16 14"/></svg></div><h3>Seguimiento y pendientes</h3><p class="small mt8">Urgentes, no leídos y casos abiertos hasta resolverse.</p></div>
+    <div class="card"><div class="ico"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 0 0-6 0v4"/><rect x="5" y="9" width="14" height="11" rx="2"/></svg></div><h3>Notas internas</h3><p class="small mt8">Comentarios entre el equipo que el cliente nunca ve.</p></div>
+    <div class="card"><div class="ico"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 5h18M3 12h18M3 19h12"/></svg></div><h3>Chat interno</h3><p class="small mt8">El equipo se coordina sin salir de la herramienta.</p></div>
+  </div>
+
+  <div class="foot"><span>01 · Capacidades</span><span class="brandmark" style="font-size:12px"><span class="logo sm"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg></span> CRM Conversacional</span></div>
+</section>
+
+<!-- ============ PÁGINA 3 — MULTI NÚMERO ============ -->
+<section class="page">
+  <span class="eyebrow">Multi-número por equipo, área o canal</span>
+  <h2 class="mt8">Cada equipo su línea. El cliente habla con la empresa.</h2>
+  <p class="lead mt16" style="max-width:64ch">
+    Manejá varias líneas de WhatsApp —una por cada área, sucursal o canal— desde la
+    misma plataforma. Cada equipo ve solo lo suyo, y si un mensaje es para otro sector,
+    se deriva al instante sin pedirle al cliente que “escriba a otro número”.
+  </p>
+
+  <div class="mt32 card" style="padding:24px;background:var(--bg-app)">
+    <div class="row center" style="justify-content:center;margin-bottom:16px">
+      <span class="pill neutral">Ejemplos — las áreas se configuran según tu operación</span>
+    </div>
+    <div class="grid3">
+      <div style="text-align:center">
+        <div style="width:54px;height:54px;margin:0 auto;border-radius:13px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center">
+          <svg class="ic ic-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 12h6M12 9v6"/></svg></div>
+        <h3 class="mt8">Equipo / Área A</h3>
+        <p class="small mute">ej. Comercial</p>
+      </div>
+      <div style="text-align:center">
+        <div style="width:54px;height:54px;margin:0 auto;border-radius:13px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center">
+          <svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <h3 class="mt8">Equipo / Área B</h3>
+        <p class="small mute">ej. Atención al cliente</p>
+      </div>
+      <div style="text-align:center">
+        <div style="width:54px;height:54px;margin:0 auto;border-radius:13px;background:var(--accent-bg);color:var(--accent);display:flex;align-items:center;justify-content:center">
+          <svg class="ic ic-lg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 4v16"/></svg></div>
+        <h3 class="mt8">Equipo / Área C</h3>
+        <p class="small mute">ej. Administración</p>
+      </div>
+    </div>
+    <div style="text-align:center;margin:16px 0;color:var(--accent);font-weight:700;font-size:20px">↓</div>
+    <div style="background:var(--text);color:#fff;border-radius:var(--r);padding:16px;text-align:center">
+      <div style="font-weight:700;font-size:17px">Una sola plataforma · un equipo coordinado</div>
+      <div class="small" style="color:#c9c9c4;margin-top:3px">Bandejas separadas con alertas por área — sin mezclar conversaciones</div>
+    </div>
+  </div>
+
+  <div class="grid2 mt32">
+    <div class="card"><h3 style="color:var(--accent)">Derivación entre áreas</h3><p class="small mt8">¿El mensaje es para otro sector? Se pasa con un click y sigue la conversación sin cortar el hilo ni perder el contexto.</p></div>
+    <div class="card"><h3 style="color:var(--accent)">Reenvío y trazabilidad</h3><p class="small mt8">Reenviá un caso a quien corresponda y dejá registrado el recorrido completo para auditoría y control.</p></div>
+  </div>
+
+  <div class="hint mt24"><b>Escalá sin fricción:</b> sumar un número para una campaña, una sucursal nueva o un canal extra es agregar una línea más — el equipo sigue en la misma pantalla.</div>
+
+  <div class="foot"><span>02 · Multi-número</span><span class="brandmark" style="font-size:12px"><span class="logo sm"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg></span> CRM Conversacional</span></div>
+</section>
+
+<!-- ============ PÁGINA 4 — FICHA DEL CLIENTE ============ -->
+<section class="page">
+  <span class="eyebrow">Ficha del cliente 360°</span>
+  <h2 class="mt8">Todo el historial del contacto, en su ficha</h2>
+  <p class="lead mt16" style="max-width:64ch">
+    Cada conversación queda vinculada a la persona. Abrís su ficha y tenés a mano el
+    historial completo: lo que escribió, los archivos que envió, los audios —ya
+    transcriptos a texto— y un resumen del caso. Quien atienda, se pone al día en segundos.
+  </p>
+
+  <div class="row mt32" style="gap:18px;align-items:stretch">
+    <div style="flex:0 0 230px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
+      <div style="background:var(--text);color:#fff;padding:16px">
+        <div style="display:flex;align-items:center;gap:11px">
+          <div class="av" style="width:44px;height:44px;font-size:18px">M</div>
+          <div><div style="font-weight:700">Martín R.</div><div style="font-size:11px;color:#c9c9c4">Lead · Comercial</div></div>
+        </div>
+      </div>
+      <div style="padding:13px;font-size:12.5px;color:var(--text-2)">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border)"><span>Teléfono</span><b class="mono" style="color:var(--text)">+54 9 …</b></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border)"><span>Responsable</span><b style="color:var(--text)">Lucía</b></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--border)"><span>Archivos</span><b style="color:var(--accent)">7 adjuntos</b></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0"><span>Conversaciones</span><b style="color:var(--text)">14</b></div>
+        <div style="margin-top:11px;background:var(--accent-bg);border-radius:var(--r-sm);padding:10px;color:var(--accent);font-size:11.5px">
+          <b>Resumen IA:</b> Pidió cotización del plan anual y envió comprobante de pago previo.
+        </div>
+      </div>
+    </div>
+
+    <div class="grow">
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span><b>Historial unificado</b> — todas las conversaciones del contacto, aunque hayan pasado meses.</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span><b>Archivos a un click</b> — comprobantes, fotos, PDFs y documentos ordenados por cliente.</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span><b>Audios transcriptos</b> — los mensajes de voz se leen como texto, sin escucharlos uno por uno.</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span><b>Resumen automático</b> — la IA resume el caso para ponerse al día en segundos.</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span><b>Identidad y responsable</b> — sabés quién es y quién lo está atendiendo.</span></div>
+      <div class="check"><svg class="ic" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span><b>Alta en un paso</b> — quien escribe por primera vez se suma a la base al toque.</span></div>
+    </div>
+  </div>
+
+  <div class="grid3 mt32">
+    <div class="card" style="text-align:center"><div class="stat" style="font-size:27px">Voz → Texto</div><p class="small mt8">Transcripción automática de audios</p></div>
+    <div class="card" style="text-align:center"><div class="stat" style="font-size:27px">IA</div><p class="small mt8">Resumen del caso / consulta</p></div>
+    <div class="card" style="text-align:center"><div class="stat" style="font-size:27px">360°</div><p class="small mt8">Vista completa de cada contacto</p></div>
+  </div>
+
+  <div class="foot"><span>03 · Ficha del cliente</span><span class="brandmark" style="font-size:12px"><span class="logo sm"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg></span> CRM Conversacional</span></div>
+</section>
+
+<!-- ============ PÁGINA 5 — EQUIPO + ESTADÍSTICAS + LOCAL + CIERRE ============ -->
+<section class="page">
+  <span class="eyebrow">Gestión del equipo · Estadísticas · Instalación propia</span>
+  <h2 class="mt8">Dirigí con datos. Tus datos, bajo tu control.</h2>
+
+  <div class="row mt24" style="gap:18px;align-items:stretch">
+    <div class="grow card">
+      <h3 style="color:var(--accent)">Rendimiento y tablero</h3>
+      <div class="mt16"><div class="row center" style="justify-content:space-between"><span class="small"><b>Volumen de conversaciones</b> por día y área</span><span class="tag">↑</span></div><div class="bar mt8"><i style="width:82%"></i></div></div>
+      <div class="mt16"><div class="row center" style="justify-content:space-between"><span class="small"><b>Tiempo de primera respuesta</b></span><span class="tag">⏱</span></div><div class="bar mt8"><i style="width:64%"></i></div></div>
+      <div class="mt16"><div class="row center" style="justify-content:space-between"><span class="small"><b>Carga por persona</b> del equipo</span><span class="tag">👤</span></div><div class="bar mt8"><i style="width:54%"></i></div></div>
+      <div class="mt16"><div class="row center" style="justify-content:space-between"><span class="small"><b>Casos abiertos / seguimientos</b></span><span class="tag">⚑</span></div><div class="bar mt8"><i style="width:34%"></i></div></div>
+      <p class="small mt16">Sabés cuánto se atiende, qué tan rápido responde cada uno y dónde se traba — para distribuir mejor la carga y no perder oportunidades.</p>
+    </div>
+
+    <div class="grow card" style="background:var(--text);color:#fff;border-color:var(--text)">
+      <div class="pill" style="background:#2a2a28;color:#fff"><svg class="ic" viewBox="0 0 24 24" style="width:15px;height:15px;color:#fff"><path d="M12 2 4 6v6c0 5 3.4 7.8 8 10 4.6-2.2 8-5 8-10V6z"/></svg> Tus datos, en tu casa</div>
+      <h3 class="mt16" style="font-size:18px">Corre en tu propia infraestructura</h3>
+      <div class="check" style="color:#e7e7e3"><svg class="ic" viewBox="0 0 24 24" style="color:#4ade80"><polyline points="20 6 9 17 4 12"/></svg><span>Tu base de clientes <b>nunca sale de la empresa</b>.</span></div>
+      <div class="check" style="color:#e7e7e3"><svg class="ic" viewBox="0 0 24 24" style="color:#4ade80"><polyline points="20 6 9 17 4 12"/></svg><span>Sin depender de la nube ni de los precios de un tercero.</span></div>
+      <div class="check" style="color:#e7e7e3"><svg class="ic" viewBox="0 0 24 24" style="color:#4ade80"><polyline points="20 6 9 17 4 12"/></svg><span>Tratamiento cuidado de <b>datos sensibles</b>.</span></div>
+      <div class="check" style="color:#e7e7e3"><svg class="ic" viewBox="0 0 24 24" style="color:#4ade80"><polyline points="20 6 9 17 4 12"/></svg><span><b>Respaldos automáticos</b> diarios de toda la información.</span></div>
+      <div class="check" style="color:#e7e7e3"><svg class="ic" viewBox="0 0 24 24" style="color:#4ade80"><polyline points="20 6 9 17 4 12"/></svg><span>Sin cuota por mensaje ni por usuario: <b>costo previsible</b>.</span></div>
+    </div>
+  </div>
+
+  <div class="mt32" style="border-radius:var(--r);padding:28px;text-align:center;background:var(--accent);color:#fff">
+    <div style="text-transform:uppercase;letter-spacing:2px;font-size:10.5px;font-weight:700;opacity:.92">El próximo paso</div>
+    <div style="font-size:24px;font-weight:700;margin-top:7px">Ordená tu comunicación y tu equipo en semanas</div>
+    <p style="max-width:60ch;margin:11px auto 0;opacity:.95;font-size:14px">Implementación llave en mano, capacitación del equipo y acompañamiento. Coordinamos una demo con tus propios casos para que lo veas funcionando.</p>
+    <div class="mt24" style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap">
+      <span class="pill" style="background:#fff;color:var(--accent)">📅 Agendá una demo</span>
+      <span class="pill" style="background:rgba(255,255,255,.2);color:#fff">✉ contacto@tuempresa.com</span>
+      <span class="pill" style="background:rgba(255,255,255,.2);color:#fff">📞 +54 9 …</span>
+    </div>
+  </div>
+
+  <div class="foot"><span>04 · Equipo, datos e implementación</span><span class="brandmark" style="font-size:12px"><span class="logo sm"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-12 7.6L3 21l1.9-6A8.4 8.4 0 1 1 21 11.5z"/></svg></span> CRM Conversacional</span></div>
+</section>
+
+</body>
+</html>
