@@ -84,7 +84,7 @@ window.V2Conv = (function () {
         }
         const dir  = m.direccion === 'entrante' ? 'in' : 'out';
         const meta = dir === 'out' ? `${esc(m.usuario || 'Bot')} · ${esc(m.hora)}` : esc(m.hora);
-        return `<div class="v2-msg ${dir}"><div style="max-width:70%;min-width:0;">
+        return `<div class="v2-msg ${dir}"><div style="max-width:70%;width:fit-content;min-width:0;">
             <div class="v2-bubble">${bubbleContenido(m)}</div>
             <div class="v2-msg-meta">${meta}</div>
         </div></div>`;

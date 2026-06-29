@@ -289,12 +289,14 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
 .v2-msg.in { justify-content: flex-start; }
 .v2-msg.out { justify-content: flex-end; }
 .v2-bubble {
-    width: fit-content; max-width: 70%; padding: 7px 11px;
+    /* El cap de ancho (70%) lo pone el wrapper de cada mensaje (.v2-msg > div),
+       que mide contra .v2-msg —ancho definido—. Acá la burbuja usa max-width:100%
+       (NO 70%): un % contra el wrapper, que es shrink-to-fit, se resolvía circular
+       en flex (Chrome/Electron) y la burbuja colapsaba a 1 char rompiendo
+       "Buen día" → "Bue\nn día". width:fit-content la deja medir el texto. */
+    width: fit-content; max-width: 100%; padding: 7px 11px;
     border-radius: 10px; font-size: 13.5px; line-height: 1.5;
     border: 1px solid var(--v2-border); background: var(--v2-bg-card);
-    /* overflow-wrap (no word-break) parte solo palabras imposibles sin colapsar el
-       tamaño intrínseco; con word-break:break-word la burbuja se encogía a 1 char
-       dentro del flex y rompía "Buen día" → "Bue\nn día". */
     white-space: pre-wrap; overflow-wrap: break-word;
 }
 .v2-msg.out .v2-bubble { background: var(--v2-accent-bg); border-color: var(--v2-border); border-radius: 10px 10px 3px 10px; }
