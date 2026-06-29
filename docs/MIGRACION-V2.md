@@ -26,7 +26,7 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 | 7 | Contactos | `/contactos` | `/v2/contactos` | ✅ | |
 | 8 | Agenda | `/agenda` | `/v2/agenda` | ✅ | |
 | 9 | Reportes / Estadísticas | `/admin/estadisticas` | `/v2/reportes` | ✅ | Nativo, 3 tabs |
-| 10 | Admin (10 subpáginas) | `/admin/*` | `/v2/admin/{pag}` | 🟡 | **Shell-wrap**: vistas de prod dentro del layout V2, no rediseñadas |
+| 10 | Admin (10 subpáginas) | `/admin/*` | `/v2/admin/{pag}` | ✅ | **Shell-wrap definitivo** (auditado 2026-06-29): se ve bien en V2, no se rediseña |
 | 11 | Recepción / Secretaría (turnos) | `/secretaria`, `/cola-bot`, `/inbox-wa` | `/v2/recepcion` | ✅ | 2 tabs (sala + bot). `InboxWA` lo absorbe `/v2/atencion` (no se porta) |
 | 12 | Médico (Mi consultorio) | `/medico` | `/v2/medico` | ✅ | Reusa endpoints `/medico/*`; sala/llamar/rellamar/atendido + tareas + agenda Omnia |
 | 13 | Documentos de paciente | `/pacientes/{id}/documentos` | — | 🔴 | V2 hoy linkea a la UI de prod |
@@ -35,10 +35,10 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 | 16 | Llamador (TV pública) | `/llamador` | — | ⚪ | Pantalla pública, no usa el shell |
 | 17 | Tablet (sala pública) | `/tablet` | — | ⚪ | Pantalla pública, no usa el shell |
 
-**Resumen:** 11 áreas con paridad V2, 1 shell-wrap (Admin), 1 gap real
-(Login/Declarar, cosmético), 2 fuera de alcance (pantallas públicas).
-Documentos (13), Médico (12) y Recepción (11) ya migrados. `InboxWA` queda
-absorbido por `/v2/atencion`.
+**Resumen:** 12 áreas cubiertas en V2 (11 nativas + Admin como shell-wrap
+definitivo), 1 gap cosmético (Login/Declarar), 2 fuera de alcance (pantallas
+públicas). Documentos (13), Médico (12), Recepción (11) migrados y Admin (10)
+decidido. `InboxWA` queda absorbido por `/v2/atencion`. **Fase 2 cerrada.**
 
 ---
 
@@ -64,9 +64,15 @@ absorbido por `/v2/atencion`.
   - [x] El link del legajo de Atención V2 ahora apunta a `/v2/pacientes/{id}/documentos`
   - [ ] Pulido a nativo: reemplazar `prompt()`/`confirm()` por modales V2 (`.v2-dialog`); chips/cards con componentes V2 propios (hoy usan tokens de prod vía puente)
   - [ ] Link inverso "volver" hacia la conversación de origen (no solo al directorio)
-- [ ] **Admin nativo** (decisión)
-  - [ ] Decidir: dejar shell-wrap (funciona) o rediseñar tab por tab (usuarios, textos, pruebas, logs, legajo-config, respuestas-rápidas, médicos, tunnel, dashboard)
-  - [ ] Mínimo: que los 10 tabs se vean bien dentro del shell V2 (revisar cada uno)
+- [x] **Admin** (decisión tomada 2026-06-29) — **shell-wrap definitivo, NO rediseño nativo**
+  - [x] Decisión: dejar shell-wrap. Razón: Admin lo usan pocos usuarios power, con poca
+        frecuencia; un rewrite nativo de 10 páginas es esfuerzo alto y valor sólo estético.
+  - [x] Auditoría (mínimo "que se vean bien"): las 10 vistas usan `@extends($layout ?? 'layouts.app')`
+        (el wrap se aplica), son **auto-estiladas** con clases locales prefijadas + tokens
+        bridgeados por `crecer-v2.css` (sin clases-componente huérfanas del DS), el **tema
+        claro/oscuro funciona** vía el puente (`var(--card)`→`--v2-bg-card`, sigue `[data-theme]`),
+        el sub-nav (`admin/_nav`) es V2-aware (tabs quedan dentro del shell) y Estadísticas
+        redirige a `/v2/reportes` (versión nativa). **No requirió cambios de código.**
 - [ ] **Login / Declarar colas** (cosmético)
   - [ ] Restyle al design system V2 (opcional, no bloquea cutover)
 
@@ -116,9 +122,9 @@ los 4 gaps, no en el backend.
 | **3. Cutover gradual (Bloque C)** | Flag `ui_pref`, piloto, default V2 | Mayoría en V2, V1 como fallback | Bajo (reversible por flag) |
 | **4. Retiro V1 (Bloque D)** | Borrar V1 cuando esté estable | Una sola UI | Bajo si se esperó |
 
-**Orden recomendado dentro de Fase 2:** ~~Documentos~~ ✅ → ~~Médico~~ ✅ →
-~~Recepción/Turnos~~ ✅ → **Admin (decidir shell vs nativo) — único pendiente
-de Fase 2**. Con Recepción cerrado, V2 cubre el 100% del uso operativo diario.
+**Fase 2 COMPLETA:** ~~Documentos~~ ✅ → ~~Médico~~ ✅ → ~~Recepción/Turnos~~ ✅ →
+~~Admin (shell-wrap definitivo)~~ ✅. V2 cubre el 100% del uso operativo diario.
+**Próximo: Fase 3 (cutover gradual con flag `ui_pref`).**
 
 > Nota sobre Médico: resultó de bajo riesgo porque la UI de prod ya era JS+endpoints
 > (no Livewire real). El port reusó `/medico/data` + `/medico/{id}/llamar|rellamar|
@@ -139,6 +145,6 @@ Tomadas (2026-06-29):
 - ⏳ **Cutover**: mecanismo a definir más adelante (cerrar gaps primero).
 
 Abiertas:
-- [ ] **Admin**: ¿shell-wrap definitivo o rediseño nativo? (esfuerzo alto, valor estético)
+- ✅ **Admin**: resuelto — **shell-wrap definitivo** (auditado, se ve bien en V2). No se rediseña.
 - ✅ **InboxWA**: resuelto — lo absorbe `/v2/atencion` (mismas tablas, mismo chat). No se porta.
 - [ ] **Pantallas públicas** (Llamador/Tablet): ¿entran al restyle o quedan como están?
