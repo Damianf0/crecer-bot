@@ -44,7 +44,7 @@ V2Conv.init({
     onChanged: () => { state.etag = null; pollItems(); },
 });
 
-let state = { items: [], vista: 'todas', q: '', etag: null };
+let state = { items: [], vista: 'espera', q: '', etag: null };
 
 function normalizar(data) {
     const tag = (arr, estado) => arr.map(i => ({ ...i, _estado: estado }));
@@ -54,7 +54,8 @@ function normalizar(data) {
 
 function filtrados() {
     let list = state.items;
-    if (state.vista === 'sintomar') list = list.filter(i => i._estado === 'nueva');
+    if (state.vista === 'espera')   list = list.filter(i => i._estado === 'nueva');
+    if (state.vista === 'proceso')  list = list.filter(i => i._estado === 'proceso');
     if (state.vista === 'urgentes') list = list.filter(i => i.urgente);
     if (state.q) {
         const q = state.q.toLowerCase();
@@ -65,14 +66,14 @@ function filtrados() {
 
 function renderVistas() {
     const counts = {
-        todas:    state.items.length,
-        sintomar: state.items.filter(i => i._estado === 'nueva').length,
+        espera:   state.items.filter(i => i._estado === 'nueva').length,
+        proceso:  state.items.filter(i => i._estado === 'proceso').length,
         urgentes: state.items.filter(i => i.urgente).length,
     };
-    document.getElementById('b-vistas').innerHTML = [['todas','Todas'],['sintomar','Sin tomar'],['urgentes','Urgentes']]
+    document.getElementById('b-vistas').innerHTML = [['espera','En espera'],['proceso','En proceso'],['urgentes','Urgentes']]
         .map(([k, lbl]) => `<button class="v2-vista ${state.vista === k ? 'active' : ''}" onclick="setVista('${k}')">${lbl}<span class="n">${counts[k]}</span></button>`)
         .join('');
-    document.getElementById('b-count').textContent = counts.todas;
+    document.getElementById('b-count').textContent = state.items.length;
 }
 function setVista(v) { state.vista = v; renderBandeja(); }
 
@@ -87,7 +88,7 @@ function renderBandeja() {
     cont.innerHTML = list.map(i => {
         const sel = V2Conv.panelId === i.id;
         const pill = i._estado === 'nueva'
-            ? `<span class="v2-pill nueva">Nueva${i.no_leidos > 0 ? ' · ' + i.no_leidos : ''}</span>`
+            ? `<span class="v2-pill nueva">En espera${i.no_leidos > 0 ? ' · ' + i.no_leidos : ''}</span>`
             : `<span class="v2-pill proceso">En proceso</span>`;
         const urg = i.urgente ? `<span class="v2-pill urgente">Urgente</span>` : '';
         const who = i.asig_name

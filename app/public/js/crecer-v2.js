@@ -47,9 +47,10 @@ window.V2 = (function () {
 
 window.V2Conv = (function () {
     const { esc, get, post, avatarHtml } = V2;
+    const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 
     let cfg   = { usuarios: [], meId: 0, area: null, onChanged: null };
-    let state = { panelId: null, conv: null, readOnly: false, modo: 'mensaje' };
+    let state = { panelId: null, conv: null, readOnly: false, modo: 'mensaje', archivo: null };
     let respuestas = [];          // respuestas rápidas del área, cacheadas por área
     const rrCache  = {};
 
@@ -151,6 +152,7 @@ window.V2Conv = (function () {
             else if (!esMia) acciones.push(`<button class="v2-btn" onclick="V2Conv.accion('tomar')" title="Asignada a ${esc(c.asig_name || '')}">Tomarla yo</button>`);
             acciones.push(`<button class="v2-btn" onclick="V2Conv.menuDelegar(event)">Delegar ▾</button>`);
             acciones.push(`<button class="v2-btn" onclick="V2Conv.accion('urgente')" title="Marcar / desmarcar urgente">⚑</button>`);
+            acciones.push(`<button class="v2-btn" onclick="V2Conv.modalTarea()" title="Crear una tarea o agendar una llamada para este contacto">🗓 Agendar</button>`);
             acciones.push(`<button class="v2-btn accent" onclick="V2Conv.accion('resolver')">Resolver</button>`);
         }
 
@@ -169,6 +171,13 @@ window.V2Conv = (function () {
                         <button type="button" class="v2-rr-btn" id="btn-rr" onclick="V2Conv.rrToggle(event)" title="Insertar una respuesta rápida">📋 Respuestas</button>
                         <div class="v2-rr-menu" id="rr-menu" style="display:none;"></div>
                     </div>
+                    <button type="button" class="v2-rr-btn" id="btn-adjuntar" onclick="document.getElementById('v2-file').click()" title="Adjuntar archivo">📎 Adjuntar</button>
+                </div>
+                <input type="file" id="v2-file" style="display:none" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="V2Conv.onFile(this)">
+                <div class="v2-file-preview" id="v2-file-preview" style="display:none;align-items:center;gap:8px;padding:6px 10px;margin:4px 0;background:var(--v2-bg-soft,#f4f5f7);border-radius:8px;font-size:12.5px;">
+                    <span id="v2-file-icon"></span>
+                    <span id="v2-file-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                    <button type="button" class="v2-rr-btn" onclick="V2Conv.quitarArchivo()" title="Quitar archivo">✕</button>
                 </div>
                 <div class="v2-compose-row">
                     <textarea id="compose" placeholder="Escribí tu respuesta…"></textarea>
@@ -227,6 +236,20 @@ window.V2Conv = (function () {
             </div>
             <div class="v2-leg-tabla">${rows.map(([k, v]) => `<div class="v2-leg-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}</div>
             ${c.resumen ? `<div class="v2-leg-tabla" style="padding:9px 11px;font-size:12px;line-height:1.5;"><span style="font-size:10px;font-weight:700;color:var(--v2-accent);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:3px;">Lo de esta conversación</span>${esc(c.resumen)}</div>` : ''}
+            <div class="v2-leg-tareas">
+                <div class="v2-leg-tareas-h"><span>🗓 Agendado${(d.tareas && d.tareas.length) ? ` <b class="n">${d.tareas.length}</b>` : ''}</span>
+                    <button class="add" onclick="V2Conv.modalTarea()" title="Crear tarea o agendar llamada">+ Nueva</button></div>
+                ${(d.tareas && d.tareas.length) ? d.tareas.map(t => {
+                    const done = t.estado === 'completada';
+                    const cls  = done ? 'done' : (t.vencida ? 'vencida' : '');
+                    const cuando = t.vence_fmt ? esc(t.vence_fmt) : 'sin fecha';
+                    const quien  = t.asignado_nombre ? ' · ' + esc(t.asignado_nombre.split(' ')[0]) : '';
+                    return `<a class="v2-leg-tarea ${cls}" href="/centro-tareas?tarea_id=${t.id}" title="Abrir en el Centro de tareas">
+                        <span class="tt">${done ? '✓ ' : ''}${esc(t.titulo)}</span>
+                        <span class="meta">${cuando}${quien}</span>
+                    </a>`;
+                }).join('') : '<div class="v2-leg-tareas-empty">Nada agendado todavía.</div>'}
+            </div>
             <button class="v2-leg-acc" onclick="V2Conv.toggleAcc(this)">
                 <span>Actividad</span><span class="n">${(d.eventos || []).length}</span><span class="chev">›</span>
             </button>
@@ -279,6 +302,51 @@ window.V2Conv = (function () {
         return dlg;
     }
 
+    // Modal "Agendar / Tarea" — crea una Tarea vinculada a la conversación
+    // (ref_tipo:'wa', ref_id) contra el endpoint de producción POST /tareas.
+    // El toggle Tarea/Llamada solo cambia el título sugerido; el backend es el mismo.
+    function ensureModalTarea() {
+        let dlg = document.getElementById('v2-modal-tarea');
+        if (dlg) return dlg;
+        dlg = document.createElement('dialog');
+        dlg.className = 'v2-dialog';
+        dlg.id = 'v2-modal-tarea';
+        const opts = (cfg.usuarios || [])
+            .map(u => `<option value="${u.id}">${esc(u.nombre_completo)}</option>`).join('');
+        dlg.innerHTML = `
+            <h3>Agendar para <span id="v2-mt-quien"></span></h3>
+            <div class="v2-compose-modos" style="margin-bottom:4px;">
+                <button type="button" class="v2-compose-modo active" id="v2-mt-t-tarea"   onclick="V2Conv.setTipoTarea('tarea')">📋 Tarea</button>
+                <button type="button" class="v2-compose-modo"        id="v2-mt-t-llamada" onclick="V2Conv.setTipoTarea('llamada')">📞 Llamada</button>
+            </div>
+            <label class="v2-label">Título *</label>
+            <input class="v2-field" id="v2-mt-titulo" placeholder="¿Qué hay que hacer?" autocomplete="off">
+            <div class="v2-grid2">
+                <div>
+                    <label class="v2-label">Cuándo</label>
+                    <input class="v2-field" id="v2-mt-vence" type="datetime-local">
+                </div>
+                <div>
+                    <label class="v2-label">Prioridad</label>
+                    <select class="v2-field" id="v2-mt-prioridad">
+                        <option value="baja">Baja</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="alta">Alta</option>
+                    </select>
+                </div>
+            </div>
+            <label class="v2-label">Asignar a</label>
+            <select class="v2-field" id="v2-mt-asignada">${opts}</select>
+            <label class="v2-label">Nota (opcional)</label>
+            <textarea class="v2-field" id="v2-mt-desc" rows="2" placeholder="Detalle o contexto…"></textarea>
+            <div class="v2-dialog-foot">
+                <button class="v2-btn" onclick="document.getElementById('v2-modal-tarea').close()">Cancelar</button>
+                <button class="v2-btn primary" id="v2-mt-guardar" onclick="V2Conv.guardarTarea()">Crear</button>
+            </div>`;
+        document.body.appendChild(dlg);
+        return dlg;
+    }
+
     // ── API pública del módulo ────────────────────────────────────
     return {
         init(options) { cfg = { ...cfg, ...options }; },
@@ -288,6 +356,7 @@ window.V2Conv = (function () {
             state.panelId  = id;
             state.readOnly = !!opts.readOnly;
             state.modo     = 'mensaje';
+            state.archivo  = null;
             document.getElementById('det-empty').style.display = 'none';
             const body = document.getElementById('det-body');
             body.style.display = 'flex';
@@ -356,6 +425,73 @@ window.V2Conv = (function () {
             }
         },
 
+        // Abre el modal para crear una tarea / agendar una llamada sobre el contacto
+        // de la conversación abierta. La tarea queda vinculada vía ref_tipo:'wa'.
+        modalTarea() {
+            if (!state.conv) return;
+            const c = state.conv.conv;
+            const dlg = ensureModalTarea();
+            document.getElementById('v2-mt-quien').textContent = c.contacto || 'el contacto';
+            document.getElementById('v2-mt-titulo').value     = '';
+            document.getElementById('v2-mt-vence').value      = '';
+            document.getElementById('v2-mt-desc').value       = '';
+            document.getElementById('v2-mt-prioridad').value  = 'normal';
+            const sel = document.getElementById('v2-mt-asignada');
+            if (sel) sel.value = String(cfg.meId);    // por defecto, para mí
+            V2Conv.setTipoTarea('tarea');
+            dlg.showModal();
+            document.getElementById('v2-mt-titulo').focus();
+        },
+
+        // Cambia el tipo (solo afecta el título sugerido) y resalta el botón activo.
+        setTipoTarea(tipo) {
+            state.tareaTipo = tipo;
+            const bt = document.getElementById('v2-mt-t-tarea');
+            const bl = document.getElementById('v2-mt-t-llamada');
+            if (bt) bt.className = 'v2-compose-modo' + (tipo === 'tarea' ? ' active' : '');
+            if (bl) bl.className = 'v2-compose-modo' + (tipo === 'llamada' ? ' active' : '');
+            const ti = document.getElementById('v2-mt-titulo');
+            const c  = state.conv ? state.conv.conv : null;
+            // Solo precarga si el campo está vacío o tenía la sugerencia del otro tipo.
+            if (ti && c) {
+                const sugLlamada = `Llamar a ${c.contacto || 'contacto'}`;
+                const sugTarea   = `Seguimiento: ${c.contacto || 'contacto'}`;
+                if (!ti.value || ti.value === sugLlamada || ti.value === sugTarea) {
+                    ti.value = tipo === 'llamada' ? sugLlamada : sugTarea;
+                }
+            }
+        },
+
+        async guardarTarea() {
+            if (!state.panelId) return;
+            const titulo = document.getElementById('v2-mt-titulo').value.trim();
+            if (!titulo) { v2toast('Poné un título', 'err'); return; }
+            const vence = document.getElementById('v2-mt-vence').value;        // datetime-local o ''
+            const asign = document.getElementById('v2-mt-asignada').value;
+            const prio  = document.getElementById('v2-mt-prioridad').value;
+            const desc  = document.getElementById('v2-mt-desc').value.trim();
+            const btn = document.getElementById('v2-mt-guardar');
+            btn.disabled = true;
+            try {
+                await post('/tareas', {
+                    titulo,
+                    descripcion: desc || null,
+                    asignada_a:  asign ? parseInt(asign) : null,
+                    vence_at:    vence || null,
+                    prioridad:   prio,
+                    ref_tipo:    'wa',
+                    ref_id:      state.panelId,
+                });
+                document.getElementById('v2-modal-tarea').close();
+                v2toast(state.tareaTipo === 'llamada' ? 'Llamada agendada' : 'Tarea creada');
+                await V2Conv.refrescar();   // re-pinta el legajo con la tarea nueva
+            } catch (e) {
+                v2toast(e.message || 'No se pudo crear la tarea', 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        },
+
         // Refresco preservando lo tipeado en el composer.
         async refrescar() {
             if (!state.panelId) return;
@@ -373,6 +509,8 @@ window.V2Conv = (function () {
                         if (guard.focus) { nta.focus(); nta.setSelectionRange(guard.s, guard.s); }
                     }
                 }
+                // El composer se reconstruyó: si había un archivo adjunto, re-pintar su preview.
+                if (state.archivo) V2Conv.pintarArchivo(state.archivo);
             } catch (e) {}
         },
 
@@ -382,9 +520,45 @@ window.V2Conv = (function () {
             document.getElementById('modo-nota').className = 'v2-compose-modo' + (m === 'nota' ? ' active nota' : '');
             document.getElementById('compose').placeholder = m === 'nota' ? 'Nota interna (no se envía al paciente)…' : 'Escribí tu respuesta…';
             document.getElementById('btn-enviar').textContent = m === 'nota' ? 'Guardar nota' : 'Enviar';
+            // Los adjuntos solo van como mensaje al paciente, nunca como nota interna.
+            const adj = document.getElementById('btn-adjuntar');
+            if (adj) adj.style.display = m === 'nota' ? 'none' : '';
+            if (m === 'nota') V2Conv.quitarArchivo();
+        },
+
+        onFile(input) {
+            const f = input.files && input.files[0];
+            if (!f) return;
+            state.archivo = f;
+            V2Conv.pintarArchivo(f);
+        },
+
+        pintarArchivo(f) {
+            const icons = { image: '🖼️', video: '🎬', audio: '🎵' };
+            const icon = icons[f.type.split('/')[0]] || (f.type === 'application/pdf' ? '📕' : '📄');
+            const ie = document.getElementById('v2-file-icon');
+            const ne = document.getElementById('v2-file-name');
+            const pe = document.getElementById('v2-file-preview');
+            if (ie) ie.textContent = icon;
+            if (ne) ne.textContent = f.name;
+            if (pe) pe.style.display = 'flex';
+            const ta = document.getElementById('compose');
+            if (ta) ta.placeholder = 'Leyenda opcional…';
+        },
+
+        quitarArchivo() {
+            state.archivo = null;
+            const fi = document.getElementById('v2-file');
+            if (fi) fi.value = '';
+            const pe = document.getElementById('v2-file-preview');
+            if (pe) pe.style.display = 'none';
+            const ta = document.getElementById('compose');
+            if (ta) ta.placeholder = state.modo === 'nota' ? 'Nota interna (no se envía al paciente)…' : 'Escribí tu respuesta…';
         },
 
         async enviar() {
+            // Si hay un archivo adjunto (solo en modo mensaje), va por la ruta multipart.
+            if (state.archivo && state.modo !== 'nota') return V2Conv.enviarArchivo();
             const ta = document.getElementById('compose');
             const texto = ta.value.trim();
             if (!texto || !state.panelId) return;
@@ -397,6 +571,38 @@ window.V2Conv = (function () {
                 await V2Conv.refrescar();
             } catch (e) {
                 v2toast('No se pudo enviar — ¿bot conectado?', 'err');
+            } finally {
+                btn.disabled = false;
+            }
+        },
+
+        async enviarArchivo() {
+            if (!state.archivo || !state.panelId) return;
+            const ta = document.getElementById('compose');
+            const caption = ta ? ta.value.trim() : '';
+            const btn = document.getElementById('btn-enviar');
+            btn.disabled = true;
+            try {
+                const fd = new FormData();
+                fd.append('conv_id', state.panelId);
+                fd.append('caption', caption);
+                fd.append('archivo', state.archivo);
+                fd.append('_token', CSRF);
+                const r = await fetch('/atencion/enviar-archivo', {
+                    method: 'POST',
+                    body: fd,
+                    headers: { 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                });
+                const data = await r.json().catch(() => null);
+                if (!r.ok || (data && data.ok === false)) {
+                    throw new Error((data && data.error) || ('HTTP ' + r.status));
+                }
+                if (ta) ta.value = '';
+                V2Conv.quitarArchivo();
+                v2toast('Archivo enviado');
+                await V2Conv.refrescar();
+            } catch (e) {
+                v2toast(e.message || 'No se pudo enviar el archivo — ¿bot conectado?', 'err');
             } finally {
                 btn.disabled = false;
             }

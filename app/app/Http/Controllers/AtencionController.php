@@ -265,6 +265,24 @@ class AtencionController extends Controller
                 'hace'    => $e->created_at->diffForHumans(),
             ]);
 
+        // Tareas / llamadas agendadas vinculadas a esta conversación (ref_tipo='wa').
+        // Las crea el botón "🗓 Agendar" del detalle; se listan en el legajo.
+        $tareas = \App\Models\Tarea::with('asignadaA:id,nombre_completo')
+            ->where('ref_tipo', 'wa')->where('ref_id', $id)
+            ->orderByRaw("estado = 'completada' asc")   // pendientes arriba
+            ->orderByRaw('vence_at is null asc')        // las que tienen fecha primero
+            ->orderBy('vence_at')
+            ->get()
+            ->map(fn($t) => [
+                'id'              => $t->id,
+                'titulo'          => $t->titulo,
+                'estado'          => $t->estado,
+                'prioridad'       => $t->prioridad ?? 'normal',
+                'vence_fmt'       => $t->vence_at?->format('d/m H:i'),
+                'vencida'         => $t->vencida,
+                'asignado_nombre' => $t->asignadaA?->nombre_completo,
+            ]);
+
         // Determinar si la conversación está vinculada con un contacto del directorio.
         // Si NO, el frontend muestra un botón "Agregar a contactos".
         $contactoMatch = \App\Models\Contacto::buscarPorContacto($conv->contacto);
@@ -303,6 +321,7 @@ class AtencionController extends Controller
             'mensajes'  => $msgs,
             'has_older' => $hasOlder,
             'eventos'   => $eventos,
+            'tareas'    => $tareas,
         ]);
     }
 
