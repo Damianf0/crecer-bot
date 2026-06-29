@@ -244,10 +244,13 @@ window.V2Conv = (function () {
                     const cls  = done ? 'done' : (t.vencida ? 'vencida' : '');
                     const cuando = t.vence_fmt ? esc(t.vence_fmt) : 'sin fecha';
                     const quien  = t.asignado_nombre ? ' · ' + esc(t.asignado_nombre.split(' ')[0]) : '';
-                    return `<a class="v2-leg-tarea ${cls}" href="/centro-tareas?tarea_id=${t.id}" title="Abrir en el Centro de tareas">
-                        <span class="tt">${done ? '✓ ' : ''}${esc(t.titulo)}</span>
-                        <span class="meta">${cuando}${quien}</span>
-                    </a>`;
+                    return `<div class="v2-leg-tarea ${cls}">
+                        <input type="checkbox" class="chk" ${done ? 'checked' : ''} onchange="V2Conv.toggleTarea(${t.id}, this.checked)" title="${done ? 'Marcar como pendiente' : 'Marcar como completada'}">
+                        <a class="body" href="/centro-tareas?tarea_id=${t.id}" title="Abrir en el Centro de tareas">
+                            <span class="tt">${esc(t.titulo)}</span>
+                            <span class="meta">${cuando}${quien}</span>
+                        </a>
+                    </div>`;
                 }).join('') : '<div class="v2-leg-tareas-empty">Nada agendado todavía.</div>'}
             </div>
             <button class="v2-leg-acc" onclick="V2Conv.toggleAcc(this)">
@@ -490,6 +493,17 @@ window.V2Conv = (function () {
             } finally {
                 btn.disabled = false;
             }
+        },
+
+        // Marca/desmarca una tarea del legajo como completada (PATCH /tareas/{id}).
+        async toggleTarea(id, done) {
+            try {
+                await V2.patch(`/tareas/${id}`, { estado: done ? 'completada' : 'pendiente' });
+                v2toast(done ? 'Tarea completada' : 'Tarea reabierta');
+            } catch (e) {
+                v2toast('No se pudo actualizar la tarea', 'err');
+            }
+            await V2Conv.refrescar();   // re-pinta el legajo (estado/orden) o revierte el check si falló
         },
 
         // Refresco preservando lo tipeado en el composer.
