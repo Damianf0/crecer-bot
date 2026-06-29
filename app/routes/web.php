@@ -68,6 +68,12 @@ Route::middleware(['auth', 'permiso:medico'])->prefix('medico')->group(function 
     Route::post('/{id}/atendido',    [MedicoController::class, 'atendido'])->whereNumber('id');
 });
 
+// Panel médico en el shell V2 — mismo middleware que prod (auth + permiso:medico,
+// FUERA de SecretariaAuth porque los médicos no declaran colas). Reusa los
+// endpoints /medico/* de arriba; solo cambia el cascarón a layouts/v2.
+Route::middleware(['auth', 'permiso:medico'])
+    ->get('/v2/medico', [\App\Http\Controllers\V2Controller::class, 'medico']);
+
 // Área de secretaria — requiere auth + activo + colas declaradas
 Route::middleware([SecretariaAuth::class])->group(function () {
 

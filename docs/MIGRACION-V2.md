@@ -28,16 +28,16 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 | 9 | Reportes / Estadísticas | `/admin/estadisticas` | `/v2/reportes` | ✅ | Nativo, 3 tabs |
 | 10 | Admin (10 subpáginas) | `/admin/*` | `/v2/admin/{pag}` | 🟡 | **Shell-wrap**: vistas de prod dentro del layout V2, no rediseñadas |
 | 11 | Recepción / Secretaría (turnos) | `/secretaria`, `/cola-bot`, `/inbox-wa` | — | 🔴 | Subsistema de turnos de sala; Livewire |
-| 12 | Médico (Mi consultorio) | `/medico` | — | 🔴 | Panel de llamado de pacientes |
+| 12 | Médico (Mi consultorio) | `/medico` | `/v2/medico` | ✅ | Reusa endpoints `/medico/*`; sala/llamar/rellamar/atendido + tareas + agenda Omnia |
 | 13 | Documentos de paciente | `/pacientes/{id}/documentos` | — | 🔴 | V2 hoy linkea a la UI de prod |
 | 14 | Chat interno | widget | (widget en layout V2) | ✅ | Mismo widget React, ya incluido |
 | 15 | Declarar colas | `/declarar-colas` (Livewire) | — | 🟡 | Hay botón ⇄; restyle menor |
 | 16 | Llamador (TV pública) | `/llamador` | — | ⚪ | Pantalla pública, no usa el shell |
 | 17 | Tablet (sala pública) | `/tablet` | — | ⚪ | Pantalla pública, no usa el shell |
 
-**Resumen:** 9 áreas con paridad V2, 1 shell-wrap (Admin), 4 gaps reales
-(Recepción, Médico, Documentos, Login/Declarar), 2 fuera de alcance (pantallas
-públicas).
+**Resumen:** 10 áreas con paridad V2, 1 shell-wrap (Admin), 2 gaps reales
+(Recepción, Login/Declarar), 2 fuera de alcance (pantallas públicas).
+Documentos (13) y Médico (12) ya migrados.
 
 ---
 
@@ -50,10 +50,12 @@ públicas).
   - [ ] Portar `ColaBot` (derivaciones del bot a recepción)
   - [ ] Portar `InboxWA` si sigue en uso (evaluar si se solapa con Atención V2)
   - [ ] Definir: ¿se reescribe el Livewire a JS+endpoints como el resto de V2, o se shell-wrappea como Admin?
-- [ ] **Médico / Mi consultorio** (`/v2/medico`)
-  - [ ] Lista de pacientes en espera + llamar / rellamar / atendido
-  - [ ] Crear tarea desde el panel
-  - [ ] Integración con el Llamador (TV)
+- [x] **Médico / Mi consultorio** (`/v2/medico`) — *2026-06-29*
+  - [x] Lista de pacientes en espera + llamar / rellamar / atendido
+  - [x] Crear tarea desde el panel (modal V2)
+  - [x] Integración con el Llamador (TV): vía `cola_atencion.llamado_consultorio_at`, sin cambios — llamar desde V2 dispara el anuncio igual que prod
+  - [x] Agenda Omnia del día + atajos de chat a secretarias (reusa `/chat/usuarios` + widget)
+  - [ ] Pulido a nativo: `confirm()` de "marcar atendido" → modal V2; usar `.v2-dialog` en vez del overlay propio
 - [x] **Documentos de paciente** (`/v2/pacientes/{id}/documentos`) — *2026-06-29*
   - [x] Legajo en shell V2: listado, filtros, upload manual, preview (modal), descargar, zip, destacar, notas, reenviar, eliminar, mini-player de audio — reusa los endpoints de prod sin tocar backend
   - [x] El link del legajo de Atención V2 ahora apunta a `/v2/pacientes/{id}/documentos`
@@ -111,9 +113,13 @@ los 4 gaps, no en el backend.
 | **3. Cutover gradual (Bloque C)** | Flag `ui_pref`, piloto, default V2 | Mayoría en V2, V1 como fallback | Bajo (reversible por flag) |
 | **4. Retiro V1 (Bloque D)** | Borrar V1 cuando esté estable | Una sola UI | Bajo si se esperó |
 
-**Orden recomendado dentro de Fase 2:** Documentos (autocontenido, desbloquea el
-legajo de Atención) → Médico (acotado) → Recepción/Turnos (el más grande) →
-Admin (decidir shell vs nativo).
+**Orden recomendado dentro de Fase 2:** ~~Documentos~~ ✅ → ~~Médico~~ ✅ →
+**Recepción/Turnos (el próximo, el más grande)** → Admin (decidir shell vs nativo).
+
+> Nota sobre Médico: resultó de bajo riesgo porque la UI de prod ya era JS+endpoints
+> (no Livewire real). El port reusó `/medico/data` + `/medico/{id}/llamar|rellamar|
+> atendido` + `/medico/tareas` sin tocar backend. La sincronización con el Llamador
+> es por columna de DB, así que funciona idéntico desde el shell V2.
 
 **Sugerencia de arranque:** Fase 1 sobre **Atención** (ya es la más usada y
 madura) para fijar el patrón de auditoría, y en paralelo **Documentos** de
@@ -125,7 +131,7 @@ Fase 2 porque es chico y autocontenido.
 
 Tomadas (2026-06-29):
 - ✅ **Arranque**: empezar por **Documentos de paciente** (gap chico, autocontenido, desbloquea el legajo de Atención V2).
-- ✅ **Recepción/Médico**: **reescribir Livewire → JS + endpoints** (consistencia con el resto de V2, una sola arquitectura).
+- ✅ **Recepción/Médico**: **reescribir Livewire → JS + endpoints** (consistencia con el resto de V2, una sola arquitectura). **Médico hecho** (2026-06-29); Recepción pendiente.
 - ⏳ **Cutover**: mecanismo a definir más adelante (cerrar gaps primero).
 
 Abiertas:

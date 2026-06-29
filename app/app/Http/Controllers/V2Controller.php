@@ -233,6 +233,43 @@ class V2Controller extends Controller
     }
 
     /**
+     * Panel "Mi consultorio" en el shell V2. Reusa íntegramente los endpoints de
+     * producción (MedicoController: /medico/data, /medico/{id}/llamar|rellamar|
+     * atendido, /medico/tareas) — acá solo se resuelve el médico para el header y
+     * la lista de destinatarios del modal de tareas; el resto carga por polling.
+     */
+    public function medico()
+    {
+        $u = Auth::user();
+        $m = $u->medico_id ? \App\Models\Medico::find($u->medico_id) : null;
+        if (!$m) {
+            abort(403, 'Tu usuario no está vinculado a un médico. Pedile a un administrador que te asocie uno.');
+        }
+
+        // Mismos destinatarios que /medico (secretarias/supervisoras/admin, no médicos ni uno mismo).
+        $destinatarios = User::where('activo', true)
+            ->where('id', '!=', $u->id)
+            ->where(function ($q) {
+                $q->where('rol', '!=', 'medico')->orWhereNull('rol');
+            })
+            ->orderBy('nombre_completo')
+            ->get(['id', 'nombre_completo', 'rol'])
+            ->map(fn ($x) => [
+                'id'     => $x->id,
+                'nombre' => $x->nombre_completo,
+                'rol'    => User::ROLES[$x->rol] ?? $x->rol,
+            ]);
+
+        return view('v2.medico', [
+            'medico'        => $m,
+            'destinatarios' => $destinatarios,
+            'modulo'        => 'Consultorio',
+            'title'         => 'Mi consultorio',
+            'navActive'     => 'medico',
+        ]);
+    }
+
+    /**
      * Legajo de documentos del paciente en el shell V2. Reusa los mismos
      * endpoints de producción (DocumentoController); solo cambia el cascarón.
      */
