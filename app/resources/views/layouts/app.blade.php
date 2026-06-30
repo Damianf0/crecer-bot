@@ -102,6 +102,9 @@
 
     <div style="display:flex;align-items:center;gap:0;flex-shrink:0;">
         @auth
+            {{-- Cutover V2 (Fase 3): probar la interfaz nueva y dejarla como predeterminada. --}}
+            <a href="/cambiar-ui/v2" class="nav-link" title="Probar la nueva interfaz (V2) y dejarla como predeterminada"
+               style="font-size:12px;padding:0 11px;color:var(--accent);font-weight:700;border-left:1px solid var(--border);">✨ Probar V2</a>
             {{-- El chat interno ya no tiene botón en el navbar; el punto de
                  entrada único es el FAB flotante (inferior derecha) del
                  widget React. Ver resources/js/chat/components/ChatFab.tsx. --}}

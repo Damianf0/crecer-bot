@@ -49,7 +49,7 @@
             <span class="v2-dot warn" id="bots-dot"></span><span id="bots-txt">Bots…</span>
         </span>
         <button class="tb-btn" id="theme-btn" title="Cambiar tema">🌙</button>
-        <a class="tb-btn" href="/atencion" style="text-decoration:none;" title="Volver a la interfaz actual">UI actual ↗</a>
+        <a class="tb-btn" href="/cambiar-ui/v1" style="text-decoration:none;" title="Volver a la interfaz clásica y dejarla como predeterminada">UI clásica</a>
         @if(auth()->user()?->hasPermiso('secretaria'))
         <a class="tb-btn" href="/declarar-colas" style="text-decoration:none;" title="Cambiar mis colas">⇄</a>
         @endif

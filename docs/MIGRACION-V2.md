@@ -92,12 +92,16 @@ Para cada una, comparar 1:1 contra la versión de prod y cerrar diferencias:
 
 ### Bloque C — Cutover (hacer V2 el default)
 
-- [ ] Mecanismo de preferencia por usuario: columna `users.ui_pref` (`v1`|`v2`)
-- [ ] `/` y los redirects por permiso honran `ui_pref`
-- [ ] Toggle visible en ambos navbars ("Probar V2" / "UI actual")
-- [ ] Piloto: activar V2 a 1-2 usuarios power, iterar feedback
+- [x] Mecanismo de preferencia por usuario: columna `users.ui_pref` (`v1`|`v2`, default `v1`) — *2026-06-29*. Helper `User::prefiereV2()`.
+- [x] `/` y el redirect post-login honran `ui_pref` — *2026-06-29*. `/` manda a `/v2/mi-dia` (secretaria/atención), `/v2/medico` o `/v2/admin` según permiso; `DeclaracionColas` ahora redirige a `/` (antes hardcodeaba `/secretaria`) para que el flag aplique en el login diario.
+- [x] Toggle en ambos navbars — *2026-06-29*. Prod: "✨ Probar V2" → `/cambiar-ui/v2`. V2: "UI clásica" → `/cambiar-ui/v1`. El endpoint setea `ui_pref` y vuelve a `/` (que rutea según el flag).
+- [ ] Piloto: activar V2 a 1-2 usuarios power, iterar feedback (poner su `ui_pref=v2` o que toquen "Probar V2")
 - [ ] Default V2 para todos los nuevos; opt-out disponible
 - [ ] Flip global: V2 default para todos, V1 como escape hatch
+
+**Nota cutover:** no hay usuarios "admin puro" (los roles admin/supervisora/técnico
+incluyen `secretaria` en `PERMISOS_DEFAULT`), así que todos caen en una rama V2
+alcanzable. `default v1` = nadie se mueve hasta que toque el toggle (reversible).
 
 ### Bloque D — Retiro de V1
 
@@ -124,7 +128,11 @@ los 4 gaps, no en el backend.
 
 **Fase 2 COMPLETA:** ~~Documentos~~ ✅ → ~~Médico~~ ✅ → ~~Recepción/Turnos~~ ✅ →
 ~~Admin (shell-wrap definitivo)~~ ✅. V2 cubre el 100% del uso operativo diario.
-**Próximo: Fase 3 (cutover gradual con flag `ui_pref`).**
+
+**Fase 3 EN PROGRESO:** mecanismo de cutover listo (flag `ui_pref` + toggle en
+ambos navbars + `/` y login honran el flag). Falta: **piloto** con 1-2 power
+users → default para nuevos → flip global. Default actual `v1` (nadie se mueve
+hasta tocar "✨ Probar V2").
 
 > Nota sobre Médico: resultó de bajo riesgo porque la UI de prod ya era JS+endpoints
 > (no Livewire real). El port reusó `/medico/data` + `/medico/{id}/llamar|rellamar|

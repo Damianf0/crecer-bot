@@ -101,7 +101,8 @@ class DeclaracionColas extends Component
 
         session(['colas' => $this->colasSeleccionadas]);
 
-        $this->redirect('/secretaria', navigate: false);
+        // A `/` para que rutee según ui_pref (v1 → /secretaria, v2 → /v2/mi-dia).
+        $this->redirect('/', navigate: false);
     }
 
     public function render()

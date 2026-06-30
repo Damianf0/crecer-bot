@@ -23,6 +23,7 @@ class User extends Authenticatable
         'intentos_fallidos',
         'bloqueado_hasta',
         'medico_id',
+        'ui_pref',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -36,6 +37,12 @@ class User extends Authenticatable
             'permisos'          => 'array',
             'bloqueado_hasta'   => 'datetime',
         ];
+    }
+
+    /** ¿El usuario eligió la interfaz V2 como predeterminada? (cutover Fase 3) */
+    public function prefiereV2(): bool
+    {
+        return ($this->ui_pref ?? 'v1') === 'v2';
     }
 
     /** Configuración de lockout */

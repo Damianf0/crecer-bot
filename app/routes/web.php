@@ -26,12 +26,31 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     if (!Auth::check()) return redirect('/login');
     $u = Auth::user();
+
+    // Cutover V2 (Fase 3): si el usuario eligió la interfaz nueva, lo mandamos a
+    // su home V2. Cada destino tiene el mismo middleware que su equivalente de
+    // prod, así que es seguro. Mi día (/v2/mi-dia) es el home de los usuarios de
+    // cola (secretaria/atencion); médicos y admins van a su panel propio.
+    if ($u->prefiereV2()) {
+        if ($u->hasPermiso('secretaria') || $u->hasPermiso('atencion')) return redirect('/v2/mi-dia');
+        if ($u->hasPermiso('medico'))     return redirect('/v2/medico');
+        if ($u->hasPermiso('admin'))      return redirect('/v2/admin');
+    }
+
     if ($u->hasPermiso('secretaria')) return redirect('/secretaria');
     if ($u->hasPermiso('medico'))     return redirect('/medico');
     if ($u->hasPermiso('atencion'))   return redirect('/atencion');
     if ($u->hasPermiso('admin'))      return redirect('/admin');
     return redirect('/login');
 });
+
+// Cutover V2: cambia la interfaz preferida del usuario y vuelve al home, que
+// rutea según el flag. Toggle de los navbars (prod → "Probar V2", V2 → "UI clásica").
+Route::get('/cambiar-ui/{pref}', function (string $pref) {
+    if (!Auth::check()) return redirect('/login');
+    Auth::user()->update(['ui_pref' => $pref]);
+    return redirect('/');
+})->whereIn('pref', ['v1', 'v2']);
 
 // Auth
 Route::get('/login',  Login::class)->name('login');
