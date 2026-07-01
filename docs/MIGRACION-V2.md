@@ -17,7 +17,7 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 
 | # | Área | Ruta prod | Ruta V2 | Estado | Nota |
 |---|------|-----------|---------|--------|------|
-| 1 | Login | `/login` (Livewire) | — | 🔴 | Restyle menor, baja prioridad |
+| 1 | Login | `/login` (Livewire) | — | ✅ | Restyleado al look V2 (layout `minimal`) 2026-06-30 |
 | 2 | Mi día (home) | redirect por permiso | `/v2/mi-dia` | ✅ | **Solo existe en V2** (nativo) |
 | 3 | Atención — colas WA (×3) | `/atencion/{area}` | `/v2/atencion/{area}` | ✅ | La más madura; agendar tareas + legajo |
 | 4 | Mis conversaciones | `/mis-conversaciones` | `/v2/mis-conversaciones` | ✅ | |
@@ -31,7 +31,7 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 | 12 | Médico (Mi consultorio) | `/medico` | `/v2/medico` | ✅ | Reusa endpoints `/medico/*`; sala/llamar/rellamar/atendido + tareas + agenda Omnia |
 | 13 | Documentos de paciente | `/pacientes/{id}/documentos` | `/v2/pacientes/{id}/documentos` | ✅ | Legajo nativo en shell V2 (reusa endpoints de prod) |
 | 14 | Chat interno | widget | (widget en layout V2) | ✅ | Mismo widget React, ya incluido |
-| 15 | Declarar colas | `/declarar-colas` (Livewire) | — | 🟡 | Hay botón ⇄; restyle menor |
+| 15 | Declarar colas | `/declarar-colas` (Livewire) | — | ✅ | Restyleado al look V2 (layout `minimal`) 2026-06-30 |
 | 16 | Llamador (TV pública) | `/llamador` | — | ⚪ | Pantalla pública, no usa el shell |
 | 17 | Tablet (sala pública) | `/tablet` | — | ⚪ | Pantalla pública, no usa el shell |
 
@@ -73,8 +73,10 @@ decidido. `InboxWA` queda absorbido por `/v2/atencion`. **Fase 2 cerrada.**
         claro/oscuro funciona** vía el puente (`var(--card)`→`--v2-bg-card`, sigue `[data-theme]`),
         el sub-nav (`admin/_nav`) es V2-aware (tabs quedan dentro del shell) y Estadísticas
         redirige a `/v2/reportes` (versión nativa). **No requirió cambios de código.**
-- [ ] **Login / Declarar colas** (cosmético)
-  - [ ] Restyle al design system V2 (opcional, no bloquea cutover)
+- [x] **Login / Declarar colas** (cosmético) — *2026-06-30*
+  - [x] Restyle al design system V2: `layouts/minimal` (que usan ambas, fuera del
+        shell) carga `crecer-v2.css` (tokens + Inter + puente) y comparte tema con
+        V2. Override `--card`→`--v2-bg-card` para contraste de tarjetas.
 
 ### Bloque B — Endurecer las V2 que ya existen (paridad fina)
 
