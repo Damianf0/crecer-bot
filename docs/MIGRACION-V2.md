@@ -1,6 +1,6 @@
 # Migración a la interfaz V2
 
-> Estado: **en progreso**. Última actualización: 2026-06-29.
+> Estado: **V2 es el default (flip 2026-06-30)**. V1 queda como legacy. Última actualización: 2026-06-30.
 > V2 corre en `/v2/*` en paralelo a producción, **consumiendo los mismos
 > endpoints y permisos**. Por eso la migración es casi 100% UI + cutover:
 > el backend y los datos ya están compartidos (riesgo bajo de datos).
@@ -29,7 +29,7 @@ Leyenda: ✅ paridad/nativo · 🟡 parcial · 🔴 falta · ⚪ fuera de alcanc
 | 10 | Admin (10 subpáginas) | `/admin/*` | `/v2/admin/{pag}` | ✅ | **Shell-wrap definitivo** (auditado 2026-06-29): se ve bien en V2, no se rediseña |
 | 11 | Recepción / Secretaría (turnos) | `/secretaria`, `/cola-bot`, `/inbox-wa` | `/v2/recepcion` | ✅ | 2 tabs (sala + bot). `InboxWA` lo absorbe `/v2/atencion` (no se porta) |
 | 12 | Médico (Mi consultorio) | `/medico` | `/v2/medico` | ✅ | Reusa endpoints `/medico/*`; sala/llamar/rellamar/atendido + tareas + agenda Omnia |
-| 13 | Documentos de paciente | `/pacientes/{id}/documentos` | — | 🔴 | V2 hoy linkea a la UI de prod |
+| 13 | Documentos de paciente | `/pacientes/{id}/documentos` | `/v2/pacientes/{id}/documentos` | ✅ | Legajo nativo en shell V2 (reusa endpoints de prod) |
 | 14 | Chat interno | widget | (widget en layout V2) | ✅ | Mismo widget React, ya incluido |
 | 15 | Declarar colas | `/declarar-colas` (Livewire) | — | 🟡 | Hay botón ⇄; restyle menor |
 | 16 | Llamador (TV pública) | `/llamador` | — | ⚪ | Pantalla pública, no usa el shell |
@@ -95,13 +95,22 @@ Para cada una, comparar 1:1 contra la versión de prod y cerrar diferencias:
 - [x] Mecanismo de preferencia por usuario: columna `users.ui_pref` (`v1`|`v2`, default `v1`) — *2026-06-29*. Helper `User::prefiereV2()`.
 - [x] `/` y el redirect post-login honran `ui_pref` — *2026-06-29*. `/` manda a `/v2/mi-dia` (secretaria/atención), `/v2/medico` o `/v2/admin` según permiso; `DeclaracionColas` ahora redirige a `/` (antes hardcodeaba `/secretaria`) para que el flag aplique en el login diario.
 - [x] Toggle en ambos navbars — *2026-06-29*. Prod: "✨ Probar V2" → `/cambiar-ui/v2`. V2: "UI clásica" → `/cambiar-ui/v1`. El endpoint setea `ui_pref` y vuelve a `/` (que rutea según el flag).
-- [ ] Piloto: activar V2 a 1-2 usuarios power, iterar feedback (poner su `ui_pref=v2` o que toquen "Probar V2")
-- [ ] Default V2 para todos los nuevos; opt-out disponible
-- [ ] Flip global: V2 default para todos, V1 como escape hatch
+- [x] **Flip global** — *2026-06-30*. Migración `2026_06_30_140000_default_ui_pref_to_v2`:
+      default de `ui_pref` → `v2` (nuevos usuarios arrancan en V2) + UPDATE masivo de
+      los 13 usuarios existentes a `v2`. V1 queda como **legacy/escape hatch** vía el
+      toggle "UI clásica" (`/cambiar-ui/v1`). Reversible por usuario.
+  - Backup previo: `backups/20260630-143304-pre-cutover-v2` (DB 21MB + 3 sesiones WA).
+    Tag git de rollback: `estable-pre-cutover-v2`.
+  - Verificación pre-flip: smoke-test de 23 endpoints V2 renderizando sin 500;
+    redirect de los 13 usuarios a un home V2 válido.
+  - **Caveat de datos (no bloqueante):** `elena` (médico-puro) tiene `medico_id=NULL`
+    → `/v2/medico` da 403, **igual que `/medico` de prod** (mismo guard). Es un dato
+    faltante preexistente, no una regresión: hay que vincular su usuario a un `Medico`.
 
 **Nota cutover:** no hay usuarios "admin puro" (los roles admin/supervisora/técnico
 incluyen `secretaria` en `PERMISOS_DEFAULT`), así que todos caen en una rama V2
-alcanzable. `default v1` = nadie se mueve hasta que toque el toggle (reversible).
+alcanzable. Como `validate_timestamps=Off` + preload, el flip requirió `restart web`
+para que php-fpm cargara el código nuevo (no basta el cambio en disco/DB).
 
 ### Bloque D — Retiro de V1
 
@@ -129,10 +138,10 @@ los 4 gaps, no en el backend.
 **Fase 2 COMPLETA:** ~~Documentos~~ ✅ → ~~Médico~~ ✅ → ~~Recepción/Turnos~~ ✅ →
 ~~Admin (shell-wrap definitivo)~~ ✅. V2 cubre el 100% del uso operativo diario.
 
-**Fase 3 EN PROGRESO:** mecanismo de cutover listo (flag `ui_pref` + toggle en
-ambos navbars + `/` y login honran el flag). Falta: **piloto** con 1-2 power
-users → default para nuevos → flip global. Default actual `v1` (nadie se mueve
-hasta tocar "✨ Probar V2").
+**Fase 3 COMPLETA (flip hecho 2026-06-30):** V2 es el default para todos. Los 13
+usuarios migrados a `ui_pref=v2` y el default de la columna es `v2`. V1 queda como
+**legacy** accesible con el toggle "UI clásica". Próximo: **Fase 4 (retiro de V1)**
+tras N semanas estable sin opt-outs.
 
 > Nota sobre Médico: resultó de bajo riesgo porque la UI de prod ya era JS+endpoints
 > (no Livewire real). El port reusó `/medico/data` + `/medico/{id}/llamar|rellamar|
