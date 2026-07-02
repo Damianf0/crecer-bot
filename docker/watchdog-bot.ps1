@@ -1,29 +1,40 @@
-﻿# Watchdog del bot WhatsApp - Crecer
+﻿# Watchdog de los bots WhatsApp - Crecer (multi-area)
 # Tarea Windows que cada 5 min verifica:
 #   1. Que Docker Desktop este corriendo (si no, lo levanta).
-#   2. Que el bot responda HTTP en :3001/status.
-#   3. Que su estado sea "listo" (no quedo colgado en "iniciando" o "autenticado").
-# Si detecta caida sostenida (>10 min), hace 'docker restart crecer-bot-1'
-# (rate-limited a 1 cada 5 min). EXCEPCION: estado "esperando_qr" — la sesion
-# se perdio y hace falta escanear QR a mano; reiniciar solo regenera el QR en
-# loop (incidente 01/07). En ese caso NO reinicia, solo alerta.
+#   2. Que CADA bot (atencion 3001, administracion 3002, ovodonacion 3003)
+#      responda HTTP en /status y este "listo".
+# Si un bot esta caido sostenido (>10 min), hace docker restart de SU container
+# (rate-limited a 1 cada 5 min por bot). EXCEPCION: estado "esperando_qr" -- la
+# sesion se perdio y hace falta escanear QR a mano; reiniciar solo regenera el
+# QR en loop (incidente 01/07). En ese caso NO reinicia, solo alerta.
 # Notifica por WhatsApp a Damian al INICIO del incidente sostenido y al
-# recuperarse. Como el bot de atencion (3001) puede ser justamente el caido,
-# intenta enviar por atencion -> administracion (3002) -> ovodonacion (3003).
+# recuperarse, indicando el area. Como el bot caido puede ser justamente el
+# emisor, intenta enviar por atencion -> administracion -> ovodonacion.
+#
+# Historia: hasta 01/07 solo vigilaba atencion (3001) -- por eso el freeze de
+# administracion de junio duro 10 dias sin que nadie se entere.
+#
+# Programado en Windows (cada 5 min):
+#   schtasks /Create /SC MINUTE /MO 5 /TN "Crecer\WatchdogBot" `
+#     /TR "powershell -NoProfile -ExecutionPolicy Bypass -File C:\crecer\docker\watchdog-bot.ps1" /F /RU SYSTEM
 
 $ErrorActionPreference = 'Continue'
 
 # === CONFIG ===
-$BotUrl          = 'http://localhost:3001'
 # Token leido desde bot/.env (no commitear creds en este script).
 $BotIngressToken = (Get-Content 'C:\crecer\bot\.env' -ErrorAction SilentlyContinue |
     Where-Object { $_ -match '^BOT_INGRESS_TOKEN=' } |
     ForEach-Object { ($_ -split '=', 2)[1].Trim() }) | Select-Object -First 1
-$BotContainer    = 'crecer-bot-1'
-$NotifyToJid     = '5492235594007@c.us'
-$DockerExe       = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
-$IncidenteMin    = 10
-$RestartMinGap   = 5
+$NotifyToJid   = '5492235594007@c.us'
+$DockerExe     = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+$IncidenteMin  = 10
+$RestartMinGap = 5
+
+$Bots = @(
+    @{ Area = 'atencion';       Port = 3001; Ctr = 'crecer-bot-1' },
+    @{ Area = 'administracion'; Port = 3002; Ctr = 'crecer-bot-administracion-1' },
+    @{ Area = 'ovodonacion';    Port = 3003; Ctr = 'crecer-bot-ovodonacion-1' }
+)
 
 $StateFile = 'C:\crecer\backups\auto\watchdog-state.json'
 $LogFile   = 'C:\crecer\backups\auto\watchdog.log'
@@ -35,21 +46,38 @@ function Log {
     Add-Content -Path $LogFile -Value $line
 }
 
+# Estado por area: { last_listo_at, incident_start_at, last_restart_at, last_reason, incident_notified }
 function CargarEstado {
+    $raw = $null
     if (Test-Path $StateFile) {
-        try { return Get-Content $StateFile -Raw | ConvertFrom-Json } catch { }
+        try { $raw = Get-Content $StateFile -Raw | ConvertFrom-Json } catch { }
     }
-    return [pscustomobject]@{
-        last_listo_at     = $null
-        incident_start_at = $null
-        last_restart_at   = $null
-        last_reason       = $null
+    $state = @{}
+    foreach ($b in $Bots) {
+        $a = $b.Area
+        $prev = $null
+        if ($raw) {
+            if ($raw.PSObject.Properties.Name -contains $a) {
+                $prev = $raw.$a
+            } elseif ($a -eq 'atencion' -and $raw.PSObject.Properties.Name -contains 'incident_start_at') {
+                # Migracion del formato viejo (single-bot plano) -> clave atencion
+                $prev = $raw
+            }
+        }
+        $state[$a] = @{
+            last_listo_at     = if ($prev) { $prev.last_listo_at }     else { $null }
+            incident_start_at = if ($prev) { $prev.incident_start_at } else { $null }
+            last_restart_at   = if ($prev) { $prev.last_restart_at }   else { $null }
+            last_reason       = if ($prev) { $prev.last_reason }       else { $null }
+            incident_notified = if ($prev -and $prev.PSObject.Properties.Name -contains 'incident_notified') { [bool]$prev.incident_notified } else { $false }
+        }
     }
+    return $state
 }
 
 function GuardarEstado {
     param($state)
-    $state | ConvertTo-Json | Out-File -FilePath $StateFile -Encoding utf8 -Force
+    $state | ConvertTo-Json -Depth 3 | Out-File -FilePath $StateFile -Encoding utf8 -Force
 }
 
 function NotificarWA {
@@ -82,7 +110,7 @@ function DockerCorriendo {
 $state = CargarEstado
 $now   = Get-Date
 
-# 1) Verificar Docker Desktop
+# 1) Verificar Docker Desktop (una sola vez por corrida)
 if (-not (DockerCorriendo)) {
     Log 'Docker no responde - intentando levantar Docker Desktop'
     if (Test-Path $DockerExe) {
@@ -91,6 +119,7 @@ if (-not (DockerCorriendo)) {
         Start-Sleep -Seconds 90
         if (-not (DockerCorriendo)) {
             Log 'Docker sigue sin responder tras 90s. Saliendo, proxima corrida reintenta.'
+            GuardarEstado $state
             return
         }
         Log 'Docker arriba.'
@@ -100,83 +129,85 @@ if (-not (DockerCorriendo)) {
     }
 }
 
-# 2) Pegar al bot /status
-$status = $null
-$httpOk = $false
-try {
-    $resp = Invoke-RestMethod -Uri ($BotUrl + '/status') -TimeoutSec 8 -ErrorAction Stop
-    $httpOk = $true
-    $status = $resp.status
-} catch {
+# 2) Chequear cada bot y correr su maquina de estados
+foreach ($b in $Bots) {
+    $area = $b.Area
+    $s    = $state[$area]
+
+    $status = $null
     $httpOk = $false
-}
-
-if (-not $httpOk) {
-    $reason = 'Bot no responde HTTP en :3001/status'
-} elseif ($status -ne 'listo') {
-    $reason = 'Bot en estado: ' + $status
-} else {
-    $reason = $null
-}
-
-# Log de heartbeat (1 linea por corrida, util para confirmar que la tarea programada esta corriendo)
-if ($null -eq $reason) {
-    Log ('OK status=' + $status)
-} else {
-    Log ('ALERTA: ' + $reason)
-}
-
-# 3) Maquina de estados
-if ($null -eq $reason) {
-    if ($state.incident_start_at) {
-        $start = [DateTime]$state.incident_start_at
-        $durMin = [int][Math]::Round(($now - $start).TotalMinutes)
-        $reasonPrev = $state.last_reason
-        $msg = 'Bot recuperado. Estuvo en falla ' + $durMin + ' min. Motivo: ' + $reasonPrev + '.'
-        Log ('RECUPERADO: ' + $msg)
-        NotificarWA ('Watchdog Crecer: ' + $msg) | Out-Null
-        $state.incident_start_at = $null
-        $state.last_reason       = $null
-        $state | Add-Member -NotePropertyName incident_notified -NotePropertyValue $false -Force
+    try {
+        $resp = Invoke-RestMethod -Uri ('http://localhost:' + $b.Port + '/status') -TimeoutSec 8 -ErrorAction Stop
+        $httpOk = $true
+        $status = $resp.status
+    } catch {
+        $httpOk = $false
     }
-    $state.last_listo_at = $now.ToString('o')
-} else {
-    if (-not $state.incident_start_at) {
-        $state.incident_start_at = $now.ToString('o')
-        $state.last_reason       = $reason
-        Log ('INICIO INCIDENTE: ' + $reason)
+
+    if (-not $httpOk) {
+        $reason = 'Bot ' + $area + ' no responde HTTP en :' + $b.Port + '/status'
+    } elseif ($status -ne 'listo') {
+        $reason = 'Bot ' + $area + ' en estado: ' + $status
     } else {
-        $start = [DateTime]$state.incident_start_at
-        $durMin = ($now - $start).TotalMinutes
-        $durStr = [int]$durMin
-        Log ('INCIDENTE en curso (' + $durStr + ' min): ' + $reason)
+        $reason = $null
+    }
 
-        if ($durMin -ge $IncidenteMin) {
-            # Avisar UNA vez al cruzar el umbral (antes solo avisaba al recuperarse
-            # y un incidente largo pasaba inadvertido — 6 horas el 01/07).
-            if (-not $state.incident_notified) {
-                $msg = 'Watchdog Crecer: bot atencion en falla hace ' + $durStr + ' min. Motivo: ' + $reason + '.'
-                if ($status -eq 'esperando_qr') { $msg += ' Sesion perdida: hay que escanear QR desde /admin con el celular del area.' }
-                NotificarWA $msg | Out-Null
-                $state | Add-Member -NotePropertyName incident_notified -NotePropertyValue $true -Force
-            }
+    # Heartbeat (1 linea por bot por corrida)
+    if ($null -eq $reason) {
+        Log ('OK [' + $area + '] status=' + $status)
+    } else {
+        Log ('ALERTA [' + $area + ']: ' + $reason)
+    }
 
-            # esperando_qr: reiniciar no sirve (regenera el QR en loop) — solo esperar el escaneo.
-            if ($status -eq 'esperando_qr') {
-                Log 'Estado esperando_qr: NO se reinicia (requiere escaneo manual de QR)'
-            } else {
-                $puedeRestart = $true
-                if ($state.last_restart_at) {
-                    $sinceRestart = ($now - [DateTime]$state.last_restart_at).TotalMinutes
-                    if ($sinceRestart -lt $RestartMinGap) { $puedeRestart = $false }
+    if ($null -eq $reason) {
+        if ($s.incident_start_at) {
+            $start = [DateTime]$s.incident_start_at
+            $durMin = [int][Math]::Round(($now - $start).TotalMinutes)
+            $msg = 'Bot ' + $area + ' recuperado. Estuvo en falla ' + $durMin + ' min. Motivo: ' + $s.last_reason + '.'
+            Log ('RECUPERADO [' + $area + ']: ' + $msg)
+            NotificarWA ('Watchdog Crecer: ' + $msg) | Out-Null
+            $s.incident_start_at = $null
+            $s.last_reason       = $null
+            $s.incident_notified = $false
+        }
+        $s.last_listo_at = $now.ToString('o')
+    } else {
+        if (-not $s.incident_start_at) {
+            $s.incident_start_at = $now.ToString('o')
+            $s.last_reason       = $reason
+            Log ('INICIO INCIDENTE [' + $area + ']: ' + $reason)
+        } else {
+            $start = [DateTime]$s.incident_start_at
+            $durMin = ($now - $start).TotalMinutes
+            $durStr = [int]$durMin
+            Log ('INCIDENTE en curso [' + $area + '] (' + $durStr + ' min): ' + $reason)
+
+            if ($durMin -ge $IncidenteMin) {
+                # Avisar UNA vez al cruzar el umbral
+                if (-not $s.incident_notified) {
+                    $msg = 'Watchdog Crecer: bot ' + $area + ' en falla hace ' + $durStr + ' min. Motivo: ' + $reason + '.'
+                    if ($status -eq 'esperando_qr') { $msg += ' Sesion perdida: hay que escanear QR desde /admin con el celular del area.' }
+                    NotificarWA $msg | Out-Null
+                    $s.incident_notified = $true
                 }
-                if ($puedeRestart) {
-                    Log ('Ejecutando: docker restart ' + $BotContainer)
-                    & docker restart $BotContainer 2>&1 | ForEach-Object { Log ('  ' + $_) }
-                    $state.last_restart_at = $now.ToString('o')
-                    $state.last_reason     = $reason + ' (restart automatico)'
+
+                # esperando_qr: reiniciar no sirve (regenera el QR en loop) -- solo esperar el escaneo.
+                if ($status -eq 'esperando_qr') {
+                    Log ('Estado esperando_qr [' + $area + ']: NO se reinicia (requiere escaneo manual de QR)')
                 } else {
-                    Log ('Esperando ventana entre restarts (' + $RestartMinGap + ' min)')
+                    $puedeRestart = $true
+                    if ($s.last_restart_at) {
+                        $sinceRestart = ($now - [DateTime]$s.last_restart_at).TotalMinutes
+                        if ($sinceRestart -lt $RestartMinGap) { $puedeRestart = $false }
+                    }
+                    if ($puedeRestart) {
+                        Log ('Ejecutando: docker restart ' + $b.Ctr)
+                        & docker restart $b.Ctr 2>&1 | ForEach-Object { Log ('  ' + $_) }
+                        $s.last_restart_at = $now.ToString('o')
+                        $s.last_reason     = $reason + ' (restart automatico)'
+                    } else {
+                        Log ('Esperando ventana entre restarts [' + $area + '] (' + $RestartMinGap + ' min)')
+                    }
                 }
             }
         }
