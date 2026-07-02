@@ -14,10 +14,19 @@ New-Item -ItemType Directory -Path "$BackupRoot\daily","$BackupRoot\weekly","$Ba
 
 $DailyFile = "$BackupRoot\daily\clinica-$Today.sql.gz"
 
+# Password leída de C:\crecer\.env (no hardcodear credenciales en scripts).
+$RootPwd = (Get-Content 'C:\crecer\.env' -ErrorAction SilentlyContinue |
+    Where-Object { $_ -match '^DB_ROOT_PASSWORD=' } |
+    ForEach-Object { ($_ -split '=', 2)[1].Trim() }) | Select-Object -First 1
+if (-not $RootPwd) {
+    Write-Output '[backup] ERROR: DB_ROOT_PASSWORD no encontrada en C:\crecer\.env'
+    exit 1
+}
+
 # Dump comprimido — usa MYSQL_PWD via -e para evitar warning de password en CLI.
 # Redirección hecha en cmd.exe (no PowerShell) para preservar bytes binarios del gzip.
 $tmpErr = [System.IO.Path]::GetTempFileName()
-$cmd = 'docker exec -e MYSQL_PWD=crecer_root_2024 crecer-mysql-1 sh -c "mysqldump --single-transaction --quick --routines --triggers -uroot clinica 2>/dev/null | gzip"'
+$cmd = "docker exec -e MYSQL_PWD=$RootPwd crecer-mysql-1 sh -c `"mysqldump --single-transaction --quick --routines --triggers -uroot clinica 2>/dev/null | gzip`""
 cmd /c "$cmd > `"$DailyFile`" 2> `"$tmpErr`""
 
 $dumpStderr = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue

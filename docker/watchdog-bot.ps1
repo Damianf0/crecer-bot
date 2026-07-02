@@ -1,4 +1,4 @@
-# Watchdog del bot WhatsApp - Crecer
+﻿# Watchdog del bot WhatsApp - Crecer
 # Tarea Windows que cada 5 min verifica:
 #   1. Que Docker Desktop este corriendo (si no, lo levanta).
 #   2. Que el bot responda HTTP en :3001/status.
