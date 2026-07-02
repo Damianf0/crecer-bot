@@ -13,18 +13,30 @@ const headers = () => ({
 /**
  * Notifica a Laravel que la conversación requiere atención humana.
  * Agrega nota interna con clasificación y resumen LLM.
+ * Con reintentos: una derivación perdida = paciente que nunca entra a la cola
+ * de atención. Antes era un solo POST y cualquier restart de Laravel la tiraba.
  */
+const DERIVAR_ESPERA_MS = [5_000, 30_000, 120_000];
+
 async function derivarConversacion(contacto, codigo, resumen = null) {
   if (MODO_SHADOW) { console.log(`[shadow] derivar ${contacto} → ${codigo}`); return; }
-  try {
-    await axios.post(
-      `${LARAVEL_URL}/bot/conversacion/derivar`,
-      { contacto, area: BOT_AREA, codigo, resumen_llm: resumen },
-      { headers: headers(), timeout: 10_000 }
-    );
-    console.log(`[cola] Derivado: ${contacto} → ${codigo}`);
-  } catch (err) {
-    console.error('[cola] Error al derivar conversación:', err.message);
+  for (let i = 0; i <= DERIVAR_ESPERA_MS.length; i++) {
+    try {
+      await axios.post(
+        `${LARAVEL_URL}/bot/conversacion/derivar`,
+        { contacto, area: BOT_AREA, codigo, resumen_llm: resumen },
+        { headers: headers(), timeout: 10_000 }
+      );
+      console.log(`[cola] Derivado: ${contacto} → ${codigo}${i > 0 ? ` (reintento ${i})` : ''}`);
+      return;
+    } catch (err) {
+      if (i === DERIVAR_ESPERA_MS.length) {
+        console.error(`[cola] Derivación PERDIDA (${contacto} → ${codigo}) tras ${i + 1} intentos: ${err.message}`);
+        return;
+      }
+      console.warn(`[cola] Error al derivar (${err.message}) — reintento en ${DERIVAR_ESPERA_MS[i] / 1000}s`);
+      await new Promise((r) => setTimeout(r, DERIVAR_ESPERA_MS[i]));
+    }
   }
 }
 

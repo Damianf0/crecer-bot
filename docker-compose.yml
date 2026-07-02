@@ -159,7 +159,11 @@ services:
     healthcheck:
       # Mira el contenido de /status, no solo HTTP 200 — detecta el estado
       # "zombie" donde el endpoint responde pero el cliente WA no escucha.
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
+      # esperando_qr también cuenta como healthy: requiere escaneo humano y
+      # reiniciar el container solo regenera el QR en loop (incidente 01/07:
+      # autoheal reinició atención cada ~7 min durante 6 horas sin poder
+      # resolver nada). La alerta de ese estado la da watchdog-bot.ps1.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
       interval: 30s
       timeout: 5s
       retries: 4
@@ -189,7 +193,7 @@ services:
     labels:
       - autoheal=true
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
       interval: 30s
       timeout: 5s
       retries: 4
@@ -222,7 +226,7 @@ services:
     labels:
       - autoheal=true
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -q '\"status\":\"listo\"'"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
       interval: 30s
       timeout: 5s
       retries: 4

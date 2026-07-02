@@ -30,6 +30,48 @@ const api = axios.create({
   timeout: 8000,
 });
 
+// POST a Laravel con reintentos. Antes un solo intento con timeout de 8s:
+// cualquier restart del stack (OPcache, wsl --shutdown, deploy) tiraba el
+// mensaje en silencio y el panel quedaba desincronizado con el celular.
+// 4 intentos espaciados cubren ~3 min de Laravel caído. _pendientes acota la
+// memoria si Laravel se cae con tráfico alto: pasado el tope se vuelve al
+// comportamiento viejo (un intento y error logueado).
+const REINTENTOS_ESPERA_MS = [5_000, 30_000, 120_000];
+const MAX_PENDIENTES = 200;
+let _pendientes = 0;
+
+async function postConReintentos(url, payload, etiqueta) {
+  try {
+    await api.post(url, payload);
+    return;
+  } catch (err) {
+    if (_pendientes >= MAX_PENDIENTES) {
+      console.error(`[mensajesApi] ${etiqueta}: fallo y cola de reintentos llena (${_pendientes}) — descartado: ${err.message}`);
+      throw err;
+    }
+    console.warn(`[mensajesApi] ${etiqueta}: fallo (${err.message}) — reintentando`);
+  }
+
+  _pendientes++;
+  try {
+    for (let i = 0; i < REINTENTOS_ESPERA_MS.length; i++) {
+      await new Promise((r) => setTimeout(r, REINTENTOS_ESPERA_MS[i]));
+      try {
+        await api.post(url, payload);
+        console.log(`[mensajesApi] ${etiqueta}: guardado al reintento ${i + 1}`);
+        return;
+      } catch (err) {
+        if (i === REINTENTOS_ESPERA_MS.length - 1) {
+          console.error(`[mensajesApi] ${etiqueta}: PERDIDO tras ${REINTENTOS_ESPERA_MS.length + 1} intentos: ${err.message}`);
+          throw err;
+        }
+      }
+    }
+  } finally {
+    _pendientes--;
+  }
+}
+
 // Persiste el archivo de un mensaje multimedia y devuelve su URL pública.
 // `msg` viene en el shape normalizado del adapter (type, downloadMedia(), etc).
 async function persistirMedia(msg, fallbackExt) {
@@ -87,7 +129,7 @@ async function guardarMensajeEntrante(msg) {
       return; // tipo no soportado
     }
 
-    await api.post('/bot/mensajes', {
+    await postConReintentos('/bot/mensajes', {
       contacto,
       area:      BOT_AREA,
       tipo,
@@ -100,7 +142,7 @@ async function guardarMensajeEntrante(msg) {
       quoted_autor:   msg.quoted?.autor   || null,
       quoted_preview: msg.quoted?.preview || null,
       timestamp: (msg.timestamp || new Date()).toISOString(),
-    });
+    }, `entrante ${contacto}`);
 
   } catch (err) {
     console.error('[mensajesApi] Error guardando entrante:', err.message);
@@ -113,13 +155,13 @@ async function guardarMensajeEntrante(msg) {
 async function guardarMensajeSaliente(contacto, texto, waId = null) {
   if (MODO_SHADOW) { console.log(`[shadow] saliente ${contacto}: ${(texto || '').slice(0, 60)}`); return; }
   try {
-    await api.post('/bot/mensajes/saliente', {
+    await postConReintentos('/bot/mensajes/saliente', {
       contacto,
       area:       BOT_AREA,
       contenido:  texto,
       wa_id:      waId,
       timestamp: new Date().toISOString(),
-    });
+    }, `saliente ${contacto}`);
   } catch (err) {
     console.error('[mensajesApi] Error guardando saliente:', err.message);
   }
@@ -152,7 +194,7 @@ async function guardarMensajeSalienteExterno(msg) {
 
     if (!['texto', 'audio', 'imagen', 'video', 'documento', 'sticker'].includes(tipo)) return;
 
-    await api.post('/bot/mensajes/saliente', {
+    await postConReintentos('/bot/mensajes/saliente', {
       contacto,
       area:    BOT_AREA,
       tipo,
@@ -160,7 +202,7 @@ async function guardarMensajeSalienteExterno(msg) {
       archivo_url,
       wa_id:   msg.wa_id || null,
       timestamp: (msg.timestamp || new Date()).toISOString(),
-    });
+    }, `saliente externo ${contacto}`);
   } catch (err) {
     console.error('[mensajesApi] Error guardando saliente externo:', err.message);
   }

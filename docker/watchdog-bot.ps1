@@ -4,8 +4,12 @@
 #   2. Que el bot responda HTTP en :3001/status.
 #   3. Que su estado sea "listo" (no quedo colgado en "iniciando" o "autenticado").
 # Si detecta caida sostenida (>10 min), hace 'docker restart crecer-bot-1'
-# (rate-limited a 1 cada 5 min). Cuando el bot vuelve a "listo" despues de
-# un incidente, manda un WhatsApp a Damian con el resumen.
+# (rate-limited a 1 cada 5 min). EXCEPCION: estado "esperando_qr" — la sesion
+# se perdio y hace falta escanear QR a mano; reiniciar solo regenera el QR en
+# loop (incidente 01/07). En ese caso NO reinicia, solo alerta.
+# Notifica por WhatsApp a Damian al INICIO del incidente sostenido y al
+# recuperarse. Como el bot de atencion (3001) puede ser justamente el caido,
+# intenta enviar por atencion -> administracion (3002) -> ovodonacion (3003).
 
 $ErrorActionPreference = 'Continue'
 
@@ -50,16 +54,21 @@ function GuardarEstado {
 
 function NotificarWA {
     param([string]$texto)
-    try {
-        $body = @{ contacto = $NotifyToJid; texto = $texto } | ConvertTo-Json
-        $headers = @{ 'Authorization' = 'Bearer ' + $BotIngressToken; 'Content-Type' = 'application/json' }
-        $r = Invoke-RestMethod -Uri ($BotUrl + '/enviar') -Method POST -Headers $headers -Body $body -TimeoutSec 10
-        Log ('[notif] enviado: ' + $texto)
-        return $true
-    } catch {
-        Log ('[notif] FALLO al notificar: ' + $_.Exception.Message)
-        return $false
+    # El bot caido puede ser el mismo por el que notificamos: probar los 3 en orden.
+    $emisores = @('http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003')
+    $body = @{ contacto = $NotifyToJid; texto = $texto } | ConvertTo-Json
+    $headers = @{ 'Authorization' = 'Bearer ' + $BotIngressToken; 'Content-Type' = 'application/json' }
+    foreach ($base in $emisores) {
+        try {
+            $r = Invoke-RestMethod -Uri ($base + '/enviar') -Method POST -Headers $headers -Body $body -TimeoutSec 10
+            Log ('[notif] enviado via ' + $base + ': ' + $texto)
+            return $true
+        } catch {
+            Log ('[notif] fallo via ' + $base + ': ' + $_.Exception.Message)
+        }
     }
+    Log '[notif] FALLO al notificar por los 3 bots'
+    return $false
 }
 
 function DockerCorriendo {
@@ -128,6 +137,7 @@ if ($null -eq $reason) {
         NotificarWA ('Watchdog Crecer: ' + $msg) | Out-Null
         $state.incident_start_at = $null
         $state.last_reason       = $null
+        $state | Add-Member -NotePropertyName incident_notified -NotePropertyValue $false -Force
     }
     $state.last_listo_at = $now.ToString('o')
 } else {
@@ -142,18 +152,32 @@ if ($null -eq $reason) {
         Log ('INCIDENTE en curso (' + $durStr + ' min): ' + $reason)
 
         if ($durMin -ge $IncidenteMin) {
-            $puedeRestart = $true
-            if ($state.last_restart_at) {
-                $sinceRestart = ($now - [DateTime]$state.last_restart_at).TotalMinutes
-                if ($sinceRestart -lt $RestartMinGap) { $puedeRestart = $false }
+            # Avisar UNA vez al cruzar el umbral (antes solo avisaba al recuperarse
+            # y un incidente largo pasaba inadvertido — 6 horas el 01/07).
+            if (-not $state.incident_notified) {
+                $msg = 'Watchdog Crecer: bot atencion en falla hace ' + $durStr + ' min. Motivo: ' + $reason + '.'
+                if ($status -eq 'esperando_qr') { $msg += ' Sesion perdida: hay que escanear QR desde /admin con el celular del area.' }
+                NotificarWA $msg | Out-Null
+                $state | Add-Member -NotePropertyName incident_notified -NotePropertyValue $true -Force
             }
-            if ($puedeRestart) {
-                Log ('Ejecutando: docker restart ' + $BotContainer)
-                & docker restart $BotContainer 2>&1 | ForEach-Object { Log ('  ' + $_) }
-                $state.last_restart_at = $now.ToString('o')
-                $state.last_reason     = $reason + ' (restart automatico)'
+
+            # esperando_qr: reiniciar no sirve (regenera el QR en loop) — solo esperar el escaneo.
+            if ($status -eq 'esperando_qr') {
+                Log 'Estado esperando_qr: NO se reinicia (requiere escaneo manual de QR)'
             } else {
-                Log ('Esperando ventana entre restarts (' + $RestartMinGap + ' min)')
+                $puedeRestart = $true
+                if ($state.last_restart_at) {
+                    $sinceRestart = ($now - [DateTime]$state.last_restart_at).TotalMinutes
+                    if ($sinceRestart -lt $RestartMinGap) { $puedeRestart = $false }
+                }
+                if ($puedeRestart) {
+                    Log ('Ejecutando: docker restart ' + $BotContainer)
+                    & docker restart $BotContainer 2>&1 | ForEach-Object { Log ('  ' + $_) }
+                    $state.last_restart_at = $now.ToString('o')
+                    $state.last_reason     = $reason + ' (restart automatico)'
+                } else {
+                    Log ('Esperando ventana entre restarts (' + $RestartMinGap + ' min)')
+                }
             }
         }
     }

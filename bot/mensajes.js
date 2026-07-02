@@ -110,8 +110,9 @@ async function procesarYResponder(client, contacto) {
   }
 
   if (CODIGOS_DERIVACION.has(codigo)) {
-    // Notifica a Laravel directamente sobre la conversación WA — sin tabla derivaciones
-    derivarConversacion(contacto, codigo, resumen).catch(() => {});
+    // Notifica a Laravel directamente sobre la conversación WA — sin tabla derivaciones.
+    // derivarConversacion ya loguea y reintenta adentro; el catch es solo red de seguridad.
+    derivarConversacion(contacto, codigo, resumen).catch((e) => console.error('[mensajes] derivar falló:', e.message));
   } else if (!modoPrueba && respuesta) {
     marcarLeido(contacto).catch(() => {});
   }

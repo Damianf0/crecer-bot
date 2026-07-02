@@ -40,7 +40,37 @@ const CODIGOS_VALIDOS = new Set([
   'CONSULTA_CLINICA', 'DERIVAR_SECRETARIA', 'FALLBACK', 'IGNORAR',
 ]);
 
+// Circuit breaker: si Ollama falla N veces seguidas (caído o colgado), dejamos
+// de llamarlo por un rato y devolvemos FALLBACK directo. Sin esto, cada mensaje
+// entrante espera el timeout completo y las clasificaciones se apilan una
+// detrás de otra en el event loop del bot.
+const BREAKER_UMBRAL   = 3;
+const BREAKER_PAUSA_MS = 5 * 60_000;
+let _fallosSeguidos = 0;
+let _breakerHasta   = 0;
+
+function breakerAbierto() {
+  return Date.now() < _breakerHasta;
+}
+
+function registrarFallo() {
+  _fallosSeguidos++;
+  if (_fallosSeguidos >= BREAKER_UMBRAL) {
+    _breakerHasta = Date.now() + BREAKER_PAUSA_MS;
+    console.warn(`[ollama] Circuit breaker ABIERTO (${_fallosSeguidos} fallos seguidos) — sin llamadas por ${BREAKER_PAUSA_MS / 60000} min`);
+  }
+}
+
+function registrarExito() {
+  _fallosSeguidos = 0;
+  _breakerHasta   = 0;
+}
+
 async function procesarConversacion(texto) {
+  if (breakerAbierto()) {
+    console.warn('[ollama] Breaker abierto — clasificación FALLBACK sin llamar a Ollama');
+    return { codigo: 'FALLBACK', confianza: 'baja' };
+  }
   try {
     const response = await axios.post(
       `${OLLAMA_URL}/api/chat`,
@@ -57,13 +87,17 @@ async function procesarConversacion(texto) {
           temperature: 0,      // determinístico — clasificador, no generador creativo
         },
       },
-      { timeout: 90_000 }
+      // 25s: la clasificación normal tarda ~2s. Si tarda más, Ollama está mal
+      // y no vale la pena frenar la cola de mensajes esperándolo.
+      { timeout: 25_000 }
     );
 
     const contenido = response.data?.message?.content || '';
+    registrarExito();
     return parsearRespuesta(contenido);
   } catch (err) {
     console.error('[ollama] Error al llamar a Ollama:', err.message);
+    registrarFallo();
     return { codigo: 'FALLBACK', confianza: 'baja' };
   }
 }
@@ -144,6 +178,10 @@ REGLAS ESTRICTAS:
 4. NO uses comillas, markdown, encabezados, emojis ni saltos de línea.`;
 
 async function generarResumen(texto) {
+  if (breakerAbierto()) {
+    console.warn('[ollama] Breaker abierto — resumen omitido (Laravel reintenta con su throttle)');
+    return null;
+  }
   const textoLimpio = stripEmojis(texto).slice(0, 4000);
 
   try {
@@ -164,6 +202,7 @@ async function generarResumen(texto) {
     );
 
     const raw = response.data?.message?.content || '';
+    registrarExito();
     let resumen = null;
     try {
       const parsed = JSON.parse(raw);
@@ -193,6 +232,7 @@ async function generarResumen(texto) {
     return resumen;
   } catch (err) {
     console.error('[ollama] Error en generarResumen:', err.message);
+    registrarFallo();
     return null;
   }
 }

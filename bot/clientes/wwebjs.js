@@ -99,8 +99,29 @@ function crearClienteWwebjs() {
   let watchdogTimer  = null;
   let destruido      = false;
   let chequeosSinConnected = 0;
+  let reintentosSeguidos   = 0;
 
   function resetActividad() { ultimaActividad = Date.now(); }
+
+  // Backoff exponencial para los reintentos de iniciar(): 15s, 30s, 60s… hasta
+  // 5 min. Cada ciclo de initialize levanta un Chromium entero (~300 MB y CPU
+  // alta); si el problema no es transitorio, ciclar cada 10-15s fijo castiga
+  // la RAM de WSL sin mejorar nada. Se resetea al llegar a 'ready'.
+  function delayReintento() {
+    const ms = Math.min(15_000 * 2 ** reintentosSeguidos, 5 * 60_000);
+    reintentosSeguidos++;
+    return ms;
+  }
+
+  // Envuelve las llamadas al cliente con timeout. Si CDP está trabado, la
+  // promesa de wwebjs no resuelve nunca y el endpoint HTTP que la espera queda
+  // colgado acumulando sockets. Mejor fallar rápido y que el watchdog actúe.
+  function conTimeout(promise, ms, etiqueta) {
+    return Promise.race([
+      promise,
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`${etiqueta}: timeout ${ms / 1000}s (Chromium sin responder)`)), ms)),
+    ]);
+  }
 
   function detenerWatchdog() {
     if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
@@ -240,6 +261,7 @@ function crearClienteWwebjs() {
       const info = client.info;
       const phone = info?.wid?.user || null;
       resetActividad();
+      reintentosSeguidos = 0;
       console.log(`[whatsapp] Cliente listo. Número: ${phone}`);
       emitter.emit('ready', { phone });
       detenerWatchdog();
@@ -260,8 +282,9 @@ function crearClienteWwebjs() {
       detenerWatchdog();
       emitter.emit('disconnected', reason);
       try { await client.destroy(); } catch (_) {}
-      console.log('[whatsapp] Reiniciando en 10 segundos...');
-      setTimeout(iniciar, 10_000);
+      const espera = delayReintento();
+      console.log(`[whatsapp] Reiniciando en ${Math.round(espera / 1000)} segundos...`);
+      setTimeout(iniciar, espera);
     });
 
     client.on('message', async (msg) => {
@@ -294,8 +317,9 @@ function crearClienteWwebjs() {
       detenerWatchdog();
       emitter.emit('disconnected', `initialize:${err.message}`);
       try { await client.destroy(); } catch (_) {}
-      console.log('[whatsapp] Reintentando en 15 segundos...');
-      setTimeout(iniciar, 15_000);
+      const espera = delayReintento();
+      console.log(`[whatsapp] Reintentando en ${Math.round(espera / 1000)} segundos...`);
+      setTimeout(iniciar, espera);
     });
   }
 
@@ -308,7 +332,7 @@ function crearClienteWwebjs() {
     // adentro la búsqueda en su store de Chromium. Si el original ya no está,
     // descarta silenciosamente el quote (el mensaje igual se envía).
     if (opts.quoted?.wa_id) sendOpts.quotedMessageId = opts.quoted.wa_id;
-    const sent = await client.sendMessage(jid, texto, sendOpts);
+    const sent = await conTimeout(client.sendMessage(jid, texto, sendOpts), 45_000, 'sendText');
     const waId = sent?.id?._serialized || '';
     marcarEnviado(waId);
     return { wa_id: waId };
@@ -317,14 +341,14 @@ function crearClienteWwebjs() {
   emitter.sendMedia = async (jid, { mimetype, base64, filename, caption }) => {
     const media = new MessageMedia(mimetype, base64, filename || 'archivo');
     const opts = caption ? { caption } : {};
-    const sent = await client.sendMessage(jid, media, opts);
+    const sent = await conTimeout(client.sendMessage(jid, media, opts), 90_000, 'sendMedia');
     const waId = sent?.id?._serialized || '';
     marcarEnviado(waId);
     return { wa_id: waId };
   };
 
   emitter.checkNumber = async (digits) => {
-    const id = await client.getNumberId(String(digits).replace(/\D/g, ''));
+    const id = await conTimeout(client.getNumberId(String(digits).replace(/\D/g, '')), 15_000, 'checkNumber');
     if (!id) return { registered: false, normalizedId: null };
     return {
       registered: true,
@@ -333,7 +357,7 @@ function crearClienteWwebjs() {
   };
 
   emitter.resolveContact = async (jid) => {
-    const c = await client.getContactById(jid);
+    const c = await conTimeout(client.getContactById(jid), 15_000, 'resolveContact');
     return {
       numero: c?.number ? String(c.number).replace(/\D/g, '') : null,
       name:   c?.pushname || c?.name || null,
