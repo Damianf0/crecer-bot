@@ -301,6 +301,11 @@ services:
   ollama:
     image: ollama/ollama
     restart: unless-stopped
+    environment:
+      # Modelo siempre residente en VRAM (default: descarga a los ~5 min idle y
+      # el primer mensaje después de un rato paga la recarga desde disco).
+      # La GTX 1660 (6 GB) está dedicada a esto; qwen3:4b ocupa 3.9 GB.
+      - OLLAMA_KEEP_ALIVE=-1
     deploy:
       resources:
         reservations:
