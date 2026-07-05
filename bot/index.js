@@ -3,7 +3,7 @@ require('dotenv').config();
 const { pushLog } = require('./estado-bot');
 const { logToFile } = require('./logger');
 const { iniciarServidor } = require('./server');
-const { iniciarWhatsApp } = require('./whatsapp');
+const { iniciarWhatsApp, obtenerCliente } = require('./whatsapp');
 
 // Redirigir console a 3 destinos: stdout (docker logs, cuando WSL no lo rompe),
 // el buffer en memoria (panel) y un archivo en volumen (./bot/logs, sobrevive a
@@ -31,6 +31,35 @@ process.on('uncaughtException', (err) => {
   // No process.exit acá — preferimos que docker reinicie si la cosa quedó
   // realmente rota (los reintentos internos de whatsapp.js cubren el caso normal).
 });
+
+// Apagado limpio: node es PID1 en el container, así que `docker stop` manda
+// SIGTERM directo acá. Sin este handler, node moría al instante y Chromium
+// quedaba huérfano escribiendo LevelDB a medias — ESA era la corrupción que
+// mataba la sesión de atención en los reinicios nocturnos (29/06, 01/07,
+// 04/07). Cerrar el cliente flushea la sesión y dispara el snapshot.
+// docker stop usa -t 30 en el backup; acá nos autolimitamos a 25s.
+let _apagando = false;
+async function apagadoLimpio(senal) {
+  if (_apagando) return;
+  _apagando = true;
+  console.log(`[crecer-bot] ${senal} recibido — cerrando cliente WhatsApp limpio...`);
+  const cliente = obtenerCliente();
+  if (cliente && typeof cliente.destroy === 'function') {
+    try {
+      await Promise.race([
+        cliente.destroy(),
+        new Promise((r) => setTimeout(r, 25_000)),
+      ]);
+    } catch (e) {
+      console.warn('[crecer-bot] Error cerrando cliente:', e.message);
+    }
+  }
+  console.log('[crecer-bot] Apagado limpio completo.');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => apagadoLimpio('SIGTERM'));
+process.on('SIGINT',  () => apagadoLimpio('SIGINT'));
 
 async function main() {
   console.log('[crecer-bot] Iniciando...');

@@ -6,9 +6,79 @@ const { EventEmitter } = require('events');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const fs = require('fs');
+const dns = require('dns');
 const path = require('path');
 
 const AUTH_PATH = '/app/.wwebjs_auth';
+
+// ── Snapshot de sesión + auto-restauración ────────────────────────────
+// Diagnóstico 05/07: las "muertes" de sesión (29/06, 01/07, 04/07) eran
+// corrupción LOCAL de IndexedDB/LevelDB por apagados sucios de Chromium —
+// el servidor de WhatsApp nunca invalidó el pareo (restaurar un tar de un
+// día antes autenticó al primer intento). Estrategia:
+//   1. Al apagar limpio (SIGTERM → emitter.destroy) con sesión que llegó a
+//      'ready' en esta corrida: copiar la sesión (quiescente y sana) a un
+//      snapshot dentro del mismo volumen.
+//   2. Si al arrancar aparece QR pero el marker dice que había sesión válida:
+//      restaurar el snapshot y reintentar (máx 2 veces) antes de rendirse.
+const SESSION_DIR = path.join(AUTH_PATH, 'session');
+const SNAP_DIR    = path.join(AUTH_PATH, 'session-snapshot');
+const MARKER_FILE = path.join(AUTH_PATH, 'sesion-valida.json');
+
+// Igual que el tar del backup (restauración probada 05/07): la sesión real
+// vive en IndexedDB/Local Storage/Cookies; caches y Service Worker son
+// regenerables y pesados.
+const SNAP_EXCLUIR = new Set(['Cache', 'Code Cache', 'GPUCache',
+  'DawnGraphiteCache', 'DawnWebGPUCache', 'Service Worker']);
+
+function copiarSesion(desde, hacia) {
+  fs.rmSync(hacia, { recursive: true, force: true });
+  fs.cpSync(desde, hacia, {
+    recursive: true,
+    filter: (src) => {
+      const base = path.basename(src);
+      if (base.startsWith('Singleton')) return false;
+      return !SNAP_EXCLUIR.has(base);
+    },
+  });
+}
+
+function leerMarker() {
+  try { return JSON.parse(fs.readFileSync(MARKER_FILE, 'utf8')); } catch (_) { return null; }
+}
+
+function escribirMarker(obj) {
+  try { fs.writeFileSync(MARKER_FILE, JSON.stringify(obj)); } catch (e) {
+    console.warn('[whatsapp] No se pudo escribir marker de sesión:', e.message);
+  }
+}
+
+function hacerSnapshot() {
+  if (!fs.existsSync(SESSION_DIR)) return false;
+  copiarSesion(SESSION_DIR, SNAP_DIR);
+  return true;
+}
+
+function restaurarSnapshot() {
+  if (!fs.existsSync(SNAP_DIR)) return false;
+  fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+  copiarSesion(SNAP_DIR, SESSION_DIR);
+  return true;
+}
+
+// El incidente del 04/07 arrancó con ERR_NAME_NOT_RESOLVED: el container
+// levanta antes de que el DNS de Docker esté usable y Chromium navega al
+// vacío. Mejor esperar acá que lanzar un initialize condenado.
+async function esperarDns() {
+  for (let i = 0; i < 6; i++) {
+    try { await dns.promises.lookup('web.whatsapp.com'); return true; }
+    catch (e) {
+      console.warn(`[whatsapp] DNS aún no resuelve web.whatsapp.com (${e.code}) — espero 5s`);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+  return false;
+}
 
 // Borra SOLO el cache de Chromium (Cache, Code Cache, GPUCache, Service Worker/CacheStorage…)
 // preservando IndexedDB / Local Storage / Cookies / Login Data → la sesión WhatsApp NO se pierde.
@@ -100,8 +170,15 @@ function crearClienteWwebjs() {
   let destruido      = false;
   let chequeosSinConnected = 0;
   let reintentosSeguidos   = 0;
+  let listoEnEstaCorrida   = false; // llegó a 'ready' → la sesión en disco es válida
 
   function resetActividad() { ultimaActividad = Date.now(); }
+
+  function programarReinicio(ms) {
+    setTimeout(() => {
+      iniciar().catch((e) => console.error('[whatsapp] Error en iniciar():', e.message));
+    }, ms);
+  }
 
   // Backoff exponencial para los reintentos de iniciar(): 15s, 30s, 60s… hasta
   // 5 min. Cada ciclo de initialize levanta un Chromium entero (~300 MB y CPU
@@ -134,7 +211,7 @@ function crearClienteWwebjs() {
     emitter.emit('disconnected', `watchdog:${motivo}`);
     try { await client.destroy(); } catch (_) {}
     limpiarCacheChromium();
-    setTimeout(iniciar, 5_000);
+    programarReinicio(5_000);
   }
 
   async function verificarSalud() {
@@ -221,7 +298,13 @@ function crearClienteWwebjs() {
     };
   }
 
-  function iniciar() {
+  async function iniciar() {
+    if (!(await esperarDns())) {
+      const espera = delayReintento();
+      console.error(`[whatsapp] Sin DNS tras 30s — no lanzo Chromium. Reintento en ${Math.round(espera / 1000)}s`);
+      programarReinicio(espera);
+      return;
+    }
     limpiarLocks();
     destruido = false;
     chequeosSinConnected = 0;
@@ -242,6 +325,31 @@ function crearClienteWwebjs() {
     });
 
     client.on('qr', async (qr) => {
+      // QR con marker de sesión válida = corrupción local, NO logout del
+      // servidor (probado 05/07). Restaurar el snapshot antes de rendirse.
+      const marker = leerMarker();
+      if (marker) {
+        const intentos = marker.intentos_restore || 0;
+        if (intentos < 2 && fs.existsSync(SNAP_DIR)) {
+          marker.intentos_restore = intentos + 1;
+          escribirMarker(marker);
+          console.warn(`[whatsapp] QR pese a sesión previa válida (${marker.phone}) — restauro snapshot (intento ${marker.intentos_restore}/2)`);
+          destruido = true;
+          detenerWatchdog();
+          try { await client.destroy(); } catch (_) {}
+          try {
+            if (restaurarSnapshot()) { programarReinicio(3000); return; }
+            console.error('[whatsapp] No hay snapshot para restaurar');
+          } catch (e) {
+            console.error('[whatsapp] Falló la restauración del snapshot:', e.message);
+          }
+        } else {
+          // Se agotaron los intentos (o no hay snapshot): rendirse al QR y
+          // avisar fuerte. Borrar el marker corta el loop de restauración.
+          try { fs.rmSync(MARKER_FILE, { force: true }); } catch (_) {}
+          console.error('[whatsapp] Sesión perdida DEFINITIVA (restauración automática agotada). Opciones: escanear QR desde /admin o restaurar backups/full/sesiones-wa/*.tar.gz.prev en el volumen.');
+        }
+      }
       console.log('[whatsapp] QR recibido — esperando escaneo');
       resetActividad();
       try {
@@ -262,6 +370,8 @@ function crearClienteWwebjs() {
       const phone = info?.wid?.user || null;
       resetActividad();
       reintentosSeguidos = 0;
+      listoEnEstaCorrida = true;
+      escribirMarker({ ts: new Date().toISOString(), phone, intentos_restore: 0 });
       console.log(`[whatsapp] Cliente listo. Número: ${phone}`);
       emitter.emit('ready', { phone });
       detenerWatchdog();
@@ -284,7 +394,7 @@ function crearClienteWwebjs() {
       try { await client.destroy(); } catch (_) {}
       const espera = delayReintento();
       console.log(`[whatsapp] Reiniciando en ${Math.round(espera / 1000)} segundos...`);
-      setTimeout(iniciar, espera);
+      programarReinicio(espera);
     });
 
     client.on('message', async (msg) => {
@@ -319,11 +429,11 @@ function crearClienteWwebjs() {
       try { await client.destroy(); } catch (_) {}
       const espera = delayReintento();
       console.log(`[whatsapp] Reintentando en ${Math.round(espera / 1000)} segundos...`);
-      setTimeout(iniciar, espera);
+      programarReinicio(espera);
     });
   }
 
-  iniciar();
+  iniciar().catch((e) => console.error('[whatsapp] Error en iniciar():', e.message));
 
   // ── Métodos expuestos por la interfaz ────────────────────
   emitter.sendText = async (jid, texto, opts = {}) => {
@@ -410,10 +520,26 @@ function crearClienteWwebjs() {
     return 'unknown'; // estado real es asincrónico vía client.getState() — no lo bloqueamos acá
   };
 
+  // Apagado limpio (lo llama el handler de SIGTERM en index.js): cerrar
+  // Chromium con destroy() flushea LevelDB entero; recién ahí la sesión en
+  // disco es confiable y vale la pena snapshotearla.
   emitter.destroy = async () => {
     destruido = true;
     detenerWatchdog();
-    try { await client.destroy(); } catch (_) {}
+    try {
+      await client.destroy();
+    } catch (e) {
+      console.warn('[whatsapp] destroy() falló durante apagado:', e.message);
+      return; // Chromium no cerró limpio → NO snapshotear (posible estado a medias)
+    }
+    if (listoEnEstaCorrida) {
+      try {
+        hacerSnapshot();
+        console.log('[whatsapp] Snapshot de sesión guardado (apagado limpio)');
+      } catch (e) {
+        console.warn('[whatsapp] Snapshot de sesión falló:', e.message);
+      }
+    }
   };
 
   return emitter;

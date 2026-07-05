@@ -10,9 +10,16 @@ const { recibirMensaje } = require('./mensajes');
 const { guardarMensajeEntrante, guardarMensajeSalienteExterno } = require('./mensajesApi');
 const { registrarCliente } = require('./server');
 
+let _cliente = null; // para el apagado limpio desde index.js (SIGTERM)
+
+function obtenerCliente() {
+  return _cliente;
+}
+
 async function iniciarWhatsApp() {
   setStatus('iniciando');
   const cliente = crearCliente();
+  _cliente = cliente;
 
   cliente.on('qr', (dataUrl) => {
     setQR(dataUrl);
@@ -53,4 +60,4 @@ async function iniciarWhatsApp() {
   });
 }
 
-module.exports = { iniciarWhatsApp };
+module.exports = { iniciarWhatsApp, obtenerCliente };

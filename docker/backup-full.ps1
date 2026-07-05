@@ -125,7 +125,8 @@ $Bots = @(
 )
 $tarExcl = "--exclude='./session/Default/Cache' --exclude='./session/Default/Code Cache' " +
            "--exclude='./session/Default/GPUCache' --exclude='./session/Default/Service Worker' " +
-           "--exclude='./session/Default/DawnGraphiteCache' --exclude='./session/Default/DawnWebGPUCache'"
+           "--exclude='./session/Default/DawnGraphiteCache' --exclude='./session/Default/DawnWebGPUCache' " +
+           "--exclude='./session-snapshot'"   # snapshot interno del bot (feature 05/07) — ya es una copia, no duplicar
 
 # Limpieza de cache Chromium EN LA MISMA VENTANA de parada (2026-07-05):
 # antes habia dos stop/start por noche (backup 02:30 + CleanBotCache 04:00) y
