@@ -132,6 +132,14 @@ const PUPPETEER_OPTS = {
     '--mute-audio',
     '--no-first-run',
     '--js-flags=--max-old-space-size=512',
+    // Anti-congelamiento de pestaña (05/07): Chromium moderno degrada la
+    // prioridad del renderer "de fondo" (STAT SN) y le congela los timers —
+    // en ovo eso dejaba el CDP sin responder (evaluate/getState timeout)
+    // con el proceso idle. La página de WA Web debe correr SIEMPRE como
+    // primer plano.
+    '--disable-renderer-backgrounding',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-features=IntensiveWakeUpThrottling,TabFreezing',
   ],
 };
 
@@ -246,8 +254,16 @@ function crearClienteWwebjs() {
       } catch (_) { /* getState roto con CDP vivo no es cuelgue */ }
     }
 
-    if (cdpVivo) chequeosSinConnected = 0;
-    else chequeosSinConnected++;
+    if (cdpVivo) {
+      chequeosSinConnected = 0;
+    } else if (inactivo < WATCHDOG_INTERVAL) {
+      // Hubo mensajes/acks hace menos de un intervalo: el cliente FUNCIONA
+      // aunque el CDP no conteste la sonda (renderer throttleado). No
+      // reiniciar lo que demostrablemente anda.
+      console.log('[watchdog] CDP sin respuesta pero con actividad reciente — no cuenta strike');
+    } else {
+      chequeosSinConnected++;
+    }
 
     console.log(`[watchdog] CDP: ${cdpVivo ? 'ok' : 'SIN RESPUESTA'} | Estado WA: ${estadoReal ?? 'desconocido'} | Inactivo: ${Math.round(inactivo / 60000)}m | strikes: ${chequeosSinConnected}`);
 
