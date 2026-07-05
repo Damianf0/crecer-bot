@@ -127,10 +127,22 @@ $tarExcl = "--exclude='./session/Default/Cache' --exclude='./session/Default/Cod
            "--exclude='./session/Default/GPUCache' --exclude='./session/Default/Service Worker' " +
            "--exclude='./session/Default/DawnGraphiteCache' --exclude='./session/Default/DawnWebGPUCache'"
 
+# Limpieza de cache Chromium EN LA MISMA VENTANA de parada (2026-07-05):
+# antes habia dos stop/start por noche (backup 02:30 + CleanBotCache 04:00) y
+# cada reinicio es una loteria para la sesion de atencion (murio 29/06, 01/07
+# y 04/07 — la ultima con ERR_NAME_NOT_RESOLVED durante el arranque del 04:00).
+# Al limpiar aca, la tarea CleanBotCache de las 04:00 queda redundante y se
+# puede deshabilitar: un solo ciclo de reinicio por noche = mitad de exposicion.
+$cleanCmd = 'cd /data/session/Default 2>/dev/null && rm -rf Cache "Code Cache" GPUCache DawnGraphiteCache DawnWebGPUCache "Service Worker/CacheStorage" "Service Worker/ScriptCache"'
+
 foreach ($b in $Bots) {
     $tarFile = "wa-session-$($b.Nombre).tar.gz"
     Log "sesion $($b.Nombre): deteniendo bot..."
     cmd /c "docker stop -t 30 $($b.Ctr) > nul 2>&1"
+
+    # Limpiar cache Chromium con el bot parado (reemplaza a CleanBotCache 04:00)
+    cmd /c "docker run --rm -v $($b.Vol):/data alpine sh -c `"$cleanCmd`" > nul 2>&1"
+    Log "sesion $($b.Nombre): cache Chromium limpiado"
 
     # Rotar: la copia anterior queda como .prev
     if (Test-Path "$Dest\sesiones-wa\$tarFile") {
