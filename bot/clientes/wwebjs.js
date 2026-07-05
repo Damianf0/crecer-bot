@@ -226,20 +226,21 @@ function crearClienteWwebjs() {
     if (destruido) return;
     const inactivo = Date.now() - ultimaActividad;
 
-    // Sonda de vida CDP pura: evaluate(()=>1) solo prueba que Chromium responde
-    // al protocolo, sin depender de los internals de WA Web. Necesario porque
-    // getState() se cuelga (timeout 30s) en algunas cuentas/builds AUNQUE el
-    // cliente funcione perfecto — falso positivo que reiniciaba ovo cada 15
-    // min el 05/07 con la regla vieja de "3 sin CONNECTED".
+    // Sonda de vida al PROCESO BROWSER (no a la página): pupBrowser.version()
+    // responde desde el endpoint del browser aunque el renderer de la página
+    // esté throttleado/niced (caso ovo 05/07: evaluate() y getState() timeout
+    // permanente con el cliente funcionando perfecto). El cuelgue real que
+    // queremos detectar (admin frozen 10 días en junio) tumba a Chromium
+    // ENTERO — ahí version() tampoco responde y el reinicio corresponde.
     let cdpVivo = false;
     try {
       await Promise.race([
-        client.pupPage.evaluate(() => 1),
+        client.pupBrowser.version(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000)),
       ]);
       cdpVivo = true;
     } catch (err) {
-      console.warn(`[watchdog] CDP sin respuesta: ${err.message}`);
+      console.warn(`[watchdog] Browser CDP sin respuesta: ${err.message}`);
     }
 
     // Estado WA: informativo. Solo cuenta como señal de zombie si es un estado
