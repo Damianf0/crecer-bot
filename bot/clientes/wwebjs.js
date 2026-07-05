@@ -218,26 +218,45 @@ function crearClienteWwebjs() {
     if (destruido) return;
     const inactivo = Date.now() - ultimaActividad;
 
-    let estadoReal = null;
+    // Sonda de vida CDP pura: evaluate(()=>1) solo prueba que Chromium responde
+    // al protocolo, sin depender de los internals de WA Web. Necesario porque
+    // getState() se cuelga (timeout 30s) en algunas cuentas/builds AUNQUE el
+    // cliente funcione perfecto — falso positivo que reiniciaba ovo cada 15
+    // min el 05/07 con la regla vieja de "3 sin CONNECTED".
+    let cdpVivo = false;
     try {
-      estadoReal = await Promise.race([
-        client.getState(),
+      await Promise.race([
+        client.pupPage.evaluate(() => 1),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000)),
       ]);
+      cdpVivo = true;
     } catch (err) {
-      console.warn(`[watchdog] No se pudo obtener estado: ${err.message}`);
+      console.warn(`[watchdog] CDP sin respuesta: ${err.message}`);
     }
 
-    if (estadoReal === 'CONNECTED') chequeosSinConnected = 0;
+    // Estado WA: informativo. Solo cuenta como señal de zombie si es un estado
+    // explícito distinto de CONNECTED (null/timeout con CDP vivo NO es señal).
+    let estadoReal = null;
+    if (cdpVivo) {
+      try {
+        estadoReal = await Promise.race([
+          client.getState(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15_000)),
+        ]);
+      } catch (_) { /* getState roto con CDP vivo no es cuelgue */ }
+    }
+
+    if (cdpVivo) chequeosSinConnected = 0;
     else chequeosSinConnected++;
 
-    console.log(`[watchdog] Estado: ${estadoReal ?? 'desconocido'} | Inactivo: ${Math.round(inactivo / 60000)}m | sin CONNECTED: ${chequeosSinConnected}`);
+    console.log(`[watchdog] CDP: ${cdpVivo ? 'ok' : 'SIN RESPUESTA'} | Estado WA: ${estadoReal ?? 'desconocido'} | Inactivo: ${Math.round(inactivo / 60000)}m | strikes: ${chequeosSinConnected}`);
 
     if (chequeosSinConnected >= WATCHDOG_MAX_SIN_CONNECTED) {
-      return reiniciarPorWatchdog(`${chequeosSinConnected} chequeos seguidos sin CONNECTED (Chromium congelado)`);
+      return reiniciarPorWatchdog(`${chequeosSinConnected} chequeos seguidos sin respuesta CDP (Chromium congelado)`);
     }
-    if (inactivo > WATCHDOG_TIMEOUT && estadoReal !== 'CONNECTED') {
-      return reiniciarPorWatchdog(`${Math.round(inactivo/60000)}m sin actividad`);
+    // Zombie real: CDP vivo pero WA reporta un estado malo sostenido sin actividad
+    if (inactivo > WATCHDOG_TIMEOUT && estadoReal && estadoReal !== 'CONNECTED') {
+      return reiniciarPorWatchdog(`${Math.round(inactivo/60000)}m sin actividad y estado WA ${estadoReal}`);
     }
   }
 
