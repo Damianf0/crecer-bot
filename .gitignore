@@ -69,3 +69,6 @@ Thumbs.db
 
 # ── Baselines transitorios de validacion (bots) ──────────────────
 bot/baileys-validacion-*.json
+
+# Assets JS vendorizados (chart.js etc.) — NO es el vendor de composer
+!app/public/js/vendor/

@@ -33,6 +33,9 @@
 .rp-table { width:100%; border-collapse:collapse; font-size:13px; }
 .rp-table th, .rp-table td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--v2-border); }
 .rp-table th { font-weight:600; color:var(--v2-text-mute); font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; }
+.rp-table th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
+.rp-table th.sortable:hover { color:var(--v2-text-2); }
+.rp-table th.sortable .arrow { opacity:.45; font-size:9px; }
 .rp-table tbody tr:hover { background:var(--v2-bg-hover); }
 .rp-table td.num { text-align:right; font-variant-numeric:tabular-nums; font-family:'JetBrains Mono',monospace; font-size:12px; }
 
@@ -80,9 +83,9 @@
             <div class="rp-sec-title">SLA del día</div>
             <div class="rp-cards">
                 <div class="rp-card ok"><div class="label">Tomadas hoy</div><div class="val" id="v-sla-tomadas">–</div></div>
-                <div class="rp-card"><div class="label">% en &lt; 5 min</div><div class="val" id="v-sla-5">–</div></div>
-                <div class="rp-card"><div class="label">% en &lt; 15 min</div><div class="val" id="v-sla-15">–</div></div>
-                <div class="rp-card"><div class="label">% en &lt; 30 min</div><div class="val" id="v-sla-30">–</div></div>
+                <div class="rp-card" id="c-sla-5"><div class="label">% en &lt; 5 min</div><div class="val" id="v-sla-5">–</div></div>
+                <div class="rp-card" id="c-sla-15"><div class="label">% en &lt; 15 min</div><div class="val" id="v-sla-15">–</div></div>
+                <div class="rp-card" id="c-sla-30"><div class="label">% en &lt; 30 min</div><div class="val" id="v-sla-30">–</div></div>
                 <div class="rp-card"><div class="label">Mediana</div><div class="val" id="v-sla-med">–</div><div class="sub">tiempo de toma</div></div>
             </div>
 
@@ -124,14 +127,14 @@
             <table class="rp-table" id="sec-table">
                 <thead>
                     <tr>
-                        <th>Secretaria</th>
-                        <th class="num" style="text-align:right;">Tomadas</th>
-                        <th class="num" style="text-align:right;">Resueltas</th>
-                        <th class="num" style="text-align:right;">Delegadas</th>
-                        <th class="num" style="text-align:right;">Reabiertas</th>
-                        <th class="num" style="text-align:right;">Mensajes env.</th>
-                        <th class="num" style="text-align:right;">T. respuesta</th>
-                        <th class="num" style="text-align:right;">T. resolución</th>
+                        <th class="sortable" data-key="nombre">Secretaria <span class="arrow"></span></th>
+                        <th class="num sortable" style="text-align:right;" data-key="tomadas">Tomadas <span class="arrow"></span></th>
+                        <th class="num sortable" style="text-align:right;" data-key="resueltas">Resueltas <span class="arrow"></span></th>
+                        <th class="num sortable" style="text-align:right;" data-key="delegadas">Delegadas <span class="arrow"></span></th>
+                        <th class="num sortable" style="text-align:right;" data-key="reabiertas">Reabiertas <span class="arrow"></span></th>
+                        <th class="num sortable" style="text-align:right;" data-key="msj_enviados">Mensajes env. <span class="arrow"></span></th>
+                        <th class="num sortable" style="text-align:right;" data-key="t_resp_medio_seg">T. respuesta <span class="arrow"></span></th>
+                        <th class="num sortable" style="text-align:right;" data-key="t_resol_medio_seg">T. resolución <span class="arrow"></span></th>
                     </tr>
                 </thead>
                 <tbody><tr><td colspan="8" class="rp-loading">Cargando…</td></tr></tbody>
@@ -175,7 +178,9 @@
 @endsection
 
 @push('scripts')
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{{-- Chart.js vendorizado (06/07): antes venía de cdn.jsdelivr.net y la tab
+     Tendencias moría sin salida a internet — esto corre en LAN. --}}
+<script src="/js/vendor/chart.umd.min.js?v={{ filemtime(public_path('js/vendor/chart.umd.min.js')) }}"></script>
 <script>
 // Colores desde los tokens V2 para que los gráficos sigan el tema.
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -184,21 +189,29 @@ if (typeof Chart !== 'undefined') {
     Chart.defaults.borderColor = css('--v2-border');
 }
 
-// ── Tabs ──────────────────────────────────────────────
-document.querySelectorAll('.rp-tab').forEach(b => b.onclick = () => {
+// ── Tabs (persistentes vía hash: refrescar la página no pierde la tab) ──
+function activarTab(tab) {
+    const btn = document.querySelector(`.rp-tab[data-tab="${tab}"]`);
+    if (!btn) return;
     document.querySelectorAll('.rp-tab').forEach(x => x.classList.remove('active'));
     document.querySelectorAll('.rp-section').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    const tab = b.dataset.tab;
+    btn.classList.add('active');
     document.getElementById('sec-' + tab).classList.add('active');
+    history.replaceState(null, '', tab === 'hoy' ? location.pathname : '#' + tab);
     if (tab === 'secretarias' && !window._secLoaded) cargarSecretarias();
     if (tab === 'tendencias' && !window._tenLoaded) cargarTendencias();
-});
+}
+document.querySelectorAll('.rp-tab').forEach(b => b.onclick = () => activarTab(b.dataset.tab));
 
 // ── Hoy ───────────────────────────────────────────────
 async function cargarHoy() {
-    document.getElementById('hoy-loading').style.display = 'block';
-    document.getElementById('hoy-content').style.display = 'none';
+    // Spinner solo en la primera carga: los auto-refresh actualizan en el
+    // lugar, sin parpadeo.
+    const primeraCarga = document.getElementById('hoy-content').style.display !== 'block';
+    if (primeraCarga) {
+        document.getElementById('hoy-loading').style.display = 'block';
+        document.getElementById('hoy-content').style.display = 'none';
+    }
     try {
         const r = await fetch('/admin/estadisticas/hoy');
         const d = await r.json();
@@ -208,9 +221,9 @@ async function cargarHoy() {
         document.getElementById('v-en-sala').textContent = d.vivo.en_sala;
 
         document.getElementById('v-sla-tomadas').textContent = d.sla.tomadas_total;
-        document.getElementById('v-sla-5').textContent  = d.sla.pct_5min  + '%';
-        document.getElementById('v-sla-15').textContent = d.sla.pct_15min + '%';
-        document.getElementById('v-sla-30').textContent = d.sla.pct_30min + '%';
+        pintarSla('c-sla-5',  'v-sla-5',  d.sla.pct_5min,  d.sla.tomadas_total);
+        pintarSla('c-sla-15', 'v-sla-15', d.sla.pct_15min, d.sla.tomadas_total);
+        pintarSla('c-sla-30', 'v-sla-30', d.sla.pct_30min, d.sla.tomadas_total);
         document.getElementById('v-sla-med').textContent = d.sla.mediana_seg !== null ? fmtSeg(d.sla.mediana_seg) : '—';
 
         document.getElementById('v-msg-in').textContent  = d.volumen.msg_in;
@@ -233,11 +246,18 @@ async function cargarHoy() {
         document.getElementById('hoy-loading').style.display = 'none';
         document.getElementById('hoy-content').style.display = 'block';
     } catch (e) {
-        document.getElementById('hoy-loading').textContent = 'Error cargando datos';
+        if (primeraCarga) {
+            document.getElementById('hoy-loading').textContent = 'Error cargando datos';
+        } else {
+            document.getElementById('rp-updated').textContent = 'Error al refrescar — reintenta en 60s';
+        }
     }
 }
 
-// ── Por secretaria ────────────────────────────────────
+// ── Por secretaria (ordenable por columna) ─────────────
+let _secRows = [];
+let _secSort = { key: 'tomadas', dir: -1 };
+
 async function cargarSecretarias() {
     const tbody = document.querySelector('#sec-table tbody');
     tbody.innerHTML = '<tr><td colspan="8" class="rp-loading">Cargando…</td></tr>';
@@ -251,27 +271,50 @@ async function cargarSecretarias() {
         const d = await r.json();
         document.getElementById('sec-from').value = d.from;
         document.getElementById('sec-to').value   = d.to;
-        if (!d.rows.length) {
-            tbody.innerHTML = '<tr><td colspan="8" class="rp-empty">Sin actividad en el rango seleccionado</td></tr>';
-            return;
-        }
-        tbody.innerHTML = d.rows.map(r => `
-            <tr>
-                <td>${escapeHtml(r.nombre)} <span style="color:var(--v2-text-mute);font-size:11px;">${r.rol}</span></td>
-                <td class="num">${r.tomadas}</td>
-                <td class="num">${r.resueltas}</td>
-                <td class="num">${r.delegadas}</td>
-                <td class="num">${r.reabiertas || '—'}</td>
-                <td class="num">${r.msj_enviados}</td>
-                <td class="num">${r.t_resp_medio_seg !== null ? fmtSeg(r.t_resp_medio_seg) : '—'}</td>
-                <td class="num">${r.t_resol_medio_seg !== null ? fmtSeg(r.t_resol_medio_seg) : '—'}</td>
-            </tr>
-        `).join('');
+        _secRows = d.rows;
+        renderSecretarias();
         window._secLoaded = true;
     } catch (e) {
         tbody.innerHTML = '<tr><td colspan="8" class="rp-empty">Error al cargar</td></tr>';
     }
 }
+
+function renderSecretarias() {
+    const tbody = document.querySelector('#sec-table tbody');
+    if (!_secRows.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="rp-empty">Sin actividad en el rango seleccionado</td></tr>';
+        return;
+    }
+    const { key, dir } = _secSort;
+    const rows = [..._secRows].sort((a, b) => {
+        const va = a[key], vb = b[key];
+        if (va === null || va === undefined) return 1;    // nulls al final siempre
+        if (vb === null || vb === undefined) return -1;
+        if (typeof va === 'string') return va.localeCompare(vb, 'es') * dir;
+        return (va - vb) * dir;
+    });
+    tbody.innerHTML = rows.map(r => `
+        <tr>
+            <td>${escapeHtml(r.nombre)} <span style="color:var(--v2-text-mute);font-size:11px;">${r.rol}</span></td>
+            <td class="num">${r.tomadas}</td>
+            <td class="num">${r.resueltas}</td>
+            <td class="num">${r.delegadas}</td>
+            <td class="num">${r.reabiertas || '—'}</td>
+            <td class="num">${r.msj_enviados}</td>
+            <td class="num">${r.t_resp_medio_seg !== null ? fmtSeg(r.t_resp_medio_seg) : '—'}</td>
+            <td class="num">${r.t_resol_medio_seg !== null ? fmtSeg(r.t_resol_medio_seg) : '—'}</td>
+        </tr>
+    `).join('');
+    document.querySelectorAll('#sec-table th.sortable').forEach(th => {
+        th.querySelector('.arrow').textContent = th.dataset.key === key ? (dir === -1 ? '▼' : '▲') : '';
+    });
+}
+
+document.querySelectorAll('#sec-table th.sortable').forEach(th => th.onclick = () => {
+    const key = th.dataset.key;
+    _secSort = { key, dir: _secSort.key === key ? -_secSort.dir : (key === 'nombre' ? 1 : -1) };
+    renderSecretarias();
+});
 
 // ── Tendencias ────────────────────────────────────────
 let chartConvs, chartMsjs, chartTablet;
@@ -282,8 +325,14 @@ async function cargarTendencias() {
     const qs = new URLSearchParams();
     if (from) qs.set('from', from);
     if (to)   qs.set('to', to);
-    const r = await fetch('/admin/estadisticas/tendencias?' + qs);
-    const d = await r.json();
+    let d;
+    try {
+        const r = await fetch('/admin/estadisticas/tendencias?' + qs);
+        d = await r.json();
+    } catch (e) {
+        document.getElementById('heat').innerHTML = '<div class="rp-empty" style="grid-column:1/-1;">Error al cargar tendencias</div>';
+        return;
+    }
     document.getElementById('ten-from').value = d.from;
     document.getElementById('ten-to').value   = d.to;
 
@@ -325,6 +374,7 @@ function renderHeatmap(matrix) {
     const cont = document.getElementById('heat');
     const dias = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
     const max = Math.max(1, ...matrix.flat());
+    const rgb = accentRgb();
     let html = '<div></div>';
     for (let h = 0; h < 24; h++) html += `<div class="h-label" style="text-align:center;">${h}</div>`;
     for (let d = 0; d < 7; d++) {
@@ -332,7 +382,7 @@ function renderHeatmap(matrix) {
         for (let h = 0; h < 24; h++) {
             const v = matrix[d][h];
             const op = v / max;
-            const bg = op > 0 ? `background:rgba(26,86,196,${0.1 + op * 0.85});` : '';
+            const bg = op > 0 ? `background:rgba(${rgb},${(0.12 + op * 0.83).toFixed(2)});` : '';
             html += `<div class="h-cell" style="${bg}" title="${dias[d]} ${h}h: ${v} msjs"></div>`;
         }
     }
@@ -340,6 +390,28 @@ function renderHeatmap(matrix) {
 }
 
 // ── Helpers ───────────────────────────────────────────
+// Semáforo SLA: verde ≥80%, neutro ≥50%, rojo <50% (solo si hubo tomadas).
+function pintarSla(cardId, valId, pct, total) {
+    const card = document.getElementById(cardId);
+    document.getElementById(valId).textContent = pct + '%';
+    card.classList.remove('ok', 'warn', 'error');
+    if (!total) return;                     // sin datos, sin color
+    if (pct >= 80)      card.classList.add('ok');
+    else if (pct < 50)  card.classList.add('error');
+    else                card.classList.add('warn');
+}
+// Color de acento del tema como [r,g,b] — para el heatmap (antes hardcodeado
+// en azul, quedaba mal en dark). Un div oculto convierte cualquier formato
+// CSS a rgb() computado.
+function accentRgb() {
+    const probe = document.createElement('div');
+    probe.style.color = 'var(--v2-accent)';
+    probe.style.display = 'none';
+    document.body.appendChild(probe);
+    const m = getComputedStyle(probe).color.match(/\d+/g) || [26, 86, 196];
+    probe.remove();
+    return m.slice(0, 3).join(',');
+}
 function fmtSeg(s) {
     if (s === null || s === undefined) return '—';
     if (s < 60) return s + 's';
@@ -360,7 +432,18 @@ function unionDias(...maps) {
 }
 function escapeHtml(s) { return String(s ?? '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])); }
 
-// Init
+// Init: respetar la tab del hash (#secretarias / #tendencias) al recargar.
 cargarHoy();
+const hashTab = location.hash.replace('#', '');
+if (hashTab === 'secretarias' || hashTab === 'tendencias') activarTab(hashTab);
+
+// Auto-refresh de "Hoy" cada 60s (alineado con el cache del endpoint), solo
+// si la pestaña del browser está visible y la tab activa es Hoy — es una
+// pantalla de monitoreo, no debería requerir F5.
+setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (!document.getElementById('sec-hoy').classList.contains('active')) return;
+    cargarHoy();
+}, 60_000);
 </script>
 @endpush
