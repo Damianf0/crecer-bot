@@ -1,9 +1,9 @@
-// Interfaz unificada del cliente de WhatsApp. Aísla al resto del bot de qué
-// librería se usa por debajo (whatsapp-web.js / Baileys). La elección la
-// hace BOT_WA_CLIENT en docker-compose por servicio: default 'wwebjs' para
-// no romper los bots existentes, 'baileys' para el bot que se está migrando.
+// Interfaz unificada del cliente de WhatsApp. Aísla al resto del bot del
+// wrapper concreto (hoy: solo whatsapp-web.js — Baileys se abandonó el
+// 2026-06-16 y su wrapper se eliminó el 2026-07-06; historia en git y en
+// project_migracion_baileys.md).
 //
-// Contrato que cumplen ambos wrappers:
+// Contrato que cumple el wrapper:
 //
 //   Eventos (EventEmitter):
 //     'qr'                (dataUrl string PNG)
@@ -56,15 +56,8 @@ function asegurarShape(msg) {
 
 function crearCliente() {
   const tipo = (process.env.BOT_WA_CLIENT || 'wwebjs').trim().toLowerCase();
-
-  if (tipo === 'baileys') {
-    const { crearClienteBaileys } = require('./clientes/baileys');
-    console.log('[cliente-wa] Backend: baileys');
-    return crearClienteBaileys();
-  }
-
   if (tipo !== 'wwebjs') {
-    console.warn(`[cliente-wa] BOT_WA_CLIENT="${tipo}" no reconocido — usando 'wwebjs'`);
+    console.warn(`[cliente-wa] BOT_WA_CLIENT="${tipo}" ya no está soportado (Baileys eliminado 2026-07-06) — usando 'wwebjs'`);
   }
   const { crearClienteWwebjs } = require('./clientes/wwebjs');
   console.log('[cliente-wa] Backend: wwebjs');

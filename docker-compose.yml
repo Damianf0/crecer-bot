@@ -147,13 +147,6 @@ services:
       - BOT_AREA=atencion
       - PORT=3001
       - BOT_PUBLIC_URL=http://192.168.1.125:3001
-      # Migrado a Baileys 2026-05-19. ROLLBACK temporal 2026-05-20: tras un
-      # ciclo de wsl --shutdown + restarts, la sesion Baileys quedo en estado
-      # phantom — `listo` reportando OK pero el server WA no enruta mensajes
-      # nuevos (silencio total). MessageCounterError + Stream Errored (ack).
-      # Reset + reescaneo no destrabo. Igual que ovo, volvemos a wwebjs hasta
-      # que se aclare el bug. Sesion wwebjs preservada en volumen wa-session.
-      # - BOT_WA_CLIENT=baileys
     labels:
       - autoheal=true
     healthcheck:
@@ -187,9 +180,6 @@ services:
       - BOT_AREA=administracion
       - PORT=3002
       - BOT_PUBLIC_URL=http://192.168.1.125:3002
-      # Migrado a Baileys 2026-05-19. Vuelto a wwebjs 2026-06-16 — decisión: salir
-      # de Baileys del todo (era la raíz del cruce de sesión y de la inestabilidad).
-      # - BOT_WA_CLIENT=baileys
     labels:
       - autoheal=true
     healthcheck:
@@ -217,12 +207,6 @@ services:
       - BOT_AREA=ovodonacion
       - PORT=3003
       - BOT_PUBLIC_URL=http://192.168.1.125:3003
-      # Migrado a Baileys 2026-05-19, rollback 2026-05-20 por "Esperando mensaje...".
-      # Reintentado 2026-05-29 con el fix del message store (commit 6bceaa5), pero
-      # el bug NO era del getMessage: era identity key stale del lado del receptor
-      # tras re-pareo del bot. Mi fix no aplica (el cliente del receptor no manda
-      # retry porque la sesion esta rota end-to-end). Rollback otra vez a wwebjs.
-      # - BOT_WA_CLIENT=baileys
     labels:
       - autoheal=true
     healthcheck:
@@ -234,32 +218,8 @@ services:
     networks:
       - clinica-net
 
-  # Bot WhatsApp — SHADOW de testing (Baileys). DESACTIVADO 2026-06-16 al salir
-  # de Baileys. Queda detrás del profile "baileys" para no arrancar con
-  # `docker compose up -d`. Para reactivarlo: `docker compose --profile baileys up -d`.
-  bot-test:
-    profiles: ["baileys"]
-    build: ./docker/node
-    restart: unless-stopped
-    volumes:
-      - ./bot:/app
-      - wa-baileys-test:/app/.baileys_auth
-    ports:
-      - "3009:3009"
-    environment:
-      - TZ=America/Argentina/Buenos_Aires
-      - BOT_AREA=test
-      - PORT=3009
-      - BOT_PUBLIC_URL=http://192.168.1.125:3009
-      - BOT_WA_CLIENT=baileys
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3009/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
-      interval: 30s
-      timeout: 5s
-      retries: 4
-      start_period: 60s
-    networks:
-      - clinica-net
+  # (bot-test, el shadow de Baileys, se eliminó el 2026-07-06 junto con el
+  #  wrapper bot/clientes/baileys.js — Baileys quedó abandonado el 2026-06-16.)
 
   # Watchdog EXTERNO de containers. El watchdog interno de cada bot vive en el
   # mismo proceso Node: si el event loop se congela (cuelgue CDP/Chromium), se
@@ -332,7 +292,6 @@ volumes:
   wa-session:                  # sesión WhatsApp del bot de ATENCIÓN (wwebjs)
   wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
   wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs)
-  wa-baileys-test:             # sesión del bot SHADOW (Baileys) — sólo si se activa profile "baileys"
 
 networks:
   clinica-net:

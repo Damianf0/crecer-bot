@@ -3,7 +3,6 @@
 use App\Livewire\ColaBot;
 use App\Livewire\ColaSecretaria;
 use App\Livewire\InboxWA;
-use App\Livewire\GestionAtencion;
 use App\Livewire\DeclaracionColas;
 use App\Http\Controllers\AtencionController;
 use App\Http\Controllers\AgendaController;
