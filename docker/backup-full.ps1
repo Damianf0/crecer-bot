@@ -106,7 +106,10 @@ foreach ($c in $copias) {
 Log 'config: OK .env x3 + docker-compose.yml'
 
 # ── 4. Bundle git (historia completa del repo) ───────────────────────
-$bundleOut = git -C $Root bundle create "$Dest\repo\crecer.bundle" --all 2>&1
+# -c safe.directory: la tarea corre como SYSTEM y git rechaza repos de otro
+# dueño ("Need a repository") sin esta excepción (config de línea de comando
+# cuenta como "protected config", así que vale).
+$bundleOut = git -C $Root -c safe.directory=C:/crecer bundle create "$Dest\repo\crecer.bundle" --all 2>&1
 if ($LASTEXITCODE -eq 0) {
     $mb = [math]::Round((Get-Item "$Dest\repo\crecer.bundle").Length / 1MB, 1)
     Log "repo: OK crecer.bundle ($mb MB)"
