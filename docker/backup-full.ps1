@@ -184,5 +184,15 @@ if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -gt 1MB) {
     Log 'Log rotado'
 }
 
+# ── Higiene Docker semanal (domingos) ────────────────────────────────
+# El build cache crecia sin limite (4.2 GB muertos al 06/07) e inflaba el
+# VHDX. Prune de cache + imagenes colgadas; NO usa -a en images para no
+# borrar alpine (la usa este mismo script cada noche).
+if ((Get-Date).DayOfWeek -eq 'Sunday') {
+    $prune1 = cmd /c "docker builder prune -af 2>&1" | Select-Object -Last 1
+    $prune2 = cmd /c "docker image prune -f 2>&1"   | Select-Object -Last 1
+    Log "higiene docker (domingo): builder [$prune1] | images [$prune2]"
+}
+
 Log "================== FIN backup full =================="
 if ($Fallas.Count -gt 0) { exit 1 } else { exit 0 }
