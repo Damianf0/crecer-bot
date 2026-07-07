@@ -74,12 +74,29 @@ class EstadisticasController extends Controller
                 'mediana_seg' => $this->mediana($slaSamples),
             ];
 
-            // Cobertura LLM (resumen): solo cuenta convs que ameritan resumen.
-            // Una conv sin resumen y nunca intentada se asume "pendiente" hasta que el job
-            // (que corre asincrónico) la procese o marque como no-amerita.
-            $sinResumen = ConversacionWA::whereNull('resumen_llm')
-                ->whereNotNull('resumen_intento_at')   // ya se evaluó al menos una vez
-                ->count();
+            // Cobertura LLM (resumen). OJO semántica (corregida 07/07):
+            // despacharResumenSiAmerita() marca resumen_intento_at TAMBIÉN cuando
+            // la conv no amerita resumen (charla corta) — antes eso se contaba
+            // como "sin resumen/falló" e inflaba el número (365 de 743 eran
+            // saltos deliberados). Acá se separa re-evaluando ameritaResumen()
+            // en SQL sobre las no-resueltas.
+            $split = \DB::selectOne("
+                SELECT
+                  SUM(CASE WHEN amerita THEN 1 ELSE 0 END) AS fallaron,
+                  SUM(CASE WHEN amerita THEN 0 ELSE 1 END) AS no_ameritan
+                FROM (
+                  SELECT c.id,
+                    (c.asignada_a IS NOT NULL OR c.no_leidos > 0
+                     OR (SELECT COUNT(*) FROM mensajes_wa m WHERE m.conversacion_id = c.id AND m.direccion = 'entrante') >= 3
+                     OR EXISTS (SELECT 1 FROM mensajes_wa m WHERE m.conversacion_id = c.id AND m.direccion = 'entrante' AND CHAR_LENGTH(m.contenido) > 80)
+                     OR EXISTS (SELECT 1 FROM mensajes_wa m WHERE m.conversacion_id = c.id AND m.direccion = 'entrante' AND m.tipo IN ('audio','imagen','documento','video'))
+                    ) AS amerita
+                  FROM conversaciones_wa c
+                  WHERE c.resumen_llm IS NULL AND c.resumen_intento_at IS NOT NULL
+                ) t
+            ");
+            $sinResumen = (int) ($split->fallaron ?? 0);
+            $noAmeritan = (int) ($split->no_ameritan ?? 0);
             $conResumen = ConversacionWA::whereNotNull('resumen_llm')->count();
             $pendientes = ConversacionWA::whereNull('resumen_llm')
                 ->whereNull('resumen_intento_at')      // nunca evaluadas
@@ -104,7 +121,8 @@ class EstadisticasController extends Controller
                 'sla' => $sla,
                 'llm' => [
                     'con_resumen'      => $conResumen,
-                    'sin_resumen'      => $sinResumen,
+                    'sin_resumen'      => $sinResumen,   // ameritan y fallaron de verdad
+                    'no_ameritan'      => $noAmeritan,   // charlas cortas: salto deliberado
                     'pendientes_eval'  => $pendientes,
                     'cobertura_pct'    => $coberturaPct,
                     'jobs_en_cola'     => $jobsPendientes,

@@ -73,10 +73,16 @@ class GenerarResumenLLM implements ShouldQueue
             return 'Paciente: ' . $cuerpo;
         })->implode("\n");
 
+        // Bot del área de la conversación (07/07): antes TODOS los resúmenes
+        // pasaban por el bot de atención — cada caída suya (48h acumuladas en
+        // 2 semanas) tiraba los resúmenes de las 3 áreas. Fallback al alias
+        // viejo si el área no tiene URL propia.
+        $botUrl = config('app.bot_url_' . $conv->area) ?: config('app.bot_url');
+
         try {
             $resp = Http::timeout($this->timeout)
                 ->withToken(config('app.bot_ingress_token'))
-                ->post(rtrim(config('app.bot_url'), '/') . '/resumir', ['texto' => $texto]);
+                ->post(rtrim($botUrl, '/') . '/resumir', ['texto' => $texto]);
 
             $resumen = $resp->ok() ? $resp->json('resumen') : null;
 

@@ -106,7 +106,8 @@
             <div class="rp-cards">
                 <div class="rp-card ok"><div class="label">Cobertura</div><div class="val" id="v-llm-cov">–</div><div class="sub">de las que ameritan resumen</div></div>
                 <div class="rp-card"><div class="label">Con resumen</div><div class="val" id="v-llm-ok">–</div></div>
-                <div class="rp-card"><div class="label">Sin resumen</div><div class="val" id="v-llm-no">–</div><div class="sub">evaluadas, no procesadas / fallaron</div></div>
+                <div class="rp-card error"><div class="label">Fallaron</div><div class="val" id="v-llm-no">–</div><div class="sub">ameritan y no se pudo generar</div></div>
+                <div class="rp-card"><div class="label">No ameritan</div><div class="val" id="v-llm-skip">–</div><div class="sub">charlas cortas, salto deliberado</div></div>
                 <div class="rp-card warn"><div class="label">Pendientes de evaluar</div><div class="val" id="v-llm-pend">–</div><div class="sub">históricas sin tocar</div></div>
                 <div class="rp-card"><div class="label">Jobs en cola</div><div class="val" id="v-llm-jobs">–</div><div class="sub">queue 'resumen'</div></div>
             </div>
@@ -238,6 +239,7 @@ async function cargarHoy() {
             document.getElementById('v-llm-cov').textContent  = d.llm.cobertura_pct + '%';
             document.getElementById('v-llm-ok').textContent   = d.llm.con_resumen;
             document.getElementById('v-llm-no').textContent   = d.llm.sin_resumen;
+            document.getElementById('v-llm-skip').textContent = d.llm.no_ameritan ?? '—';
             document.getElementById('v-llm-pend').textContent = d.llm.pendientes_eval;
             document.getElementById('v-llm-jobs').textContent = d.llm.jobs_en_cola;
         }
