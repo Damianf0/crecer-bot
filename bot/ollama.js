@@ -194,7 +194,11 @@ async function generarResumen(texto) {
         format:  'json',   // fuerza JSON puro, igual que el clasificador → corta el "thinking out loud" de qwen3
         messages: [
           { role: 'system', content: SYSTEM_PROMPT_RESUMEN + '\n\nFormato de respuesta (JSON estricto):\n{"resumen": "oración en castellano rioplatense"}' },
-          { role: 'user',   content: `/no_think\nConversación:\n${textoLimpio}` },
+          // SIN prefijo /no_think (07/07): qwen2.5 lo tomaba como NOMBRE del
+          // campo JSON ({"/no_think": "..."}) y el parser descartaba todo en
+          // silencio — 100% de los resúmenes fallando. El param think:false
+          // ya suprime el razonamiento en qwen3; el prefijo era redundante.
+          { role: 'user',   content: `Conversación:\n${textoLimpio}` },
         ],
         options: { temperature: 0.2, num_predict: 200 },
       },
@@ -207,6 +211,13 @@ async function generarResumen(texto) {
     try {
       const parsed = JSON.parse(raw);
       resumen = (parsed.resumen || '').trim();
+      // Tolerancia a claves inventadas por el modelo (p.ej. qwen2.5 devolvía
+      // {"/no_think": "..."}): si no vino "resumen", usar el primer valor
+      // string del objeto — las validaciones de largo/idioma siguen aplicando.
+      if (!resumen && parsed && typeof parsed === 'object') {
+        const primerString = Object.values(parsed).find((v) => typeof v === 'string' && v.trim());
+        if (primerString) resumen = primerString.trim();
+      }
     } catch (_) {
       // Fallback: intentar extraer { ... } del texto
       const m = raw.match(/\{[^{}]*"resumen"[^{}]*\}/);
@@ -214,12 +225,20 @@ async function generarResumen(texto) {
         try { resumen = (JSON.parse(m[0]).resumen || '').trim(); } catch (_) {}
       }
     }
-    if (!resumen) return null;
+    if (!resumen) {
+      // Nunca descartar en silencio: este null mudo escondió un 100% de fallas
+      // durante días (07/07).
+      console.warn('[ollama] Resumen null — contenido crudo:', raw.slice(0, 150));
+      return null;
+    }
 
     // Limpieza: comillas, markdown, emojis residuales
     resumen = resumen.replace(/^["'`*_\-]+|["'`*_\-]+$/g, '').trim();
     resumen = stripEmojis(resumen).trim();
-    if (resumen.length < 5) return null;
+    if (resumen.length < 5) {
+      console.warn('[ollama] Resumen descartado por corto:', JSON.stringify(resumen));
+      return null;
+    }
 
     // Guard contra drift de idioma: si salió en portugués (entero o mixto),
     // devolvemos null para que el throttle de 10min de Laravel reintente.
