@@ -222,58 +222,70 @@ function crearClienteWwebjs() {
     programarReinicio(5_000);
   }
 
+  // Watchdog v3 (07/07). Historia de las lecciones:
+  //  - v1 reiniciaba por getState() timeout: parecía falso positivo (ovo cada
+  //    15 min), PERO era positivo verdadero — la página se congelaba de verdad.
+  //  - v2 sondeaba solo el proceso browser: cero churn... y dejó páginas
+  //    ZOMBIE sin detectar (atención 21h muda, ovo 31h, el 06-07/07: browser
+  //    vivo, página congelada, cero mensajes).
+  //  - v3 distingue los dos males: browser muerto (3 strikes) y página zombie
+  //    (página sin responder Y sin actividad — la actividad reciente protege
+  //    del churn cuando el renderer anda lento pero funciona). Además
+  //    bringToFront() preventivo: Chromium congela pestañas "de fondo" en
+  //    headless; marcarla foreground en cada chequeo evita el freeze.
+  const ZOMBIE_INACTIVO_MS = 15 * 60 * 1000;
+  let strikesZombie = 0;
+
   async function verificarSalud() {
     if (destruido) return;
     const inactivo = Date.now() - ultimaActividad;
 
-    // Sonda de vida al PROCESO BROWSER (no a la página): pupBrowser.version()
-    // responde desde el endpoint del browser aunque el renderer de la página
-    // esté throttleado/niced (caso ovo 05/07: evaluate() y getState() timeout
-    // permanente con el cliente funcionando perfecto). El cuelgue real que
-    // queremos detectar (admin frozen 10 días en junio) tumba a Chromium
-    // ENTERO — ahí version() tampoco responde y el reinicio corresponde.
-    let cdpVivo = false;
+    // Prevención: página a primer plano (best-effort, cuelga si el renderer ya murió)
+    try {
+      await Promise.race([
+        client.pupPage.bringToFront(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('t')), 5_000)),
+      ]);
+    } catch (_) {}
+
+    // 1) ¿Proceso browser vivo? (endpoint del browser — el cuelgue total tipo
+    //    "admin 10 días" no responde ni esto)
+    let browserVivo = false;
     try {
       await Promise.race([
         client.pupBrowser.version(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000)),
       ]);
-      cdpVivo = true;
+      browserVivo = true;
     } catch (err) {
       console.warn(`[watchdog] Browser CDP sin respuesta: ${err.message}`);
     }
 
-    // Estado WA: informativo. Solo cuenta como señal de zombie si es un estado
-    // explícito distinto de CONNECTED (null/timeout con CDP vivo NO es señal).
-    let estadoReal = null;
-    if (cdpVivo) {
+    // 2) ¿Página responde? (evaluate en el renderer — detecta la página zombie)
+    let paginaViva = false;
+    if (browserVivo) {
       try {
-        estadoReal = await Promise.race([
-          client.getState(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15_000)),
+        await Promise.race([
+          client.pupPage.evaluate(() => 1),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000)),
         ]);
-      } catch (_) { /* getState roto con CDP vivo no es cuelgue */ }
+        paginaViva = true;
+      } catch (_) {}
     }
 
-    if (cdpVivo) {
-      chequeosSinConnected = 0;
-    } else if (inactivo < WATCHDOG_INTERVAL) {
-      // Hubo mensajes/acks hace menos de un intervalo: el cliente FUNCIONA
-      // aunque el CDP no conteste la sonda (renderer throttleado). No
-      // reiniciar lo que demostrablemente anda.
-      console.log('[watchdog] CDP sin respuesta pero con actividad reciente — no cuenta strike');
-    } else {
-      chequeosSinConnected++;
-    }
+    if (browserVivo) chequeosSinConnected = 0;
+    else chequeosSinConnected++;
 
-    console.log(`[watchdog] CDP: ${cdpVivo ? 'ok' : 'SIN RESPUESTA'} | Estado WA: ${estadoReal ?? 'desconocido'} | Inactivo: ${Math.round(inactivo / 60000)}m | strikes: ${chequeosSinConnected}`);
+    if (paginaViva || inactivo < ZOMBIE_INACTIVO_MS) strikesZombie = 0;
+    else strikesZombie++;
+
+    console.log(`[watchdog] browser: ${browserVivo ? 'ok' : 'MUERTO'} | página: ${paginaViva ? 'ok' : 'sin respuesta'} | Inactivo: ${Math.round(inactivo / 60000)}m | strikes: ${chequeosSinConnected} zombie: ${strikesZombie}`);
 
     if (chequeosSinConnected >= WATCHDOG_MAX_SIN_CONNECTED) {
-      return reiniciarPorWatchdog(`${chequeosSinConnected} chequeos seguidos sin respuesta CDP (Chromium congelado)`);
+      return reiniciarPorWatchdog(`${chequeosSinConnected} chequeos sin respuesta del browser (Chromium congelado)`);
     }
-    // Zombie real: CDP vivo pero WA reporta un estado malo sostenido sin actividad
-    if (inactivo > WATCHDOG_TIMEOUT && estadoReal && estadoReal !== 'CONNECTED') {
-      return reiniciarPorWatchdog(`${Math.round(inactivo/60000)}m sin actividad y estado WA ${estadoReal}`);
+    if (strikesZombie >= 2) {
+      return reiniciarPorWatchdog(`página zombie: sin responder y sin actividad hace ${Math.round(inactivo / 60000)}m`);
     }
   }
 
