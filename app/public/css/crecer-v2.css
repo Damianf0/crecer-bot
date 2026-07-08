@@ -465,3 +465,34 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
 }
 .v2-menu .opt { padding: 8px 13px; font-size: 13px; cursor: pointer; }
 .v2-menu .opt:hover { background: var(--v2-bg-hover); }
+
+/* ── Reply a mensaje puntual (07/08) ─────────────────────────────── */
+.v2-quoted {
+    border-left: 3px solid var(--v2-accent);
+    background: color-mix(in srgb, var(--v2-accent) 8%, transparent);
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    overflow: hidden;
+}
+.v2-quoted .q-autor { font-weight: 600; color: var(--v2-accent); font-size: 11px; }
+.v2-quoted .q-prev  { color: var(--v2-text-2); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 420px; }
+
+.v2-reply-btn {
+    border: none; background: none; cursor: pointer;
+    color: var(--v2-text-mute); font-size: 12px; padding: 0 2px;
+    opacity: 0; transition: opacity .15s;
+}
+.v2-msg:hover .v2-reply-btn { opacity: 1; }
+.v2-reply-btn:hover { color: var(--v2-accent); }
+
+.v2-reply-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; margin: 4px 0;
+    background: color-mix(in srgb, var(--v2-accent) 7%, transparent);
+    border-left: 3px solid var(--v2-accent);
+    border-radius: 6px; font-size: 12.5px;
+}
+.v2-reply-bar .rb-tag  { color: var(--v2-accent); font-weight: 600; white-space: nowrap; }
+.v2-reply-bar .rb-prev { flex: 1; color: var(--v2-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

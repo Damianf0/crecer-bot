@@ -76,6 +76,19 @@ window.V2Conv = (function () {
         return inner;
     }
 
+    // Índice id→mensaje del panel abierto, para armar el reply sin duplicar
+    // datos en el DOM (lo llena renderTimeline).
+    let msgIndex = {};
+
+    // Bloque de cita dentro de la burbuja (mensajes que son reply de otro).
+    function quotedHtml(q) {
+        if (!q) return '';
+        return `<div class="v2-quoted">
+            <div class="q-autor">${esc(q.autor || 'Mensaje citado')}</div>
+            <div class="q-prev">${esc(q.preview || '')}</div>
+        </div>`;
+    }
+
     function renderMsg(m) {
         if (m.direccion === 'nota_interna') {
             return `<div class="v2-msg" style="justify-content:center;">
@@ -83,10 +96,12 @@ window.V2Conv = (function () {
             </div>`;
         }
         const dir  = m.direccion === 'entrante' ? 'in' : 'out';
+        // Solo se puede citar un mensaje que WhatsApp conoce (tiene wa_id).
+        const reply = m.wa_id ? `<button class="v2-reply-btn" title="Responder a este mensaje" onclick="V2Conv.responderA(${m.id})">↩</button>` : '';
         const meta = dir === 'out' ? `${esc(m.usuario || 'Bot')} · ${esc(m.hora)}` : esc(m.hora);
         return `<div class="v2-msg ${dir}"><div style="max-width:70%;width:fit-content;min-width:0;">
-            <div class="v2-bubble">${bubbleContenido(m)}</div>
-            <div class="v2-msg-meta">${meta}</div>
+            <div class="v2-bubble">${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
+            <div class="v2-msg-meta">${meta} ${reply}</div>
         </div></div>`;
     }
 
@@ -97,6 +112,8 @@ window.V2Conv = (function () {
     }
 
     function renderTimeline(d) {
+        msgIndex = {};
+        d.mensajes.forEach(m => { msgIndex[m.id] = m; });
         const items = [
             ...d.mensajes.map(m => ({ ts: m.ts, fecha: m.fecha, html: renderMsg(m) })),
             ...(d.eventos || []).map(e => ({ ts: e.ts, fecha: (e.fecha || '').split(' ')[0], html: renderEvento(e) })),
@@ -179,6 +196,11 @@ window.V2Conv = (function () {
                     <span id="v2-file-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
                     <button type="button" class="v2-rr-btn" onclick="V2Conv.quitarArchivo()" title="Quitar archivo">✕</button>
                 </div>
+                <div class="v2-reply-bar" id="v2-reply-bar" style="display:none;">
+                    <span class="rb-tag">↩ Respondiendo a</span>
+                    <span class="rb-prev" id="v2-reply-prev"></span>
+                    <button type="button" class="v2-rr-btn" onclick="V2Conv.cancelarReply()" title="Cancelar respuesta">✕</button>
+                </div>
                 <div class="v2-compose-row">
                     <textarea id="compose" placeholder="Escribí tu respuesta…"></textarea>
                     <button class="v2-btn primary" id="btn-enviar" onclick="V2Conv.enviar()">Enviar</button>
@@ -204,6 +226,19 @@ window.V2Conv = (function () {
         list.scrollTop = list.scrollHeight;
         const ta = document.getElementById('compose');
         if (ta) ta.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') V2Conv.enviar(); });
+
+        // El re-render (polling) reconstruye el compose: restaurar la barra de
+        // reply si la cita pertenece a esta conversación, o descartarla si el
+        // panel cambió de conversación.
+        if (state.replyTo && state.replyTo.conv === state.panelId) {
+            const bar = document.getElementById('v2-reply-bar');
+            if (bar) {
+                document.getElementById('v2-reply-prev').textContent = state.replyTo.preview;
+                bar.style.display = 'flex';
+            }
+        } else {
+            state.replyTo = null;
+        }
     }
 
     async function renderLegajo(d) {
@@ -570,6 +605,26 @@ window.V2Conv = (function () {
             if (ta) ta.placeholder = state.modo === 'nota' ? 'Nota interna (no se envía al paciente)…' : 'Escribí tu respuesta…';
         },
 
+        // ── Reply a un mensaje puntual ────────────────────────
+        responderA(id) {
+            const m = msgIndex[id];
+            if (!m || !m.wa_id) return;
+            const prev = (m.contenido || ({ audio: '🎤 Audio', imagen: '🖼️ Imagen', video: '🎬 Video', documento: '📄 Documento', sticker: '😀 Sticker' })[m.tipo] || 'Mensaje').slice(0, 120);
+            state.replyTo = { conv: state.panelId, wa_id: m.wa_id, preview: prev };
+            const bar = document.getElementById('v2-reply-bar');
+            if (bar) {
+                document.getElementById('v2-reply-prev').textContent = prev;
+                bar.style.display = 'flex';
+            }
+            document.getElementById('compose')?.focus();
+        },
+
+        cancelarReply() {
+            state.replyTo = null;
+            const bar = document.getElementById('v2-reply-bar');
+            if (bar) bar.style.display = 'none';
+        },
+
         async enviar() {
             // Si hay un archivo adjunto (solo en modo mensaje), va por la ruta multipart.
             if (state.archivo && state.modo !== 'nota') return V2Conv.enviarArchivo();
@@ -579,8 +634,14 @@ window.V2Conv = (function () {
             const btn = document.getElementById('btn-enviar');
             btn.disabled = true;
             try {
-                await post('/atencion/enviar', { conv_id: state.panelId, texto, modo: state.modo });
+                await post('/atencion/enviar', {
+                    conv_id: state.panelId, texto, modo: state.modo,
+                    // Reply: solo mensajes reales (no notas) y solo si la cita es
+                    // de ESTA conversación (el panel pudo haber cambiado).
+                    quoted_wa_id: (state.modo !== 'nota' && state.replyTo && state.replyTo.conv === state.panelId) ? state.replyTo.wa_id : null,
+                });
                 ta.value = '';
+                V2Conv.cancelarReply();
                 v2toast(state.modo === 'nota' ? 'Nota guardada' : 'Enviado');
                 await V2Conv.refrescar();
             } catch (e) {
