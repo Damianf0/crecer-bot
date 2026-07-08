@@ -233,7 +233,12 @@ function crearClienteWwebjs() {
   //    del churn cuando el renderer anda lento pero funciona). Además
   //    bringToFront() preventivo: Chromium congela pestañas "de fondo" en
   //    headless; marcarla foreground en cada chequeo evita el freeze.
-  const ZOMBIE_INACTIVO_MS = 15 * 60 * 1000;
+  // Configurable por bot (08/07): en ovo evaluate() falla crónico con el
+  // cliente FUNCIONANDO (mensajes entran igual — verificado cruzando DB vs
+  // ciclos) y su bajo tráfico hace normales los silencios de 25 min → pasaba
+  // la noche reiniciándose cada 26 min al pedo. WATCHDOG_ZOMBIE_MIN=120 en
+  // compose para ovo; atención/admin quedan en 15 (ahí el silencio sí es señal).
+  const ZOMBIE_INACTIVO_MS = parseInt(process.env.WATCHDOG_ZOMBIE_MIN || '15', 10) * 60 * 1000;
   let strikesZombie = 0;
 
   async function verificarSalud() {

@@ -207,6 +207,9 @@ services:
       - BOT_AREA=ovodonacion
       - PORT=3003
       - BOT_PUBLIC_URL=http://192.168.1.125:3003
+      # Umbral zombie alto: cola de bajo tráfico + evaluate() roto crónico en
+      # esta cuenta → 25 min de silencio es normal, no señal de página muerta.
+      - WATCHDOG_ZOMBIE_MIN=120
     labels:
       - autoheal=true
     healthcheck:

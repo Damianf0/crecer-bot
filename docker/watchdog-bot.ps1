@@ -165,7 +165,13 @@ foreach ($b in $Bots) {
             $durMin = [int][Math]::Round(($now - $start).TotalMinutes)
             $msg = 'Bot ' + $area + ' recuperado. Estuvo en falla ' + $durMin + ' min. Motivo: ' + $s.last_reason + '.'
             Log ('RECUPERADO [' + $area + ']: ' + $msg)
-            NotificarWA ('Watchdog Crecer: ' + $msg) | Out-Null
+            # Solo notificar la recuperacion si el incidente habia sido notificado
+            # (>=10 min). Los blips cortos (reinicio del watchdog interno, ~13s,
+            # cazados por mala suerte del muestreo) quedan solo en el log — eran
+            # el grueso de las notificaciones molestas del 07-08/07.
+            if ($s.incident_notified) {
+                NotificarWA ('Watchdog Crecer: ' + $msg) | Out-Null
+            }
             $s.incident_start_at = $null
             $s.last_reason       = $null
             $s.incident_notified = $false
