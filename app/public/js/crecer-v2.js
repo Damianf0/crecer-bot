@@ -170,6 +170,8 @@ window.V2Conv = (function () {
             acciones.push(`<button class="v2-btn" onclick="V2Conv.menuDelegar(event)">Delegar ▾</button>`);
             acciones.push(`<button class="v2-btn" onclick="V2Conv.accion('urgente')" title="Marcar / desmarcar urgente">⚑</button>`);
             acciones.push(`<button class="v2-btn" onclick="V2Conv.modalTarea()" title="Crear una tarea o agendar una llamada para este contacto">🗓 Agendar</button>`);
+            acciones.push(`<button class="v2-btn" onclick="V2Conv.modalDerivarArea()" title="Pasar la conversación a la cola de otra área">↪ Área</button>`);
+            acciones.push(`<button class="v2-btn" onclick="V2Conv.modalReenvio()" title="Reenviar el hilo a otro contacto y archivar">📤</button>`);
             acciones.push(`<button class="v2-btn accent" onclick="V2Conv.accion('resolver')">Resolver</button>`);
         }
 
@@ -623,6 +625,118 @@ window.V2Conv = (function () {
             state.replyTo = null;
             const bar = document.getElementById('v2-reply-bar');
             if (bar) bar.style.display = 'none';
+        },
+
+        // ── Derivar a otra área (gap de paridad V1, restaurado 08/07) ──
+        modalDerivarArea() {
+            document.getElementById('v2-overlay-modal')?.remove();
+            const AREAS = { atencion: 'Clínica', administracion: 'Administración', ovodonacion: 'Ovodonación' };
+            const botones = Object.entries(AREAS)
+                .map(([k, l]) => `<button class="v2-btn" style="margin:3px;" onclick="V2Conv.confirmarDerivarArea('${k}')">${l}</button>`).join('');
+            const div = document.createElement('div');
+            div.id = 'v2-overlay-modal';
+            div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
+            div.innerHTML = `<div style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:22px;width:min(440px,92vw);">
+                <div style="font-weight:650;font-size:15px;margin-bottom:6px;">↪ Derivar a otra área</div>
+                <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">Se le avisa al paciente por el número actual que va a tener respuesta desde el número del área elegida, y la conversación pasa a esa cola.</div>
+                <div style="display:flex;flex-wrap:wrap;">${botones}</div>
+                <div style="text-align:right;margin-top:14px;"><button class="v2-btn" onclick="document.getElementById('v2-overlay-modal').remove()">Cancelar</button></div>
+            </div>`;
+            div.onclick = (e) => { if (e.target === div) div.remove(); };
+            document.body.appendChild(div);
+        },
+
+        async confirmarDerivarArea(area) {
+            const modal = document.getElementById('v2-overlay-modal');
+            modal?.querySelectorAll('button').forEach(b => b.disabled = true);
+            try {
+                const r = await post(`/atencion/conversacion/${state.panelId}/derivar-area`, { area });
+                modal?.remove();
+                v2toast(r.mensaje || 'Conversación derivada');
+                V2Conv.cerrar();
+                if (cfg.onChanged) cfg.onChanged('derivar-area');
+            } catch (e) {
+                modal?.remove();
+                v2toast('No se pudo derivar', 'err');
+            }
+        },
+
+        // ── Reenviar conversación a otro contacto (gap de paridad V1) ──
+        modalReenvio() {
+            document.getElementById('v2-overlay-modal')?.remove();
+            state.rxContacto = null;
+            const div = document.createElement('div');
+            div.id = 'v2-overlay-modal';
+            div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
+            div.innerHTML = `<div style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:22px;width:min(520px,92vw);max-height:calc(100vh - 64px);overflow-y:auto;">
+                <div style="font-weight:650;font-size:15px;margin-bottom:6px;">📤 Reenviar conversación</div>
+                <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">Envía el hilo completo a un contacto y archiva esta conversación. El destinatario lo recibe como un mensaje de WhatsApp común.</div>
+                <input type="text" id="v2-rx-buscar" class="v2-field" style="width:100%;" placeholder="Buscar contacto destino: nombre o teléfono…" autocomplete="off"
+                    oninput="V2Conv.rxBuscarDebounced()">
+                <div id="v2-rx-resultados" style="margin-top:6px;max-height:200px;overflow-y:auto;border:1px solid var(--v2-border);border-radius:6px;display:none;"></div>
+                <div id="v2-rx-sel" style="margin-top:10px;padding:8px 12px;border:1px solid var(--v2-accent);border-radius:6px;display:none;font-size:13px;"></div>
+                <textarea id="v2-rx-comentario" class="v2-field" style="width:100%;margin-top:12px;min-height:56px;" placeholder="Comentario (opcional)"></textarea>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+                    <button class="v2-btn" onclick="document.getElementById('v2-overlay-modal').remove()">Cancelar</button>
+                    <button class="v2-btn accent" id="v2-rx-confirmar" onclick="V2Conv.confirmarReenvio()" disabled>Reenviar y archivar</button>
+                </div>
+            </div>`;
+            div.onclick = (e) => { if (e.target === div) div.remove(); };
+            document.body.appendChild(div);
+            document.getElementById('v2-rx-buscar').focus();
+        },
+
+        rxBuscarDebounced() {
+            clearTimeout(state.rxTimer);
+            state.rxTimer = setTimeout(() => V2Conv.rxBuscar(), 250);
+        },
+
+        async rxBuscar() {
+            const q = document.getElementById('v2-rx-buscar')?.value.trim() || '';
+            const cont = document.getElementById('v2-rx-resultados');
+            if (!cont) return;
+            if (q.length < 2) { cont.style.display = 'none'; return; }
+            try {
+                const d = await get('/atencion/contactos/buscar?q=' + encodeURIComponent(q));
+                const items = d.data || [];
+                cont.innerHTML = items.length
+                    ? items.map((c, i) => `<div class="opt" style="padding:8px 12px;font-size:13px;cursor:pointer;" onmouseover="this.style.background='var(--v2-bg-hover)'" onmouseout="this.style.background=''" onclick="V2Conv.rxElegir(${i})">${esc(c.nombre || '(sin nombre)')} <span style="color:var(--v2-text-mute);font-size:11.5px;">${esc(c.telefono || '')}</span></div>`).join('')
+                    : '<div style="padding:9px 12px;font-size:12px;color:var(--v2-text-mute);">Sin resultados</div>';
+                state.rxItems = items;
+                cont.style.display = 'block';
+            } catch (e) { cont.style.display = 'none'; }
+        },
+
+        rxElegir(i) {
+            const c = (state.rxItems || [])[i];
+            if (!c) return;
+            state.rxContacto = c;
+            document.getElementById('v2-rx-resultados').style.display = 'none';
+            const sel = document.getElementById('v2-rx-sel');
+            sel.innerHTML = `<b>Destino:</b> ${esc(c.nombre || '(sin nombre)')} · <span style="color:var(--v2-text-mute);">${esc(c.telefono || '')}</span>`;
+            sel.style.display = 'block';
+            document.getElementById('v2-rx-confirmar').disabled = false;
+        },
+
+        async confirmarReenvio() {
+            if (!state.rxContacto || !state.panelId) return;
+            const btn = document.getElementById('v2-rx-confirmar');
+            btn.disabled = true;
+            btn.textContent = 'Reenviando…';
+            try {
+                const r = await post(`/atencion/conversacion/${state.panelId}/reenviar`, {
+                    contacto_id: state.rxContacto.id,
+                    comentario: document.getElementById('v2-rx-comentario')?.value.trim() || null,
+                });
+                document.getElementById('v2-overlay-modal')?.remove();
+                v2toast(r.mensaje || 'Conversación reenviada y archivada');
+                V2Conv.cerrar();
+                if (cfg.onChanged) cfg.onChanged('reenviar');
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'Reenviar y archivar';
+                v2toast('No se pudo reenviar — ¿bot conectado?', 'err');
+            }
         },
 
         async enviar() {
