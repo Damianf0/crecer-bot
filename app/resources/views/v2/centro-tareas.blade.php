@@ -11,11 +11,12 @@
     <section class="v2-bandeja">
         <div class="v2-bandeja-head">
             <h1 style="display:flex;align-items:center;">Tareas <span class="count" id="b-count"></span>
-                <button class="v2-btn primary sm" style="margin-left:auto;" onclick="document.getElementById('dlg-nueva').showModal()">+ Nueva</button>
+                <button class="v2-btn primary sm" style="margin-left:auto;" onclick="abrirNueva()">+ Nueva</button>
             </h1>
             <input type="search" class="v2-search" id="b-search" placeholder="Buscar por título">
         </div>
         <div class="v2-vistas" id="b-vistas"></div>
+        <div class="v2-vistas" id="b-ambito"></div>
         <div class="v2-cards" id="b-cards"></div>
     </section>
 
@@ -29,10 +30,10 @@
     </section>
 </div>
 
-{{-- Alta de tarea --}}
+{{-- Alta / edición de tarea (mismo dialog; _editId decide POST o PATCH) --}}
 <dialog class="v2-dialog" id="dlg-nueva">
     <form method="dialog" onsubmit="return false;">
-        <h3>Nueva tarea</h3>
+        <h3 id="nt-h3">Nueva tarea</h3>
         <label class="v2-label">Título *</label>
         <input class="v2-field" id="nt-titulo" maxlength="255" placeholder="Qué hay que hacer">
         <label class="v2-label">Descripción</label>
@@ -60,7 +61,7 @@
         </div>
         <div class="v2-dialog-foot">
             <button type="button" class="v2-btn" onclick="document.getElementById('dlg-nueva').close()">Cancelar</button>
-            <button type="button" class="v2-btn primary" onclick="crearTarea()">Crear tarea</button>
+            <button type="button" class="v2-btn primary" id="nt-submit" onclick="guardarTarea()">Crear tarea</button>
         </div>
     </form>
 </dialog>
@@ -71,7 +72,8 @@
 const { esc, get, post, patch, del, avatarHtml } = V2;
 const ME_ID = {{ auth()->id() }};
 
-let state = { tareas: [], derivaciones: [], vista: 'activas', q: '', sel: null /* {tipo:'tarea'|'der', id} */ };
+let state = { tareas: [], derivaciones: [], vista: 'activas', q: '', sel: null /* {tipo:'tarea'|'der', id} */,
+              ambito: 'mias' /* mias | asignadas | creadas | todas */, vencidas: false };
 
 const PRIO_PILL = {
     alta:   '<span class="v2-pill urgente">Alta</span>',
@@ -85,7 +87,7 @@ async function fetchAll() {
     const estado = state.vista === 'completadas' ? 'completadas' : 'activas';
     try {
         const [t, d] = await Promise.all([
-            get(`/tareas/data?filtro=mias&estado=${estado}`),
+            get(`/tareas/data?filtro=${state.ambito}&estado=${estado}${state.vencidas ? '&vencidas=1' : ''}`),
             get('/centro-tareas/derivaciones'),
         ]);
         state.tareas = t.data || [];
@@ -108,8 +110,20 @@ function renderVistas() {
         `<button class="v2-vista ${state.vista === k ? 'active' : ''}" onclick="setVista('${k}')">${lbl}${n !== null ? `<span class="n">${n}</span>` : ''}</button>`
     ).join('');
     document.getElementById('b-count').textContent = state.vista === 'derivaciones' ? state.derivaciones.length : state.tareas.length;
+
+    // Fila de ámbito (paridad V1): a quién pertenecen las tareas + toggle vencidas.
+    // No aplica a la vista de derivaciones del bot.
+    const amb = document.getElementById('b-ambito');
+    if (state.vista === 'derivaciones') { amb.style.display = 'none'; return; }
+    amb.style.display = '';
+    amb.innerHTML = [['mias', 'Mías'], ['asignadas', 'Asignadas a mí'], ['creadas', 'Creadas por mí'], ['todas', 'Todas']]
+        .map(([k, lbl]) => `<button class="v2-vista ${state.ambito === k ? 'active' : ''}" onclick="setAmbito('${k}')">${lbl}</button>`)
+        .join('')
+        + `<button class="v2-vista ${state.vencidas ? 'active' : ''}" style="margin-left:auto;" title="Solo tareas vencidas sin completar" onclick="toggleVencidas()">⚠ Vencidas</button>`;
 }
 async function setVista(v) { state.vista = v; await fetchAll(); renderBandeja(); }
+async function setAmbito(a) { state.ambito = a; await fetchAll(); renderBandeja(); }
+async function toggleVencidas() { state.vencidas = !state.vencidas; await fetchAll(); renderBandeja(); }
 
 function renderBandeja() {
     renderVistas();
@@ -164,6 +178,7 @@ function abrirTarea(id) {
     } else {
         acciones.push(`<button class="v2-btn" onclick="estadoTarea(${t.id}, 'pendiente')">Reabrir</button>`);
     }
+    acciones.push(`<button class="v2-btn" onclick="abrirEditar(${t.id})" title="Editar título, asignación, vencimiento o prioridad">✏ Editar</button>`);
     acciones.push(`<button class="v2-btn danger" onclick="borrarTarea(${t.id})">Eliminar</button>`);
 
     body.innerHTML = `
@@ -271,13 +286,47 @@ function cerrarDetalle() {
     document.getElementById('det-empty').style.display = '';
 }
 
-// ── Alta ──────────────────────────────────────────────────────────
+// ── Alta / edición (mismo dialog; _editId decide POST o PATCH) ────
+let _editId = null;
+
 document.getElementById('nt-prio').addEventListener('click', e => {
     if (!e.target.dataset.v) return;
     document.querySelectorAll('#nt-prio .v2-vista').forEach(b => b.classList.toggle('active', b === e.target));
 });
 
-async function crearTarea() {
+function setPrioChips(prio) {
+    document.querySelectorAll('#nt-prio .v2-vista').forEach(b => b.classList.toggle('active', b.dataset.v === prio));
+}
+
+function abrirNueva() {
+    _editId = null;
+    document.getElementById('nt-h3').textContent = 'Nueva tarea';
+    document.getElementById('nt-submit').textContent = 'Crear tarea';
+    document.getElementById('nt-titulo').value = '';
+    document.getElementById('nt-desc').value = '';
+    document.getElementById('nt-asig').value = String(ME_ID);
+    document.getElementById('nt-vence').value = '';
+    setPrioChips('normal');
+    document.getElementById('dlg-nueva').showModal();
+    document.getElementById('nt-titulo').focus();
+}
+
+function abrirEditar(id) {
+    const t = state.tareas.find(x => x.id === id);
+    if (!t) return;
+    _editId = id;
+    document.getElementById('nt-h3').textContent = 'Editar tarea';
+    document.getElementById('nt-submit').textContent = 'Guardar cambios';
+    document.getElementById('nt-titulo').value = t.titulo || '';
+    document.getElementById('nt-desc').value = t.descripcion || '';
+    document.getElementById('nt-asig').value = t.asignada_a ? String(t.asignada_a) : String(ME_ID);
+    document.getElementById('nt-vence').value = t.vence_at || '';
+    setPrioChips(t.prioridad || 'normal');
+    document.getElementById('dlg-nueva').showModal();
+    document.getElementById('nt-titulo').focus();
+}
+
+async function guardarTarea() {
     const titulo = document.getElementById('nt-titulo').value.trim();
     if (!titulo) { v2toast('El título es obligatorio', 'err'); return; }
     const payload = {
@@ -288,13 +337,22 @@ async function crearTarea() {
         prioridad:   document.querySelector('#nt-prio .active')?.dataset.v || 'normal',
     };
     try {
-        await post('/tareas', payload);
+        if (_editId) {
+            await patch(`/tareas/${_editId}`, payload);
+            v2toast('Tarea actualizada');
+        } else {
+            await post('/tareas', payload);
+            v2toast('Tarea creada');
+        }
         document.getElementById('dlg-nueva').close();
-        document.getElementById('nt-titulo').value = '';
-        document.getElementById('nt-desc').value = '';
-        v2toast('Tarea creada');
         await fetchAll(); renderBandeja();
-    } catch (e) { v2toast('No se pudo crear', 'err'); }
+        if (_editId) {
+            // Re-pinta el detalle; si la edición la sacó del filtro activo
+            // (ej: reasignada mirando "Asignadas a mí"), cerrar el detalle.
+            if (state.tareas.some(x => x.id === _editId)) abrirTarea(_editId);
+            else cerrarDetalle();
+        }
+    } catch (e) { v2toast(_editId ? 'No se pudo actualizar' : 'No se pudo crear', 'err'); }
 }
 
 // ── Init ──────────────────────────────────────────────────────────

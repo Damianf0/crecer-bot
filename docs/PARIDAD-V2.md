@@ -17,8 +17,8 @@
 | Documentos / legajo | ✅ total | — |
 | Historial | ✅ total | — |
 | Mis conversaciones | ✅ (comparte V2Conv) | los gaps del panel se arreglan en V2Conv (ver Atención) |
-| Centro de tareas | 🟡 gaps menores | ver lista |
-| Atención (panel V2Conv) | 🟡 gaps ALTA cerrados 08-09/07 + menores pendientes | ver lista |
+| Centro de tareas | ✅ funcional (gaps MEDIA cerrados 09/07; queda #9 BAJA) | ver lista |
+| Atención (panel V2Conv) | ✅ funcional (ALTA+MEDIA cerrados 08-09/07; quedan BAJA) | ver lista |
 
 ## Gaps funcionales encontrados y su estado
 
@@ -30,8 +30,8 @@
 | 4 | Paginación de mensajes ("ver anteriores"; backend `before_id` listo) | ALTA | ✅ restaurado 09/07 (loader + scroll-top; poll-safe: los viejos viven en estado, y el refresco ya no manda el scroll al fondo) |
 | 5 | Iniciar conversación desde Atención (modal Nueva) | MEDIA | ✅ restaurado 09/07 (botón "+ Nueva" en la bandeja; tabs contacto/manual + plantillas, mismo endpoint /atencion/iniciar) |
 | 6 | Notificaciones de browser por conversación entrante | MEDIA | ✅ restaurado 09/07 (window.Notify en crecer-notify.js compartido por el layout V2; urgentes con ping + delegadas a mí, como V1) |
-| 7 | Centro tareas: filtros ámbito (mías/asignadas/creadas/todas) y "vencidas" | MEDIA | ⬜ pendiente |
-| 8 | Centro tareas: editar tarea existente | MEDIA | ⬜ pendiente |
+| 7 | Centro tareas: filtros ámbito (mías/asignadas/creadas/todas) y "vencidas" | MEDIA | ✅ restaurado 09/07 (fila de chips de ámbito + toggle ⚠ Vencidas; el backend ya soportaba filtro y vencidas) |
+| 8 | Centro tareas: editar tarea existente | MEDIA | ✅ restaurado 09/07 (botón ✏ Editar en el detalle; reusa el dialog de alta con PATCH /tareas/{id}) |
 | 9 | Centro tareas: vincular conversación al crear | BAJA | ⬜ pendiente |
 | 10 | Filtro "Mías" en bandeja atención | BAJA | ⬜ N/A-ish: /v2/mis-conversaciones ES esa vista |
 | 11 | Modal ficha de contacto desde avatar + lightbox | BAJA | ⬜ pendiente (el legajo lateral cubre la info) |
@@ -45,6 +45,9 @@
 
 Para retirar V1: **los gaps ALTA (1-4) cerrados + decisión explícita sobre los MEDIA (5-8)**
 (cerrarlos o aceptar el workaround por escrito). Los BAJA no bloquean.
+
+**Estado 09/07: ALTA 1-4 y MEDIA 5-8 cerrados en código.** El gate queda
+condicionado solo a que no aparezcan opt-outs ni regresiones antes del 13/07.
 
 ## Lección de proceso
 
