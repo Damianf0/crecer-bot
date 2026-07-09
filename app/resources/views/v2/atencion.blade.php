@@ -9,7 +9,10 @@
 
     <section class="v2-bandeja">
         <div class="v2-bandeja-head">
-            <h1>Conversaciones <span class="count" id="b-count"></span></h1>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <h1>Conversaciones <span class="count" id="b-count"></span></h1>
+                <button class="v2-btn primary" onclick="V2Conv.modalNueva()" title="Iniciar una conversación de WhatsApp con un contacto o número nuevo">+ Nueva</button>
+            </div>
             <input type="search" class="v2-search" id="b-search" placeholder="Buscar por nombre o teléfono">
         </div>
         <div class="v2-vistas" id="b-vistas"></div>
@@ -122,11 +125,81 @@ async function pollItems() {
         if (r.status === 401 || r.redirected) { location.href = '/login'; return; }
         state.etag = r.headers.get('ETag');
         state.items = normalizar(await r.json());
+        detectarNotifs(state.items);
         renderBandeja();
     } catch (e) {}
 }
 
+// ── Notificaciones browser (paridad V1): urgente nueva + delegada a mí ──
+// La primera pasada solo puebla los sets (evita la ráfaga al abrir la página).
+const ME_ID = {{ auth()->id() }};
+const _notifUrg = new Set();
+const _misConvs = new Set();
+let _notifPrimera = true;
+
+function detectarNotifs(items) {
+    const urgentes = items.filter(i => i._estado === 'nueva' && i.urgente);
+    const mias     = items.filter(i => parseInt(i.asig_id) === ME_ID);
+
+    if (_notifPrimera) {
+        urgentes.forEach(i => _notifUrg.add(i.id));
+        mias.forEach(i => _misConvs.add(i.id));
+        _notifPrimera = false;
+        return;
+    }
+
+    urgentes.forEach(i => {
+        if (_notifUrg.has(i.id)) return;
+        _notifUrg.add(i.id);
+        sonarPing();
+        window.Notify?.disparar({
+            titulo: 'Crecer — mensaje urgente',
+            cuerpo: `${i.contacto}: ${(i.resumen || '').slice(0, 80)}`,
+            tag: `urg-${i.id}`,
+        });
+    });
+
+    mias.forEach(i => {
+        if (_misConvs.has(i.id)) return;
+        _misConvs.add(i.id);
+        // Si es la conv abierta en mi panel, la acabo de tomar yo: no avisar.
+        if (V2Conv.panelId === i.id) return;
+        window.Notify?.disparar({
+            titulo: 'Te delegaron una conversación',
+            cuerpo: `${i.contacto}: ${(i.resumen || '').slice(0, 80)}`,
+            tag: `deleg-${i.id}`,
+        });
+    });
+
+    // Limpiar las que dejaron de ser mías (resueltas / delegadas a otro) para
+    // que una re-delegación futura vuelva a avisar; cap del set de urgentes.
+    const clavesMias = new Set(mias.map(i => i.id));
+    for (const k of Array.from(_misConvs)) if (!clavesMias.has(k)) _misConvs.delete(k);
+    if (_notifUrg.size > 500) {
+        const keep = Array.from(_notifUrg).slice(-300);
+        _notifUrg.clear();
+        keep.forEach(k => _notifUrg.add(k));
+    }
+}
+
+// Tono de aviso corto generado con WebAudio (sin assets), igual que V1.
+function sonarPing() {
+    try {
+        const ctx = window._audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.frequency.value = 880;
+        g.gain.value = 0.0001;
+        o.connect(g); g.connect(ctx.destination);
+        o.start();
+        g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45);
+        o.stop(ctx.currentTime + 0.5);
+    } catch {}
+}
+
 state.items = normalizar(@json($itemsData));
+detectarNotifs(state.items);
 renderBandeja();
 setInterval(pollItems, 8000);
 setInterval(() => V2Conv.refrescar(), 10000);

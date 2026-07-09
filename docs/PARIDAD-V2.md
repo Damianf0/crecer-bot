@@ -28,8 +28,8 @@
 | 2 | Derivar a otra área (modal) | ALTA | ✅ restaurado 08/07 |
 | 3 | Reenviar conversación a otro contacto + archivar | ALTA | ✅ restaurado 08/07 |
 | 4 | Paginación de mensajes ("ver anteriores"; backend `before_id` listo) | ALTA | ✅ restaurado 09/07 (loader + scroll-top; poll-safe: los viejos viven en estado, y el refresco ya no manda el scroll al fondo) |
-| 5 | Iniciar conversación desde Atención (modal Nueva) | MEDIA | ⬜ pendiente — workaround: desde Contactos (paridad total ahí) |
-| 6 | Notificaciones de browser por conversación entrante | MEDIA | ⬜ pendiente (las del chat interno sí andan — viven en el widget React) |
+| 5 | Iniciar conversación desde Atención (modal Nueva) | MEDIA | ✅ restaurado 09/07 (botón "+ Nueva" en la bandeja; tabs contacto/manual + plantillas, mismo endpoint /atencion/iniciar) |
+| 6 | Notificaciones de browser por conversación entrante | MEDIA | ✅ restaurado 09/07 (window.Notify en crecer-notify.js compartido por el layout V2; urgentes con ping + delegadas a mí, como V1) |
 | 7 | Centro tareas: filtros ámbito (mías/asignadas/creadas/todas) y "vencidas" | MEDIA | ⬜ pendiente |
 | 8 | Centro tareas: editar tarea existente | MEDIA | ⬜ pendiente |
 | 9 | Centro tareas: vincular conversación al crear | BAJA | ⬜ pendiente |

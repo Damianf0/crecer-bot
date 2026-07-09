@@ -63,6 +63,15 @@ window.V2Conv = (function () {
         iniciada: 'inició la conversación', derivada_area: 'la derivó de área', reenviada: 'la reenvió',
     };
 
+    // Plantillas del modal "Nueva conversación" (mismas que V1).
+    const PLANTILLAS = [
+        { titulo: 'En blanco', texto: '' },
+        { titulo: 'Recordatorio de turno',  texto: 'Hola! Te recordamos tu turno en Crecer Reproducción. Cualquier consulta, escribinos por acá. Saludos!' },
+        { titulo: 'Confirmar receta lista', texto: 'Hola! Tu receta ya está lista para retirar. Te esperamos en el horario habitual. Saludos!' },
+        { titulo: 'Solicitar muestra',      texto: 'Hola! Necesitamos coordinar una nueva toma de muestra. ¿Cuándo te queda cómodo pasar? Saludos!' },
+        { titulo: 'Pedido de información',  texto: 'Hola! Soy de Crecer Reproducción. Necesitaríamos consultarte algunos datos. ¿Podés responderme cuando puedas? Gracias!' },
+    ];
+
     function bubbleContenido(m) {
         let inner = '';
         if (m.tipo === 'imagen' && m.archivo_url) {
@@ -788,6 +797,125 @@ window.V2Conv = (function () {
                 btn.disabled = false;
                 btn.textContent = 'Reenviar y archivar';
                 v2toast('No se pudo reenviar — ¿bot conectado?', 'err');
+            }
+        },
+
+        // ── Iniciar conversación nueva (gap de paridad V1, feature del 27/04) ──
+        // El bot emisor es el del área de la bandeja (cfg.area). El backend verifica
+        // el número contra /check-numero del bot antes de crear la conversación.
+        modalNueva() {
+            document.getElementById('v2-overlay-modal')?.remove();
+            state.nxModo = 'contacto';
+            state.nxContacto = null;
+            const div = document.createElement('div');
+            div.id = 'v2-overlay-modal';
+            div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
+            div.innerHTML = `<div style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:22px;width:min(520px,92vw);max-height:calc(100vh - 64px);overflow-y:auto;">
+                <div style="font-weight:650;font-size:15px;margin-bottom:6px;">💬 Iniciar nueva conversación</div>
+                <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">El mensaje sale por el número de WhatsApp de esta área. Antes de enviar se verifica que el destino exista en WhatsApp.</div>
+                <div class="v2-compose-modos" style="margin-bottom:10px;">
+                    <button class="v2-compose-modo active" id="v2-nx-tab-contacto" onclick="V2Conv.nxSetModo('contacto')">Buscar contacto</button>
+                    <button class="v2-compose-modo" id="v2-nx-tab-manual" onclick="V2Conv.nxSetModo('manual')">Número manual</button>
+                </div>
+                <div id="v2-nx-sec-contacto">
+                    <input type="text" id="v2-nx-buscar" class="v2-field" style="width:100%;" placeholder="Buscar por nombre o teléfono…" autocomplete="off"
+                        oninput="V2Conv.nxBuscarDebounced()">
+                    <div id="v2-nx-resultados" style="margin-top:6px;max-height:180px;overflow-y:auto;border:1px solid var(--v2-border);border-radius:6px;display:none;"></div>
+                    <div id="v2-nx-sel" style="margin-top:10px;padding:8px 12px;border:1px solid var(--v2-accent);border-radius:6px;display:none;font-size:13px;"></div>
+                </div>
+                <div id="v2-nx-sec-manual" style="display:none;">
+                    <input type="text" id="v2-nx-telefono" class="v2-field" style="width:100%;" inputmode="numeric" placeholder="ej: 1123456789 o 5491123456789">
+                    <div style="font-size:11px;color:var(--v2-text-mute);margin-top:4px;">Argentina · 10 dígitos con código de área (sin 0 ni 15)</div>
+                </div>
+                <label class="v2-label" style="margin-top:12px;">Plantilla rápida</label>
+                <select class="v2-field" style="width:100%;" onchange="V2Conv.nxPlantilla(this.value)">
+                    ${PLANTILLAS.map((p, i) => `<option value="${i}">${esc(p.titulo)}</option>`).join('')}
+                </select>
+                <label class="v2-label" style="margin-top:10px;">Mensaje inicial</label>
+                <textarea id="v2-nx-texto" class="v2-field" style="width:100%;min-height:72px;" placeholder="Escribí el primer mensaje…"></textarea>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+                    <button class="v2-btn" onclick="document.getElementById('v2-overlay-modal').remove()">Cancelar</button>
+                    <button class="v2-btn primary" id="v2-nx-confirmar" onclick="V2Conv.confirmarNueva()">Iniciar y enviar</button>
+                </div>
+            </div>`;
+            div.onclick = (e) => { if (e.target === div) div.remove(); };
+            document.body.appendChild(div);
+            document.getElementById('v2-nx-buscar').focus();
+        },
+
+        nxSetModo(m) {
+            state.nxModo = m;
+            state.nxContacto = null;
+            document.getElementById('v2-nx-tab-contacto').className = 'v2-compose-modo' + (m === 'contacto' ? ' active' : '');
+            document.getElementById('v2-nx-tab-manual').className   = 'v2-compose-modo' + (m === 'manual' ? ' active' : '');
+            document.getElementById('v2-nx-sec-contacto').style.display = m === 'contacto' ? '' : 'none';
+            document.getElementById('v2-nx-sec-manual').style.display   = m === 'manual' ? '' : 'none';
+            document.getElementById(m === 'contacto' ? 'v2-nx-buscar' : 'v2-nx-telefono').focus();
+        },
+
+        nxPlantilla(idx) {
+            const p = PLANTILLAS[parseInt(idx)];
+            if (p) document.getElementById('v2-nx-texto').value = p.texto;
+        },
+
+        nxBuscarDebounced() {
+            clearTimeout(state.nxTimer);
+            state.nxTimer = setTimeout(() => V2Conv.nxBuscar(), 250);
+        },
+
+        async nxBuscar() {
+            const q = document.getElementById('v2-nx-buscar')?.value.trim() || '';
+            const cont = document.getElementById('v2-nx-resultados');
+            if (!cont) return;
+            if (q.length < 2) { cont.style.display = 'none'; return; }
+            try {
+                const d = await get('/atencion/contactos/buscar?q=' + encodeURIComponent(q));
+                const items = d.data || [];
+                cont.innerHTML = items.length
+                    ? items.map((c, i) => `<div style="padding:8px 12px;font-size:13px;cursor:pointer;" onmouseover="this.style.background='var(--v2-bg-hover)'" onmouseout="this.style.background=''" onclick="V2Conv.nxElegir(${i})">${esc(c.nombre || '(sin nombre)')} <span style="color:var(--v2-text-mute);font-size:11.5px;">${esc(c.telefono || '')}</span></div>`).join('')
+                    : '<div style="padding:9px 12px;font-size:12px;color:var(--v2-text-mute);">Sin resultados</div>';
+                state.nxItems = items;
+                cont.style.display = 'block';
+            } catch (e) { cont.style.display = 'none'; }
+        },
+
+        nxElegir(i) {
+            const c = (state.nxItems || [])[i];
+            if (!c) return;
+            state.nxContacto = c;
+            document.getElementById('v2-nx-resultados').style.display = 'none';
+            document.getElementById('v2-nx-buscar').value = c.nombre || '';
+            const sel = document.getElementById('v2-nx-sel');
+            sel.innerHTML = `<b>Destino:</b> ${esc(c.nombre || '(sin nombre)')} · <span style="color:var(--v2-text-mute);">${esc(c.telefono || '')}</span>`;
+            sel.style.display = 'block';
+        },
+
+        async confirmarNueva() {
+            const texto = document.getElementById('v2-nx-texto')?.value.trim() || '';
+            if (!texto) { v2toast('Falta el mensaje', 'err'); return; }
+            const body = { texto, area: cfg.area || 'atencion' };
+            if (state.nxModo === 'contacto') {
+                if (!state.nxContacto) { v2toast('Seleccioná un contacto', 'err'); return; }
+                body.contacto_id = state.nxContacto.id;
+            } else {
+                const tel = document.getElementById('v2-nx-telefono').value.trim();
+                if (!tel) { v2toast('Falta el número', 'err'); return; }
+                body.telefono = tel;
+            }
+            const btn = document.getElementById('v2-nx-confirmar');
+            btn.disabled = true;
+            btn.textContent = 'Verificando…';
+            try {
+                const r = await post('/atencion/iniciar', body);
+                document.getElementById('v2-overlay-modal')?.remove();
+                v2toast(r.reusada ? 'Conversación reabierta' : 'Conversación creada y mensaje enviado');
+                if (cfg.onChanged) cfg.onChanged('iniciar');
+                if (r.conv_id) await V2Conv.abrir(r.conv_id);
+            } catch (e) {
+                // El backend explica el motivo (número inválido, no está en WA, bot caído).
+                v2toast(e.message || 'No se pudo iniciar la conversación', 'err');
+                btn.disabled = false;
+                btn.textContent = 'Iniciar y enviar';
             }
         },
 

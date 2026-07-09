@@ -186,6 +186,7 @@ window.v2toast = function (msg, tipo = 'ok') {
     el._t = setTimeout(() => el.classList.remove('show'), 3000);
 };
 </script>
+<script src="/js/crecer-notify.js?v={{ filemtime(public_path('js/crecer-notify.js')) }}"></script>
 <script src="/js/crecer-v2.js?v={{ filemtime(public_path('js/crecer-v2.js')) }}"></script>
 @stack('scripts')
 
