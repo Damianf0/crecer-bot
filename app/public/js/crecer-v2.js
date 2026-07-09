@@ -50,7 +50,10 @@ window.V2Conv = (function () {
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
 
     let cfg   = { usuarios: [], meId: 0, area: null, onChanged: null };
-    let state = { panelId: null, conv: null, readOnly: false, modo: 'mensaje', archivo: null };
+    let state = { panelId: null, conv: null, readOnly: false, modo: 'mensaje', archivo: null,
+                  // Paginación: mensajes anteriores a la ventana inicial de 100. Viven en
+                  // estado (no solo en el DOM) para sobrevivir al re-render del polling.
+                  olderMsgs: [], hasOlder: false, cargandoOlder: false };
     let respuestas = [];          // respuestas rápidas del área, cacheadas por área
     const rrCache  = {};
 
@@ -113,9 +116,10 @@ window.V2Conv = (function () {
 
     function renderTimeline(d) {
         msgIndex = {};
-        d.mensajes.forEach(m => { msgIndex[m.id] = m; });
+        const mensajes = [...state.olderMsgs, ...d.mensajes];
+        mensajes.forEach(m => { msgIndex[m.id] = m; });
         const items = [
-            ...d.mensajes.map(m => ({ ts: m.ts, fecha: m.fecha, html: renderMsg(m) })),
+            ...mensajes.map(m => ({ ts: m.ts, fecha: m.fecha, html: renderMsg(m) })),
             ...(d.eventos || []).map(e => ({ ts: e.ts, fecha: (e.fecha || '').split(' ')[0], html: renderEvento(e) })),
         ].sort((a, b) => a.ts - b.ts);
 
@@ -127,7 +131,10 @@ window.V2Conv = (function () {
             }
             html += it.html;
         }
-        return html || `<div class="v2-empty">Sin mensajes</div>`;
+        const loader = state.hasOlder
+            ? `<div class="v2-load-older" id="v2-load-older" onclick="V2Conv.cargarAnteriores()">Ver mensajes anteriores</div>`
+            : '';
+        return loader + (html || `<div class="v2-empty">Sin mensajes</div>`);
     }
 
     // Respuestas rápidas del área (mismo endpoint y cache que producción).
@@ -226,6 +233,11 @@ window.V2Conv = (function () {
 
         const list = document.getElementById('msgs');
         list.scrollTop = list.scrollHeight;
+        // Cargar anteriores al llegar arriba (además del click en el loader). El
+        // listener va sobre el contenedor, que sobrevive a los innerHTML del re-render.
+        list.addEventListener('scroll', () => {
+            if (list.scrollTop < 60 && state.hasOlder && !state.cargandoOlder) V2Conv.cargarAnteriores();
+        });
         const ta = document.getElementById('compose');
         if (ta) ta.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') V2Conv.enviar(); });
 
@@ -397,6 +409,7 @@ window.V2Conv = (function () {
             state.readOnly = !!opts.readOnly;
             state.modo     = 'mensaje';
             state.archivo  = null;
+            state.olderMsgs = []; state.hasOlder = false; state.cargandoOlder = false;
             document.getElementById('det-empty').style.display = 'none';
             const body = document.getElementById('det-body');
             body.style.display = 'flex';
@@ -404,6 +417,7 @@ window.V2Conv = (function () {
             try {
                 const d = await get(`/atencion/conversacion/${id}`);
                 state.conv = d;
+                state.hasOlder = !!d.has_older;
                 renderDetalle(d);
                 renderLegajo(d);
                 cargarRespuestas(cfg.area || (d.conv && d.conv.area));
@@ -543,16 +557,29 @@ window.V2Conv = (function () {
             await V2Conv.refrescar();   // re-pinta el legajo (estado/orden) o revierte el check si falló
         },
 
-        // Refresco preservando lo tipeado en el composer.
+        // Refresco preservando lo tipeado en el composer y la posición de scroll
+        // (si el usuario está leyendo historia, el re-render no lo manda al fondo).
         async refrescar() {
             if (!state.panelId) return;
             try {
                 const d = await get(`/atencion/conversacion/${state.panelId}`);
                 const ta = document.getElementById('compose');
                 const guard = ta ? { v: ta.value, focus: document.activeElement === ta, s: ta.selectionStart } : null;
+                const listAntes = document.getElementById('msgs');
+                const scrollGuard = listAntes ? {
+                    top: listAntes.scrollTop,
+                    abajo: listAntes.scrollHeight - listAntes.scrollTop - listAntes.clientHeight < 80,
+                } : null;
                 state.conv = d;
+                // has_older del server es relativo a la ventana de últimos 100; si ya
+                // cargamos anteriores, el valor vigente lo dejó cargarAnteriores().
+                if (!state.olderMsgs.length) state.hasOlder = !!d.has_older;
                 renderDetalle(d);
                 renderLegajo(d);
+                if (scrollGuard && !scrollGuard.abajo) {
+                    const list = document.getElementById('msgs');
+                    if (list) list.scrollTop = scrollGuard.top;
+                }
                 if (guard) {
                     const nta = document.getElementById('compose');
                     if (nta) {
@@ -563,6 +590,31 @@ window.V2Conv = (function () {
                 // El composer se reconstruyó: si había un archivo adjunto, re-pintar su preview.
                 if (state.archivo) V2Conv.pintarArchivo(state.archivo);
             } catch (e) {}
+        },
+
+        // Paginación: trae los 100 mensajes anteriores al más viejo cargado y
+        // re-renderiza el timeline manteniendo la posición visual de scroll.
+        async cargarAnteriores() {
+            if (state.cargandoOlder || !state.panelId || !state.hasOlder || !state.conv) return;
+            const oldest = state.olderMsgs[0] || (state.conv.mensajes || [])[0];
+            if (!oldest) return;
+            state.cargandoOlder = true;
+            const loader = document.getElementById('v2-load-older');
+            if (loader) loader.textContent = 'Cargando…';
+            try {
+                const r = await get(`/atencion/conversacion/${state.panelId}?before_id=${oldest.id}`);
+                state.hasOlder  = !!r.has_older;
+                state.olderMsgs = [...r.mensajes, ...state.olderMsgs];
+                const list = document.getElementById('msgs');
+                const desdeAbajo = list.scrollHeight - list.scrollTop;
+                list.innerHTML = renderTimeline(state.conv);
+                list.scrollTop = list.scrollHeight - desdeAbajo;
+            } catch (e) {
+                // El loader sigue en el DOM (no se re-renderizó): queda como reintento.
+                if (loader) loader.textContent = 'Error — tocá para reintentar';
+            } finally {
+                state.cargandoOlder = false;
+            }
         },
 
         setModo(m) {

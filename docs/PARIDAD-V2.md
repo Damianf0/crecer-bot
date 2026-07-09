@@ -18,7 +18,7 @@
 | Historial | ✅ total | — |
 | Mis conversaciones | ✅ (comparte V2Conv) | los gaps del panel se arreglan en V2Conv (ver Atención) |
 | Centro de tareas | 🟡 gaps menores | ver lista |
-| Atención (panel V2Conv) | 🟡 gaps cerrados 08/07 + menores pendientes | ver lista |
+| Atención (panel V2Conv) | 🟡 gaps ALTA cerrados 08-09/07 + menores pendientes | ver lista |
 
 ## Gaps funcionales encontrados y su estado
 
@@ -27,7 +27,7 @@
 | 1 | Reply a mensaje puntual | ALTA | ✅ restaurado 08/07 (commit 72c23df) |
 | 2 | Derivar a otra área (modal) | ALTA | ✅ restaurado 08/07 |
 | 3 | Reenviar conversación a otro contacto + archivar | ALTA | ✅ restaurado 08/07 |
-| 4 | Paginación de mensajes ("ver anteriores"; backend `before_id` listo) | ALTA | ⬜ pendiente |
+| 4 | Paginación de mensajes ("ver anteriores"; backend `before_id` listo) | ALTA | ✅ restaurado 09/07 (loader + scroll-top; poll-safe: los viejos viven en estado, y el refresco ya no manda el scroll al fondo) |
 | 5 | Iniciar conversación desde Atención (modal Nueva) | MEDIA | ⬜ pendiente — workaround: desde Contactos (paridad total ahí) |
 | 6 | Notificaciones de browser por conversación entrante | MEDIA | ⬜ pendiente (las del chat interno sí andan — viven en el widget React) |
 | 7 | Centro tareas: filtros ámbito (mías/asignadas/creadas/todas) y "vencidas" | MEDIA | ⬜ pendiente |
