@@ -1,6 +1,12 @@
 # Plataforma Operativa Crecer — Guía operativa
 
-> Documentación consolidada al **2026-04-29** (última actualización mayor 2026-05-19: migración a Baileys).
+> ⚠ **Este documento tiene secciones desactualizadas** (consolidado 2026-04-29, última
+> actualización mayor 2026-05-19; describe Baileys como backend WA y el container `bot-test`,
+> ambos eliminados — Baileys se abandonó el 2026-06-16 y se borró del código el 2026-07-06;
+> los 3 bots corren whatsapp-web.js). **La referencia vigente y completa es
+> [`docs/DOCUMENTACION-GENERAL.md`](docs/DOCUMENTACION-GENERAL.md)** (2026-07-11: visión,
+> funcionalidad, arquitectura, operación, histórico y roadmap). Los comandos de
+> troubleshooting de acá siguen siendo mayormente válidos.
 > Para contexto histórico y propósito del proyecto: `CLAUDE-clinica.md`.
 
 ---
