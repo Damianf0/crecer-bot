@@ -528,3 +528,194 @@ Artisan::command('conversaciones:regenerar-resumenes {--dry-run} {--limit=}', fu
     $this->newLine();
     $this->info("Ameritan resumen: {$ameritan}  ·  No ameritan: {$noAmeritan}" . ($dry ? '  (dry-run)' : "  ·  Despachados: {$despachados}"));
 })->purpose('Backfill: dispatcha jobs LLM para conversaciones históricas sin resumen que ameritan');
+
+/**
+ * Sincroniza contactos desde Omnia (API prod) usando el reporte ambulatorio.
+ *
+ * Omnia no expone "listar pacientes"; la fuente es el reporte de turnos del
+ * centro, que trae los datos de contacto del paciente en cada turno. Se pide
+ * por mes (rangos largos tardan ~110s los 6 meses) y se deduplica por DNI.
+ *
+ * Política de merge (conservadora):
+ *   - Matchea contacto existente por dni, si no por teléfono normalizado.
+ *   - Solo COMPLETA campos vacíos (nombre, dni, email, fecha_nacimiento);
+ *     nunca pisa datos cargados. Los conflictos se reportan y se skipean.
+ *   - Crea contactos nuevos solo si tienen celular normalizable (la tabla
+ *     es el directorio WA; un paciente sin celular no sirve acá).
+ *   - Skipea placeholders ("No Dar") y turnos sin DNI.
+ *
+ * Uso: docker exec crecer-web-1 php artisan contactos:sync-omnia                      (dry-run, últimos 12 meses + 2 futuros)
+ *      docker exec crecer-web-1 php artisan contactos:sync-omnia --desde=2025-01-01 --apply
+ */
+Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestra=15}', function () {
+    $tz      = 'America/Argentina/Buenos_Aires';
+    $apply   = (bool) $this->option('apply');
+    $muestra = (int) $this->option('muestra') ?: 15;
+    $desde   = $this->option('desde')
+        ? \Carbon\Carbon::parse($this->option('desde'), $tz)->startOfDay()
+        : now($tz)->subMonths(12)->startOfDay();
+    $hasta   = $this->option('hasta')
+        ? \Carbon\Carbon::parse($this->option('hasta'), $tz)->endOfDay()
+        : now($tz)->addMonths(2)->endOfDay();
+
+    $svc = app(\App\Services\OmniaService::class);
+
+    // ── 1. Bajar el reporte por meses y consolidar pacientes por DNI ──
+    $pacientes = [];   // dni => [nombre, celular, email, fnac]
+    $stats = ['turnos' => 0, 'sin_dni' => 0, 'placeholder' => 0, 'meses_fallidos' => 0];
+
+    $cursor = $desde->copy();
+    while ($cursor < $hasta) {
+        $finTramo = min($cursor->copy()->addMonth(), $hasta->copy());
+        $s = $cursor->copy()->utc()->timestamp;
+        $e = $finTramo->copy()->utc()->timestamp;
+
+        $this->output->write(sprintf('  %s → %s ... ', $cursor->format('d/m/Y'), $finTramo->format('d/m/Y')));
+        $rep = $svc->reporteAmbulatorio($s, $e, 180);
+
+        if ($rep === null) {
+            $this->warn('FALLÓ (ver laravel.log)');
+            $stats['meses_fallidos']++;
+            $cursor = $finTramo;
+            continue;
+        }
+        $this->line(count($rep) . ' turnos');
+
+        foreach ($rep as $t) {
+            $stats['turnos']++;
+            $dni = preg_replace('/\D/', '', (string) ($t['NúmeroDeDocumento'] ?? ''));
+            if ($dni === '') { $stats['sin_dni']++; continue; }
+
+            $nombre = trim(implode(' ', array_filter([
+                trim($t['Nombre'] ?? ''),
+                trim($t['OtrosNombres'] ?? ''),
+                trim($t['ApellidoPaterno'] ?? ''),
+            ])));
+            if (mb_stripos($nombre, 'no dar') !== false) { $stats['placeholder']++; continue; }
+
+            $fila = $pacientes[$dni] ?? ['nombre' => '', 'celular' => '', 'email' => '', 'fnac' => ''];
+            // Completar con lo que traiga este turno (campos vacíos solamente:
+            // los datos del paciente son los mismos en todos sus turnos, pero
+            // algunos turnos vienen con campos en blanco).
+            if ($fila['nombre'] === '')  $fila['nombre']  = $nombre;
+            if ($fila['celular'] === '') $fila['celular'] = trim((string) ($t['Celular'] ?? ''));
+            if ($fila['email'] === '')   $fila['email']   = trim((string) ($t['Email'] ?? ''));
+            if ($fila['fnac'] === '')    $fila['fnac']    = trim((string) ($t['FechaDeNacimiento'] ?? ''));
+            $pacientes[$dni] = $fila;
+        }
+
+        $cursor = $finTramo;
+    }
+
+    $this->newLine();
+    $this->info(sprintf('Turnos leídos: %d · Pacientes únicos: %d · Sin DNI: %d · Placeholder: %d · Meses fallidos: %d',
+        $stats['turnos'], count($pacientes), $stats['sin_dni'], $stats['placeholder'], $stats['meses_fallidos']));
+
+    // ── 2. Matchear contra contactos y decidir acción ──
+    $acciones = ['actualizar' => [], 'crear' => [], 'sin_cambios' => 0, 'sin_celular' => 0, 'conflictos' => []];
+
+    foreach ($pacientes as $dni => $p) {
+        $dni     = (string) $dni;   // las keys numéricas del array vuelven como int
+        $telNorm = $p['celular'] !== '' ? Contacto::normalizarTelefono($p['celular']) : '';
+        $email   = filter_var($p['email'], FILTER_VALIDATE_EMAIL) ? $p['email'] : null;
+        $fnac    = null;
+        if ($p['fnac'] !== '') {
+            try { $fnac = \Carbon\Carbon::createFromFormat('j/n/Y', $p['fnac'], $tz)->format('Y-m-d'); }
+            catch (\Throwable) {}
+        }
+
+        $contacto = Contacto::where('dni', $dni)->first()
+            ?: ($telNorm !== '' ? Contacto::where('telefono', $telNorm)->first() : null);
+
+        if ($contacto) {
+            // Conflicto: el contacto matcheado por teléfono ya tiene OTRO dni cargado.
+            if ($contacto->dni && $contacto->dni !== $dni) {
+                $acciones['conflictos'][] = ['id' => $contacto->id, 'nombre' => $contacto->nombre,
+                    'motivo' => "dni distinto (db={$contacto->dni}, omnia={$dni})"];
+                continue;
+            }
+            // Conflicto: quiere tomar un dni que ya tiene otro contacto (unique).
+            if (!$contacto->dni && Contacto::where('dni', $dni)->where('id', '!=', $contacto->id)->exists()) {
+                $acciones['conflictos'][] = ['id' => $contacto->id, 'nombre' => $contacto->nombre,
+                    'motivo' => "dni {$dni} ya está en otro contacto"];
+                continue;
+            }
+
+            $cambios = [];
+            if (!$contacto->dni)                                   $cambios['dni'] = $dni;
+            if (!$contacto->email && $email)                       $cambios['email'] = $email;
+            if (!$contacto->fecha_nacimiento && $fnac)             $cambios['fecha_nacimiento'] = $fnac;
+            if (trim((string) $contacto->nombre) === '' && $p['nombre'] !== '') $cambios['nombre'] = $p['nombre'];
+
+            if (empty($cambios)) { $acciones['sin_cambios']++; continue; }
+            $acciones['actualizar'][] = ['id' => $contacto->id, 'nombre' => $contacto->nombre ?: $p['nombre'],
+                'campos' => implode(', ', array_keys($cambios)), '_cambios' => $cambios];
+            continue;
+        }
+
+        if ($telNorm === '') { $acciones['sin_celular']++; continue; }
+
+        $acciones['crear'][] = ['nombre' => $p['nombre'], 'telefono' => $telNorm, '_datos' => [
+            'nombre' => $p['nombre'], 'telefono' => $telNorm, 'dni' => $dni,
+            'email' => $email, 'fecha_nacimiento' => $fnac,
+        ]];
+    }
+
+    // ── 3. Reporte ──
+    $this->newLine();
+    $this->line(sprintf('  %-38s %d', 'Contactos a CREAR',                   count($acciones['crear'])));
+    $this->line(sprintf('  %-38s %d', 'Contactos a COMPLETAR (existentes)',  count($acciones['actualizar'])));
+    $this->line(sprintf('  %-38s %d', 'Ya al día (sin cambios)',             $acciones['sin_cambios']));
+    $this->line(sprintf('  %-38s %d', 'Nuevos sin celular (skipeados)',      $acciones['sin_celular']));
+    $this->line(sprintf('  %-38s %d', 'Conflictos (revisar a mano)',         count($acciones['conflictos'])));
+
+    if (!empty($acciones['conflictos'])) {
+        $this->newLine();
+        $this->warn('Conflictos:');
+        $this->table(['ID', 'Nombre', 'Motivo'], array_map(
+            fn($c) => [$c['id'], $c['nombre'], $c['motivo']],
+            array_slice($acciones['conflictos'], 0, 30)
+        ));
+    }
+    if (!empty($acciones['crear']) && $muestra > 0) {
+        $this->newLine();
+        $this->line("Muestra de nuevos (primeros $muestra):");
+        $this->table(['Nombre', 'Teléfono'], array_map(
+            fn($c) => [$c['nombre'], $c['telefono']],
+            array_slice($acciones['crear'], 0, $muestra)
+        ));
+    }
+    if (!empty($acciones['actualizar']) && $muestra > 0) {
+        $this->newLine();
+        $this->line("Muestra de completados (primeros $muestra):");
+        $this->table(['ID', 'Nombre', 'Campos que completa'], array_map(
+            fn($c) => [$c['id'], $c['nombre'], $c['campos']],
+            array_slice($acciones['actualizar'], 0, $muestra)
+        ));
+    }
+
+    if (!$apply) {
+        $this->newLine();
+        $this->warn('DRY-RUN — nada se escribió. Pasá --apply para ejecutar.');
+        return 0;
+    }
+
+    // ── 4. Aplicar ──
+    $creados = 0;
+    foreach ($acciones['crear'] as $c) {
+        // Un mismo run puede traer dos DNI con el mismo celular normalizado
+        // (madre/hijo comparten teléfono): el segundo queda afuera.
+        if (Contacto::where('telefono', $c['_datos']['telefono'])->exists()) continue;
+        Contacto::create($c['_datos']);
+        $creados++;
+    }
+    $actualizados = 0;
+    foreach ($acciones['actualizar'] as $a) {
+        Contacto::whereKey($a['id'])->update($a['_cambios']);
+        $actualizados++;
+    }
+
+    $this->newLine();
+    $this->info("Creados: $creados · Completados: $actualizados");
+    return 0;
+})->purpose('Sincroniza contactos (dni/email/nacimiento/nuevos) desde los turnos de Omnia; dry-run sin --apply');

@@ -84,12 +84,12 @@ class OmniaService
     }
 
     /** GET autenticado, con re-login y reintento si la respuesta es 401. */
-    private function get(string $url, array $query = []): mixed
+    private function get(string $url, array $query = [], int $timeout = self::HTTP_TIMEOUT): mixed
     {
         $token = $this->token();
         if (!$token) return null;
 
-        $r = $this->doGet($url, $query, $token);
+        $r = $this->doGet($url, $query, $token, $timeout);
 
         if ($r && $r->status() === 401) {
             Log::info('[Omnia] Token rechazado, re-signin');
@@ -97,7 +97,7 @@ class OmniaService
             $token = $this->signin();
             if (!$token) return null;
             Cache::put(self::CACHE_KEY_TOKEN, $token, self::TOKEN_TTL_SEC);
-            $r = $this->doGet($url, $query, $token);
+            $r = $this->doGet($url, $query, $token, $timeout);
         }
 
         if (!$r || !$r->successful()) {
@@ -112,10 +112,10 @@ class OmniaService
         return $r->json();
     }
 
-    private function doGet(string $url, array $query, string $token)
+    private function doGet(string $url, array $query, string $token, int $timeout = self::HTTP_TIMEOUT)
     {
         try {
-            return Http::timeout(self::HTTP_TIMEOUT)
+            return Http::timeout($timeout)
                 ->withToken($token)
                 ->acceptJson()
                 ->get($url, $query);
@@ -123,6 +123,24 @@ class OmniaService
             Log::error('[Omnia] GET exception', ['url' => $url, 'msg' => $e->getMessage()]);
             return null;
         }
+    }
+
+    /**
+     * Reporte ambulatorio crudo del centro para un rango [start, end] (Unix seg UTC).
+     * Devuelve el array de turnos tal como lo da Omnia, o null si falló.
+     *
+     * Ojo: Omnia tarda proporcional al rango (~110s para 6 meses) — para rangos
+     * largos pedir por mes y pasar un timeout generoso.
+     */
+    public function reporteAmbulatorio(int $start, int $end, int $timeout = self::HTTP_TIMEOUT): ?array
+    {
+        $data = $this->get(
+            $this->externalBase() . '/reports/appointments/ambulatory',
+            ['start' => $start, 'end' => $end],
+            $timeout
+        );
+
+        return is_array($data) ? $data : null;
     }
 
     // ── API pública ───────────────────────────────────────────
@@ -184,9 +202,7 @@ class OmniaService
         // localmente es mucho más eficiente que un GET por médico.
         $cacheKey = "omnia_ambulatory_{$start}_{$end}";
         $reporte  = Cache::remember($cacheKey, 60, function () use ($start, $end) {
-            $url  = $this->externalBase() . '/reports/appointments/ambulatory';
-            $data = $this->get($url, ['start' => $start, 'end' => $end]);
-            return is_array($data) ? $data : [];
+            return $this->reporteAmbulatorio($start, $end) ?? [];
         });
 
         if (empty($reporte)) return [];
