@@ -180,6 +180,12 @@ function crearClienteWwebjs() {
   let reintentosSeguidos   = 0;
   let listoEnEstaCorrida   = false; // llegó a 'ready' → la sesión en disco es válida
 
+  // Boot-watchdog: cubre la ventana initialize→ready que el watchdog normal no ve
+  let bootTimer    = null;
+  let bootTimeouts = 0; // consecutivos; se resetea en ready
+  const BOOT_TIMEOUT_MIN = parseInt(process.env.BOOT_TIMEOUT_MIN || '6', 10);
+  function detenerBootTimer() { if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; } }
+
   function resetActividad() { ultimaActividad = Date.now(); }
 
   function programarReinicio(ms) {
@@ -362,22 +368,56 @@ function crearClienteWwebjs() {
     destruido = false;
     chequeosSinConnected = 0;
 
+    // Boot-watchdog (delta workbench-bot 16/07 — port de vuelta de nuestro propio
+    // código mejorado allá). El watchdog normal recién se activa en 'ready': un
+    // cuelgue DURANTE initialize ("autenticada sin ready", 16/07: 25 min; noche
+    // del 15/07: horas de `iniciando`) quedaba colgado para siempre esperando un
+    // actor externo. Si en BOOT_TIMEOUT no llegó a ready ni pidió QR: limpiar
+    // caché y reintentar; al 2º timeout seguido, restaurar el snapshot antes
+    // (la escalera que se ejecutó a mano el 16/07, automatizada).
+    bootTimer = setTimeout(async () => {
+      if (destruido) return;
+      bootTimeouts++;
+      console.warn(`[whatsapp] Boot-watchdog: sin 'ready' ni QR tras ${BOOT_TIMEOUT_MIN} min (timeout ${bootTimeouts}) — limpio caché y reintento`);
+      destruido = true;
+      detenerWatchdog();
+      try { await client.destroy(); } catch (_) {}
+      limpiarCacheChromium();
+      if (bootTimeouts >= 2) {
+        try {
+          if (restaurarSnapshot()) console.warn('[whatsapp] Boot-watchdog: 2º timeout seguido — snapshot de sesión restaurado');
+        } catch (e) {
+          console.warn('[whatsapp] Boot-watchdog: falló restaurar snapshot:', e.message);
+        }
+      }
+      programarReinicio(5000);
+    }, BOOT_TIMEOUT_MIN * 60 * 1000);
+
     client = new Client({
       authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
       puppeteer: PUPPETEER_OPTS,
       userAgent: USER_AGENT_MODERNO,
-      // Pin de versión de WA Web (12/06: WhatsApp rolleó una build que cuelga
-      // initialize() — Runtime.callFunctionOn sin respuesta. Se fija una build
-      // del 09/06 conocida-buena via el repo wa-version de wppconnect).
-      // Override por env si hay que cambiarla sin tocar código.
-      webVersion: process.env.WA_WEB_VERSION || '2.3000.1041096482-alpha',
+      // Pin de versión de WA Web (delta workbench-bot 16/07): build estable del
+      // 29/06 — el mismo día que la que lleva meses validada en workbench-bot.
+      // Cache LOCAL y estricto: el HTML vive en bot/.wwebjs_cache y el boot no
+      // depende de GitHub (con type:remote, cada initialize hacía un fetch a
+      // raw.githubusercontent.com — la noche del corte 15/07 todos los reintentos
+      // nacían condenados por eso). strict: si falta el HTML de la versión
+      // pineada, falla con VersionResolveError claro en vez de driftear en
+      // silencio a la última versión viva.
+      // Para cambiar de versión: bajar el HTML primero →
+      //   curl -sL -o bot/.wwebjs_cache/<VER>.html https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/<VER>.html
+      // y después setear WA_WEB_VERSION=<VER> (o cambiar el default acá).
+      webVersion: process.env.WA_WEB_VERSION || '2.3000.1042292006-alpha',
       webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
+        type: 'local',
+        path: path.join(__dirname, '..', '.wwebjs_cache'),
+        strict: true,
       },
     });
 
     client.on('qr', async (qr) => {
+      detenerBootTimer(); // hay QR: espera humana, el boot-watchdog no aplica
       // QR con marker de sesión válida = corrupción local, NO logout del
       // servidor (probado 05/07). Restaurar el snapshot antes de rendirse.
       const marker = leerMarker();
@@ -419,6 +459,8 @@ function crearClienteWwebjs() {
     });
 
     client.on('ready', async () => {
+      detenerBootTimer();
+      bootTimeouts = 0;
       const info = client.info;
       const phone = info?.wid?.user || null;
       resetActividad();
@@ -442,6 +484,7 @@ function crearClienteWwebjs() {
       if (destruido) return;
       destruido = true;
       console.warn('[whatsapp] Desconectado:', reason);
+      detenerBootTimer();
       detenerWatchdog();
       emitter.emit('disconnected', reason);
       try { await client.destroy(); } catch (_) {}
@@ -477,6 +520,7 @@ function crearClienteWwebjs() {
       if (destruido) return;
       destruido = true;
       console.error('[whatsapp] Error en initialize:', err.message);
+      detenerBootTimer();
       detenerWatchdog();
       emitter.emit('disconnected', `initialize:${err.message}`);
       try { await client.destroy(); } catch (_) {}
@@ -578,6 +622,7 @@ function crearClienteWwebjs() {
   // disco es confiable y vale la pena snapshotearla.
   emitter.destroy = async () => {
     destruido = true;
+    detenerBootTimer();
     detenerWatchdog();
     try {
       await client.destroy();

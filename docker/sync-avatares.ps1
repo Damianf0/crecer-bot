@@ -17,7 +17,10 @@ function Log($msg) {
 Log "=== Inicio sync avatares ==="
 
 $tmpErr = [System.IO.Path]::GetTempFileName()
-$out = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan contactos:sync-avatares 2>$tmpErr"
+# --limit=500: tope duro por corrida (delta workbench 16/07: getProfilePicUrl es un
+# evaluate en la pagina de Chromium; sin tope, un backlog grande martilla el bot
+# durante horas — la misma leccion que MapearWA post-bombardeo CDP).
+$out = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan contactos:sync-avatares --limit=500 2>$tmpErr"
 $out | ForEach-Object { Log $_ }
 
 $err = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
