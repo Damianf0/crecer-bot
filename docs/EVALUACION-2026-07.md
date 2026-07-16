@@ -1,5 +1,14 @@
 # Evaluación general del sistema — julio 2026 (con datos)
 
+> ⚠️ **Actualización 16/07 (después de escrita):** la Cloud API quedó **descartada
+> por decisión del usuario** (no es opción). Además aportó un contraejemplo que
+> revisa la conclusión H5: una instancia similar con wwebjs en su máquina local
+> tuvo **3 reinicios en 4 meses** → wwebjs *puede* ser estable, y la inestabilidad
+> de crecer es de esta instalación, no de la tecnología. La línea de investigación
+> vigente es el **análisis del delta** entre ambas instalaciones (§4 queda
+> reemplazado por ese análisis; los hallazgos H1-H4 y las mitigaciones del watchdog
+> siguen válidos).
+
 > 2026-07-16 — respuesta a la pregunta: "¿los problemas vienen de otro lado, o del
 > volumen? ¿hace falta rediseño general o empezar desde cero?". Fuentes: logs del
 > watchdog (12/06→hoy), base de datos (63.720 mensajes), docker stats, .wslconfig,
