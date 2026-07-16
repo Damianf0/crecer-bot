@@ -139,9 +139,47 @@ $tarExcl = "--exclude='./session/Default/Cache' --exclude='./session/Default/Cod
 # puede deshabilitar: un solo ciclo de reinicio por noche = mitad de exposicion.
 $cleanCmd = 'cd /data/session/Default 2>/dev/null && rm -rf Cache "Code Cache" GPUCache DawnGraphiteCache DawnWebGPUCache "Service Worker/CacheStorage" "Service Worker/ScriptCache"'
 
+# Delta workbench 16/07 (D3): el stop/start DIARIO era la mayor fuente de
+# "manoseo" (365 reinicios/año de base; la instancia estable de referencia: 0).
+# Ahora el ciclo completo (stop -> limpiar cache -> tar de la sesion viva ->
+# start) corre SOLO LOS DOMINGOS. El resto de la semana se tarea el
+# session-snapshot que el bot guarda en cada apagado limpio (quiescente por
+# construccion, sin caches) SIN tocar el container. El domingo, ademas, el
+# propio stop refresca el snapshot (SIGTERM limpio -> hacerSnapshot), asi que
+# nunca envejece mas de 7 dias. Mismo layout de tar en ambos casos: la
+# restauracion documentada en README-RESTAURAR.md no cambia.
+$esDomingo = (Get-Date).DayOfWeek -eq 'Sunday'
+
 foreach ($b in $Bots) {
     $tarFile = "wa-session-$($b.Nombre).tar.gz"
-    Log "sesion $($b.Nombre): deteniendo bot..."
+
+    if (-not $esDomingo) {
+        # ── Dia de semana: tar del snapshot, cero corte de servicio ──
+        $snapInfo = (cmd /c "docker run --rm -v $($b.Vol):/data alpine sh -c `"[ -d /data/session-snapshot ] && date -r /data/session-snapshot '+%Y-%m-%d %H:%M' || echo NO_SNAPSHOT`"").Trim()
+        if ($snapInfo -eq 'NO_SNAPSHOT' -or -not $snapInfo) {
+            Log "sesion $($b.Nombre): SIN session-snapshot en el volumen — se conserva el tar anterior (proximo refresh: domingo)"
+            continue
+        }
+        if (Test-Path "$Dest\sesiones-wa\$tarFile") {
+            Move-Item "$Dest\sesiones-wa\$tarFile" "$Dest\sesiones-wa\$tarFile.prev" -Force
+        }
+        # Copiar snapshot -> /t/session + marker, y tarear con el MISMO layout que el tar del domingo
+        cmd /c "docker run --rm -v $($b.Vol):/data -v `"$Dest\sesiones-wa`":/backup alpine sh -c `"mkdir -p /t && cp -a /data/session-snapshot /t/session && cp /data/sesion-valida.json /t/ 2>/dev/null; cd /t && tar czf /backup/$tarFile .`" > nul 2>&1"
+        if ((Test-Path "$Dest\sesiones-wa\$tarFile") -and (Get-Item "$Dest\sesiones-wa\$tarFile").Length -gt 10KB) {
+            $mb = [math]::Round((Get-Item "$Dest\sesiones-wa\$tarFile").Length / 1MB, 1)
+            Log "sesion $($b.Nombre): OK $tarFile ($mb MB) desde snapshot del $snapInfo — bot NO tocado"
+        } else {
+            Log "sesion $($b.Nombre): ERROR tar de snapshot vacio — restauro .prev"
+            if (Test-Path "$Dest\sesiones-wa\$tarFile.prev") {
+                Move-Item "$Dest\sesiones-wa\$tarFile.prev" "$Dest\sesiones-wa\$tarFile" -Force
+            }
+            $Fallas += "sesion-$($b.Nombre)"
+        }
+        continue
+    }
+
+    # ── Domingo: ciclo completo con parada (unica de la semana) ──
+    Log "sesion $($b.Nombre): deteniendo bot (ciclo semanal)..."
     cmd /c "docker stop -t 30 $($b.Ctr) > nul 2>&1"
 
     # Limpiar cache Chromium con el bot parado (reemplaza a CleanBotCache 04:00)

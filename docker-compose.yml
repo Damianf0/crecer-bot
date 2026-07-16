@@ -133,7 +133,10 @@ services:
   # código de ./bot es el mismo para los 3; se diferencian por las variables
   # BOT_AREA / PORT / BOT_PUBLIC_URL (acá, NO en bot/.env que es compartido).
   bot:
-    build: ./docker/node
+    # Piloto D1 (16/07): atención corre la imagen con Chrome for Testing
+    # pinneado (Debian) en vez del chromium flotante de Alpine. Si valida,
+    # migrar bot-administracion y bot-ovodonacion a la misma imagen.
+    build: ./docker/node-chrome
     restart: unless-stopped
     volumes:
       - ./bot:/app
