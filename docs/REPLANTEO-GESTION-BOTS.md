@@ -243,11 +243,16 @@ relay de webhooks** para la opción B (no toca datos en reposo).
 
 ## 6. Estado
 
-- [x] Concepto acordado en dirección (16/07): **cerebro principal que coordina y
-      decide + todo lo demás como plugins** — diseño en `ORQUESTADOR-DISENO.md`
-- [ ] Cerrar decisiones abiertas del diseño (canal de alerta, docker.sock, sombra)
-- [ ] F1: core + journal + plugin bot-wa en modo sombra
-- [ ] Spike Cloud API (queda vigente como F5 / plugin de canal futuro)
+- [x] Concepto explorado (16/07): orquestador cerebro+plugins — diseño en
+      `ORQUESTADOR-DISENO.md`
+- [x] **Evaluación con datos (16/07, `EVALUACION-2026-07.md`): la evidencia retiró
+      la propuesta del orquestador** — 85% de los incidentes nace en wwebjs (capa a
+      reemplazar, no a gestionar) y el resto de la plataforma tiene 0 incidentes.
+      Queda como plan B.
+- [x] Mitigaciones mínimas aplicadas al watchdog existente (offline-aware, anti-loop
+      uptime, circuit breaker, modo mantenimiento)
+- [ ] Medidor de flujo end-to-end (ingesta vs baseline)
+- [ ] **Piloto Cloud API** (el movimiento principal — ver EVALUACION-2026-07 §4)
 
 Fuentes (verificadas 16/07/2026): pricing per-message y ventana de servicio gratuita
 ([Uptail](https://www.uptail.ai/blog/whatsapp-business-api-pricing-2026-what-it-costs-and-how-billing-works),

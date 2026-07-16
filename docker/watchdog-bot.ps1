@@ -29,6 +29,16 @@ $NotifyToJid   = '5492235594007@c.us'
 $DockerExe     = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
 $IncidenteMin  = 10
 $RestartMinGap = 5
+# Anti-loop (evaluacion 16/07): initialize de wwebjs puede tardar 3-6 min en
+# condiciones malas; reiniciar un container recien nacido garantiza el loop
+# (anoche: ~150 restarts inutiles). Ademas, mas de 2 restarts/hora nunca arreglo
+# nada historicamente: a partir del 3ro solo se alerta (proteger la sesion).
+$MinUptimeMin      = 10
+$MaxRestartsPorHora = 2
+# Modo mantenimiento: si existe este archivo, el watchdog observa y loguea pero NO
+# reinicia nada (crear al operar a mano; hoy 11:00 el watchdog piso una recuperacion
+# manual dos veces). Borrarlo al terminar.
+$PauseFile = 'C:\crecer\backups\auto\watchdog-pause'
 
 $Bots = @(
     @{ Area = 'atencion';       Port = 3001; Ctr = 'crecer-bot-1' },
@@ -70,6 +80,7 @@ function CargarEstado {
             last_restart_at   = if ($prev) { $prev.last_restart_at }   else { $null }
             last_reason       = if ($prev) { $prev.last_reason }       else { $null }
             incident_notified = if ($prev -and $prev.PSObject.Properties.Name -contains 'incident_notified') { [bool]$prev.incident_notified } else { $false }
+            restart_times     = if ($prev -and $prev.PSObject.Properties.Name -contains 'restart_times') { @($prev.restart_times) } else { @() }
         }
     }
     return $state
@@ -222,19 +233,47 @@ foreach ($b in $Bots) {
                     Log ('Estado esperando_qr [' + $area + ']: NO se reinicia (requiere escaneo manual de QR)')
                 } elseif (-not $internetOk) {
                     Log ('Sin internet [' + $area + ']: NO se reinicia (el bot no esta roto, falta conectividad; se reconecta solo al volver)')
+                } elseif (Test-Path $PauseFile) {
+                    Log ('PAUSADO [' + $area + ']: existe ' + $PauseFile + ' (mantenimiento manual) - se observa pero no se actua')
                 } else {
+                    # Poda del historial de restarts a la ultima hora
+                    $s.restart_times = @($s.restart_times | Where-Object { $_ -and ($now - [DateTime]$_).TotalMinutes -lt 60 })
+
+                    # Uptime del container: no reiniciar uno recien nacido (initialize
+                    # de wwebjs tarda 3-6 min en condiciones malas; gap < initialize = loop)
+                    $uptimeMin = $null
+                    try {
+                        $startedRaw = (& docker inspect --format '{{.State.StartedAt}}' $b.Ctr 2>$null) | Select-Object -First 1
+                        if ($startedRaw) {
+                            $started = [DateTime]::Parse(($startedRaw -replace '\.\d+Z$', 'Z')).ToLocalTime()
+                            $uptimeMin = ($now - $started).TotalMinutes
+                        }
+                    } catch { }
+
                     $puedeRestart = $true
-                    if ($s.last_restart_at) {
+                    $motivoSkip   = $null
+                    if ($null -ne $uptimeMin -and $uptimeMin -lt $MinUptimeMin) {
+                        $puedeRestart = $false
+                        $motivoSkip = 'container con ' + [int]$uptimeMin + ' min de vida (< ' + $MinUptimeMin + '): initialize en curso, no pisar'
+                    } elseif (@($s.restart_times).Count -ge $MaxRestartsPorHora) {
+                        $puedeRestart = $false
+                        $motivoSkip = 'circuit breaker: ya hubo ' + @($s.restart_times).Count + ' restarts en la ultima hora y no arreglaron nada - solo alerta, revisar a mano'
+                    } elseif ($s.last_restart_at) {
                         $sinceRestart = ($now - [DateTime]$s.last_restart_at).TotalMinutes
-                        if ($sinceRestart -lt $RestartMinGap) { $puedeRestart = $false }
+                        if ($sinceRestart -lt $RestartMinGap) {
+                            $puedeRestart = $false
+                            $motivoSkip = 'ventana entre restarts (' + $RestartMinGap + ' min)'
+                        }
                     }
+
                     if ($puedeRestart) {
                         Log ('Ejecutando: docker restart ' + $b.Ctr)
                         & docker restart $b.Ctr 2>&1 | ForEach-Object { Log ('  ' + $_) }
                         $s.last_restart_at = $now.ToString('o')
+                        $s.restart_times   = @($s.restart_times) + $now.ToString('o')
                         $s.last_reason     = $reason + ' (restart automatico)'
                     } else {
-                        Log ('Esperando ventana entre restarts [' + $area + '] (' + $RestartMinGap + ' min)')
+                        Log ('NO se reinicia [' + $area + ']: ' + $motivoSkip)
                     }
                 }
             }

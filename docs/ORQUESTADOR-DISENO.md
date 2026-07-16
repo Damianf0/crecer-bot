@@ -1,4 +1,10 @@
-# Orquestador — diseño (cerebro + plugins)
+# Orquestador — diseño (cerebro + plugins) — **ARCHIVADO como plan B**
+
+> ⚠️ 2026-07-16 (mismo día, horas después): la evaluación con datos
+> (`EVALUACION-2026-07.md`) retiró esta propuesta. El 85% de los incidentes nace en
+> la capa wwebjs — que conviene REEMPLAZAR (Cloud API), no gestionar mejor — y el
+> resto de la plataforma tiene cero incidentes que gestionar. Este diseño queda como
+> plan B si el piloto Cloud API fracasa.
 
 > 2026-07-16 — continuación de `REPLANTEO-GESTION-BOTS.md`: acordado explorar un
 > **cerebro principal que coordina y decide**, con todo lo demás como **plugins**.
