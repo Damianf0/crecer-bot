@@ -1,0 +1,3 @@
+# Los .sh corren dentro de containers Linux: CRLF los rompe ("can't open").
+# Forzar LF aunque el checkout sea en Windows con autocrlf=true.
+*.sh text eol=lf
