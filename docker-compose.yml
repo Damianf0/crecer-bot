@@ -150,15 +150,18 @@ services:
     labels:
       - autoheal=true
     healthcheck:
-      # Mira el contenido de /status, no solo HTTP 200 — detecta el estado
-      # "zombie" donde el endpoint responde pero el cliente WA no escucha.
-      # esperando_qr también cuenta como healthy: requiere escaneo humano y
-      # reiniciar el container solo regenera el QR en loop (incidente 01/07:
-      # autoheal reinició atención cada ~7 min durante 6 horas sin poder
-      # resolver nada). La alerta de ese estado la da watchdog-bot.ps1.
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
+      # Script compartido (./bot:/app): mira el contenido de /status (no solo
+      # HTTP 200 — detecta el zombie donde el endpoint responde pero el cliente
+      # WA no escucha) y además chequea salida a internet: sin conectividad a
+      # web.whatsapp.com el bot cuenta como healthy aunque no esté listo —
+      # reiniciar no arregla un corte de internet (incidente 15/07: loop de
+      # restarts sobre un bot sano) y cada restart arriesga la sesión.
+      # esperando_qr también es healthy: requiere escaneo humano (incidente
+      # 01/07: autoheal reinició atención cada ~7 min durante 6 horas sin
+      # resolver nada). La alerta de esos estados la da watchdog-bot.ps1.
+      test: ["CMD-SHELL", "sh /app/healthcheck.sh"]
       interval: 30s
-      timeout: 5s
+      timeout: 12s
       retries: 4
       start_period: 300s
     networks:
@@ -183,9 +186,9 @@ services:
     labels:
       - autoheal=true
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
+      test: ["CMD-SHELL", "sh /app/healthcheck.sh"]   # offline-aware, ver bot/healthcheck.sh
       interval: 30s
-      timeout: 5s
+      timeout: 12s
       retries: 4
       start_period: 300s
     networks:
@@ -213,9 +216,9 @@ services:
     labels:
       - autoheal=true
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/status 2>/dev/null | grep -qE '\"status\":\"(listo|esperando_qr)\"'"]
+      test: ["CMD-SHELL", "sh /app/healthcheck.sh"]   # offline-aware, ver bot/healthcheck.sh
       interval: 30s
-      timeout: 5s
+      timeout: 12s
       retries: 4
       start_period: 300s
     networks:

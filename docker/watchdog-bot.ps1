@@ -106,6 +106,20 @@ function DockerCorriendo {
     } catch { return $false }
 }
 
+# TCP a web.whatsapp.com:443 (lo que el bot necesita para funcionar). Si no hay
+# salida a internet, un bot "en falla" NO esta roto: reiniciarlo no arregla nada
+# y cada restart arriesga la sesion (corte de internet 15/07: este watchdog +
+# autoheal reiniciaron en loop bots sanos). DNS roto tambien cuenta como sin internet.
+function InternetOk {
+    try {
+        $c = New-Object Net.Sockets.TcpClient
+        $ar = $c.BeginConnect('web.whatsapp.com', 443, $null, $null)
+        $ok = $ar.AsyncWaitHandle.WaitOne(5000) -and $c.Connected
+        $c.Close()
+        return [bool]$ok
+    } catch { return $false }
+}
+
 # === MAIN ===
 $state = CargarEstado
 $now   = Get-Date
@@ -129,7 +143,11 @@ if (-not (DockerCorriendo)) {
     }
 }
 
-# 2) Chequear cada bot y correr su maquina de estados
+# 2) Conectividad del host (una vez por corrida): gobierna si tiene sentido reiniciar
+$internetOk = InternetOk
+if (-not $internetOk) { Log 'SIN INTERNET en el host (web.whatsapp.com:443 inalcanzable) - no se reinicia ningun bot esta corrida' }
+
+# 3) Chequear cada bot y correr su maquina de estados
 foreach ($b in $Bots) {
     $area = $b.Area
     $s    = $state[$area]
@@ -189,17 +207,21 @@ foreach ($b in $Bots) {
             Log ('INCIDENTE en curso [' + $area + '] (' + $durStr + ' min): ' + $reason)
 
             if ($durMin -ge $IncidenteMin) {
-                # Avisar UNA vez al cruzar el umbral
+                # Avisar UNA vez al cruzar el umbral. Solo marcar notificado si el
+                # envio salio de verdad: sin internet los 3 emisores fallan, y asi
+                # el aviso se reintenta cada corrida hasta que vuelva la conectividad.
                 if (-not $s.incident_notified) {
                     $msg = 'Watchdog Crecer: bot ' + $area + ' en falla hace ' + $durStr + ' min. Motivo: ' + $reason + '.'
                     if ($status -eq 'esperando_qr') { $msg += ' Sesion perdida: hay que escanear QR desde /admin con el celular del area.' }
-                    NotificarWA $msg | Out-Null
-                    $s.incident_notified = $true
+                    if (-not $internetOk) { $msg += ' Host sin salida a internet: no se reinicia, se espera reconexion.' }
+                    if (NotificarWA $msg) { $s.incident_notified = $true }
                 }
 
                 # esperando_qr: reiniciar no sirve (regenera el QR en loop) -- solo esperar el escaneo.
                 if ($status -eq 'esperando_qr') {
                     Log ('Estado esperando_qr [' + $area + ']: NO se reinicia (requiere escaneo manual de QR)')
+                } elseif (-not $internetOk) {
+                    Log ('Sin internet [' + $area + ']: NO se reinicia (el bot no esta roto, falta conectividad; se reconecta solo al volver)')
                 } else {
                     $puedeRestart = $true
                     if ($s.last_restart_at) {
