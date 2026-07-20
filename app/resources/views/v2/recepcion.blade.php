@@ -129,7 +129,11 @@ async function call(url, opts = {}) {
     return d;
 }
 function postJSON(url, body) {
-    return call(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{}) });
+    // _token también en el body: Laravel lo acepta de input('_token') y así el
+    // CSRF sobrevive aunque un intermediario (AV con web-shield, proxy) pele
+    // el header X-CSRF-TOKEN — visto 20/07 en la PC de recepción.
+    const tok = document.querySelector('meta[name=csrf-token]')?.content ?? '';
+    return call(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...(body||{}), _token: tok }) });
 }
 
 // ── Tabs ─────────────────────────────────────────────────────────────
