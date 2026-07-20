@@ -133,9 +133,9 @@ services:
   # código de ./bot es el mismo para los 3; se diferencian por las variables
   # BOT_AREA / PORT / BOT_PUBLIC_URL (acá, NO en bot/.env que es compartido).
   bot:
-    # Piloto D1 (16/07): atención corre la imagen con Chrome for Testing
-    # pinneado (Debian) en vez del chromium flotante de Alpine. Si valida,
-    # migrar bot-administracion y bot-ovodonacion a la misma imagen.
+    # D1 (16/07): imagen con Chrome for Testing pinneado (Debian) en vez del
+    # chromium flotante de Alpine. Piloto en atención validado (soak limpio
+    # tras reinicio del 17/07) → los 3 bots corren node-chrome desde 17/07.
     build: ./docker/node-chrome
     restart: unless-stopped
     volumes:
@@ -172,7 +172,7 @@ services:
 
   # Bot WhatsApp — área ADMINISTRACIÓN
   bot-administracion:
-    build: ./docker/node
+    build: ./docker/node-chrome
     restart: unless-stopped
     volumes:
       - ./bot:/app
@@ -199,7 +199,7 @@ services:
 
   # Bot WhatsApp — área OVODONACIÓN
   bot-ovodonacion:
-    build: ./docker/node
+    build: ./docker/node-chrome
     restart: unless-stopped
     volumes:
       - ./bot:/app
