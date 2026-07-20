@@ -85,7 +85,7 @@
         <p class="paciente-nombre">
             {{ $paciente['apellido'] ? $paciente['apellido'].', '.$paciente['nombre'] : $paciente['nombre'] }}
         </p>
-        <p class="step-sub">No encontramos turnos para hoy.<br>¿Por qué venís?</p>
+        <p class="step-sub">Hoy no tenés turnos agendados.<br>Contanos en qué te podemos ayudar:</p>
     </div>
     <div class="col-right">
         <button type="button" class="motivo-btn" :class="{ selected: motivo === 'turnos' }"
