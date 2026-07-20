@@ -262,7 +262,9 @@ class BotController extends Controller
             'leido'           => false,
         ]);
         if ($esBackfill) {
-            try { $msg->created_at = \Carbon\Carbon::parse($data['timestamp']); } catch (\Exception $e) {}
+            // setTimezone: el bot manda ISO UTC (toISOString); sin convertir, la
+            // hora de pared UTC quedaba guardada como si fuera ART (+3h de error).
+            try { $msg->created_at = \Carbon\Carbon::parse($data['timestamp'])->setTimezone(config('app.timezone')); } catch (\Exception $e) {}
         }
         $msg->save();
 
@@ -372,7 +374,9 @@ class BotController extends Controller
             'leido'           => true,
         ]);
         if ($esBackfill) {
-            try { $msg->created_at = \Carbon\Carbon::parse($data['timestamp']); } catch (\Exception $e) {}
+            // setTimezone: el bot manda ISO UTC (toISOString); sin convertir, la
+            // hora de pared UTC quedaba guardada como si fuera ART (+3h de error).
+            try { $msg->created_at = \Carbon\Carbon::parse($data['timestamp'])->setTimezone(config('app.timezone')); } catch (\Exception $e) {}
         }
         $msg->save();
 
