@@ -89,7 +89,7 @@ async function persistirMedia(msg, fallbackExt) {
  * Guarda un mensaje entrante en el inbox de Laravel.
  * Se llama al instante cuando el adapter emite 'message'.
  */
-async function guardarMensajeEntrante(msg) {
+async function guardarMensajeEntrante(msg, opts = {}) {
   if (MODO_SHADOW) { console.log(`[shadow] entrante ${msg.from} (${msg.type}): ${(msg.body || '').slice(0, 60)}`); return; }
   try {
     const contacto = msg.from;
@@ -142,6 +142,9 @@ async function guardarMensajeEntrante(msg) {
       quoted_autor:   msg.quoted?.autor   || null,
       quoted_preview: msg.quoted?.preview || null,
       timestamp: (msg.timestamp || new Date()).toISOString(),
+      // Backfill: Laravel usa el timestamp como created_at y saltea el sync
+      // inline de avatar (150 mensajes seguidos = 150 calls CDP al bot).
+      backfill:  opts.backfill || undefined,
     }, `entrante ${contacto}`);
 
   } catch (err) {
@@ -172,7 +175,7 @@ async function guardarMensajeSaliente(contacto, texto, waId = null) {
  * NO enviado por sendText/sendMedia — el adapter ya filtra esos).
  * El backend deduplica por wa_id.
  */
-async function guardarMensajeSalienteExterno(msg) {
+async function guardarMensajeSalienteExterno(msg, opts = {}) {
   if (MODO_SHADOW) { console.log(`[shadow] saliente externo ${msg.to} (${msg.type}): ${(msg.body || '').slice(0, 60)}`); return; }
   try {
     const contacto = msg.to;
@@ -202,6 +205,7 @@ async function guardarMensajeSalienteExterno(msg) {
       archivo_url,
       wa_id:   msg.wa_id || null,
       timestamp: (msg.timestamp || new Date()).toISOString(),
+      backfill: opts.backfill || undefined,
     }, `saliente externo ${contacto}`);
   } catch (err) {
     console.error('[mensajesApi] Error guardando saliente externo:', err.message);

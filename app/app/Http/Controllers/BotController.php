@@ -200,8 +200,13 @@ class BotController extends Controller
             'quoted_autor'   => 'nullable|string|max:80',
             'quoted_preview' => 'nullable|string|max:300',
             'timestamp'   => 'required|string',
+            // Backfill (re-ingesta de historial tras un período sin bot pareado):
+            // usa el timestamp real como created_at y saltea el sync de avatar
+            // inline (N mensajes seguidos = N calls CDP al bot — incidente 19/05).
+            'backfill'    => 'nullable|boolean',
         ]);
         $area = $data['area'] ?? 'atencion';
+        $esBackfill = !empty($data['backfill']);
 
         // Deduplicar por wa_id
         if (($data['wa_id'] ?? null) && MensajeWA::where('wa_id', $data['wa_id'])->exists()) {
@@ -239,12 +244,12 @@ class BotController extends Controller
             }
             // Si el contacto matcheó pero no tiene avatar (o expiró), agendar sync.
             // No bloqueante: lo intentamos inline pero con timeout corto via el helper.
-            if ($contacto->avatarNecesitaSync()) {
+            if (!$esBackfill && $contacto->avatarNecesitaSync()) {
                 Contacto::sincronizarAvatar($contacto);
             }
         }
 
-        $msg = MensajeWA::create([
+        $msg = new MensajeWA([
             'conversacion_id' => $conv->id,
             'direccion'       => 'entrante',
             'tipo'            => $data['tipo'],
@@ -256,6 +261,10 @@ class BotController extends Controller
             'quoted_preview'  => $data['quoted_preview'] ?? null,
             'leido'           => false,
         ]);
+        if ($esBackfill) {
+            try { $msg->created_at = \Carbon\Carbon::parse($data['timestamp']); } catch (\Exception $e) {}
+        }
+        $msg->save();
 
         // Auto-indexar al legajo si trae archivo. Las URLs del bot tienen forma
         // http://.../media/<filename>; el archivo está en /bot-media (bind mount RO).
@@ -334,8 +343,10 @@ class BotController extends Controller
             'quoted_autor'   => 'nullable|string|max:80',
             'quoted_preview' => 'nullable|string|max:300',
             'timestamp'   => 'required|string',
+            'backfill'    => 'nullable|boolean',   // ver mensajeEntrante
         ]);
         $area = $data['area'] ?? 'atencion';
+        $esBackfill = !empty($data['backfill']);
 
         // Dedup: si llega el mismo wa_id 2 veces (ej: Laravel guardó al enviar
         // via /enviar y ahora vuelve por message_create del bot), no duplicamos.
@@ -348,7 +359,7 @@ class BotController extends Controller
             ['estado' => 'activa', 'ultima_actividad' => now()]
         );
 
-        MensajeWA::create([
+        $msg = new MensajeWA([
             'conversacion_id' => $conv->id,
             'direccion'       => 'saliente',
             'tipo'            => $data['tipo']        ?? 'texto',
@@ -360,6 +371,10 @@ class BotController extends Controller
             'quoted_preview'  => $data['quoted_preview'] ?? null,
             'leido'           => true,
         ]);
+        if ($esBackfill) {
+            try { $msg->created_at = \Carbon\Carbon::parse($data['timestamp']); } catch (\Exception $e) {}
+        }
+        $msg->save();
 
         $conv->update(['ultima_actividad' => now()]);
         ConversacionWA::invalidarColaCache();

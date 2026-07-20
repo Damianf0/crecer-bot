@@ -3,7 +3,7 @@
 // limpieza de locks, reintentos) vive acá.
 
 const { EventEmitter } = require('events');
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia, Message } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const dns = require('dns');
@@ -561,6 +561,105 @@ function crearClienteWwebjs() {
       registered: true,
       normalizedId: id._serialized || `${id.user}@${id.server}`,
     };
+  };
+
+  // Recorre los chats con actividad en el rango y devuelve los mensajes
+  // normalizados (entrantes y salientes del celular) cuyo timestamp cae en
+  // [desdeMs, hastaMs]. Para backfill tras un período sin bot pareado: WhatsApp
+  // sincroniza el historial reciente al vincular, pero wwebjs no emite
+  // 'message' por mensajes históricos — hay que pedirlos con fetchMessages.
+  emitter.fetchHistory = async ({ desdeMs, hastaMs = Date.now(), porChat = 100 } = {}) => {
+    if (!desdeMs) throw new Error('fetchHistory: falta desdeMs');
+    // NO usar client.getChats(): serializa TODOS los chats en un solo evaluate
+    // y un único chat con modelo roto tira la lista entera (en la cuenta de ovo
+    // pasa crónicamente). Listamos ids+timestamp con try/catch POR chat y
+    // después pedimos los mensajes chat por chat, salteando los rotos.
+    const metas = await conTimeout(client.pupPage.evaluate(() => {
+      const out = [];
+      // Mismo path que usa el Utils.js inyectado de wwebjs (window.Store.Chat
+      // ya no existe en esta versión de WA Web).
+      let Coll = null;
+      try { Coll = typeof window.require === 'function' ? window.require('WAWebCollections') : null; } catch (e) {}
+      const chats = (Coll || window.Store)?.Chat?.getModelsArray?.() || [];
+      for (const c of chats) {
+        try {
+          const id = c.id?._serialized || String(c.id || '');
+          if (!id) continue;
+          const group = !!(c.isGroup || (c.id && c.id.server === 'g.us'));
+          out.push({ id, t: c.t || 0, group });
+        } catch (e) { /* chat roto: saltear */ }
+      }
+      return out;
+    }), 30_000, 'backfill:listarChats');
+
+    const candidatos = metas.filter(c =>
+      !c.group &&
+      !c.id.endsWith('@broadcast') &&
+      !c.id.endsWith('@g.us') &&
+      c.t * 1000 >= desdeMs
+    );
+    console.log(`[backfill] ${metas.length} chats, ${candidatos.length} con actividad en rango`);
+
+    const out = [];
+    for (const meta of candidatos) {
+      // NO usar getChatById/fetchMessages: ambos pasan por getChatModel →
+      // chat.serialize(), que revienta en los chats @lid de esta cuenta
+      // (error "r" minificado). Extraemos los mensajes in-page serializando
+      // SOLO mensajes (getMessageModel, camino distinto y sano) y los
+      // hidratamos como Message de wwebjs para reusar envolverMensaje
+      // (downloadMedia, quoted, etc.).
+      let raws;
+      try {
+        raws = await conTimeout(client.pupPage.evaluate(async (id, limit, desdeMs) => {
+          try {
+            const Coll = window.require('WAWebCollections');
+            const chat = Coll.Chat.get(id);
+            if (!chat) return { error: 'chat no encontrado' };
+            const loader = window.require('WAWebChatLoadMessages');
+            const filtro = (m) => !m.isNotification;
+            let msgs = chat.msgs.getModelsArray().filter(filtro);
+            let guard = 0;
+            // Cargar más historial hasta cubrir el rango (o techo de vueltas).
+            // OJO: loadEarlierMsgs recibe { chat }, no el chat pelado — igual
+            // que en structures/Chat.js de wwebjs.
+            while (guard++ < 8 && msgs.length < limit && (!msgs.length || (msgs[0].t || 0) * 1000 > desdeMs)) {
+              const cargados = await loader.loadEarlierMsgs({ chat });
+              if (!cargados || !cargados.length) break;
+              msgs = [...cargados.filter(filtro), ...msgs];
+            }
+            msgs.sort((a, b) => ((a.t || 0) > (b.t || 0) ? 1 : -1));
+            const out = [];
+            for (const m of msgs.slice(-limit)) {
+              try { out.push(await window.WWebJS.getMessageModel(m)); }
+              catch (e) { /* mensaje roto: saltear */ }
+            }
+            return { msgs: out };
+          } catch (e) {
+            return { error: String((e && (e.message || e.name)) || e) };
+          }
+        }, meta.id, porChat, desdeMs), 45_000, `historial ${meta.id}`);
+      } catch (e) {
+        console.warn(`[backfill] Chat ${meta.id} salteado: ${e.message}`);
+        continue;
+      }
+      if (raws.error) {
+        console.warn(`[backfill] Chat ${meta.id} salteado: ${raws.error}`);
+        continue;
+      }
+      for (const raw of raws.msgs) {
+        const ts = (raw.t || 0) * 1000;
+        if (ts < desdeMs || ts > hastaMs) continue;
+        try {
+          const msg = new Message(client, raw);
+          const m = await envolverMensaje(msg);
+          if (m) out.push(m);
+        } catch (e) {
+          console.warn(`[backfill] Mensaje ${raw.id?._serialized} salteado: ${e.message}`);
+        }
+      }
+    }
+    out.sort((a, b) => a.timestamp - b.timestamp);
+    return out;
   };
 
   emitter.resolveContact = async (jid) => {

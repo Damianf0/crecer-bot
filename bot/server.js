@@ -385,6 +385,75 @@ app.post('/enviar-archivo', async (req, res) => {
   }
 });
 
+// ── Backfill de historial ─────────────────────────────────
+// Re-ingesta mensajes que llegaron al celular mientras el bot estuvo sin
+// parear (ej: ovo 17→20/07: 3 días esperando_qr). Lee el historial que
+// WhatsApp sincronizó al vincular (fetchHistory del adapter) y lo pasa por el
+// mismo camino que la ingesta viva (guardarMensajeEntrante / SalienteExterno,
+// con backfill=true → Laravel usa el timestamp real como created_at y dedupea
+// por wa_id, así correr esto dos veces no duplica). NO pasa por clasificación
+// LLM ni autorespuesta: ingesta pura, el triage lo hace el equipo en el panel.
+// Corre async: POST /backfill lo dispara, GET /backfill/estado muestra avance.
+let _backfillEstado = { corriendo: false };
+
+app.post('/backfill', async (req, res) => {
+  const { desde, hasta, dryRun } = req.body || {};
+  if (!desde) return res.status(400).json({ ok: false, error: 'desde requerido (ISO 8601)' });
+  const desdeMs = Date.parse(desde);
+  const hastaMs = hasta ? Date.parse(hasta) : Date.now();
+  if (Number.isNaN(desdeMs) || Number.isNaN(hastaMs)) {
+    return res.status(400).json({ ok: false, error: 'fecha inválida' });
+  }
+  if (!_waClient || typeof _waClient.fetchHistory !== 'function') {
+    return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
+  }
+  if (_backfillEstado.corriendo) {
+    return res.status(409).json({ ok: false, error: 'backfill ya en curso', estado: _backfillEstado });
+  }
+
+  _backfillEstado = {
+    corriendo: true, dryRun: !!dryRun, desde, hasta: new Date(hastaMs).toISOString(),
+    encontrados: 0, entrantes: 0, salientes: 0, errores: 0, inicio: new Date().toISOString(),
+  };
+  res.json({ ok: true, iniciado: true, estado: _backfillEstado });
+
+  (async () => {
+    const { guardarMensajeEntrante, guardarMensajeSalienteExterno } = require('./mensajesApi');
+    try {
+      console.log(`[backfill] Buscando historial ${desde} → ${new Date(hastaMs).toISOString()}...`);
+      const msgs = await _waClient.fetchHistory({ desdeMs, hastaMs });
+      _backfillEstado.encontrados = msgs.length;
+      console.log(`[backfill] ${msgs.length} mensajes en rango. ${dryRun ? '(dry-run, no se persisten)' : 'Ingestando...'}`);
+      for (const m of msgs) {
+        if (dryRun) { m.fromMe ? _backfillEstado.salientes++ : _backfillEstado.entrantes++; continue; }
+        try {
+          if (m.fromMe) {
+            await guardarMensajeSalienteExterno(m, { backfill: true });
+            _backfillEstado.salientes++;
+          } else {
+            await guardarMensajeEntrante(m, { backfill: true });
+            _backfillEstado.entrantes++;
+          }
+        } catch (e) {
+          _backfillEstado.errores++;
+          console.warn(`[backfill] Error con ${m.wa_id}: ${e.message}`);
+        }
+      }
+      console.log(`[backfill] FIN: ${_backfillEstado.entrantes} entrantes + ${_backfillEstado.salientes} salientes de ${msgs.length} (errores: ${_backfillEstado.errores})`);
+    } catch (e) {
+      _backfillEstado.error = (e && (e.message || String(e))) || 'error desconocido';
+      console.error('[backfill] Falló:', e && (e.stack || e.message || String(e)));
+    } finally {
+      _backfillEstado.corriendo = false;
+      _backfillEstado.fin = new Date().toISOString();
+    }
+  })();
+});
+
+app.get('/backfill/estado', (req, res) => {
+  res.json({ ok: true, estado: _backfillEstado });
+});
+
 // ── Arranque ──────────────────────────────────────────────
 function iniciarServidor() {
   app.listen(PORT, '0.0.0.0', () => {
