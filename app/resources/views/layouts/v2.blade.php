@@ -1,6 +1,7 @@
 <!DOCTYPE html>
-{{-- PoC del concepto UI V2 (ver docs/DESIGN-SYSTEM.md y CONCEPTO_UI_UX_V2.md).
-     Corre en paralelo a producción bajo /v2/* — no toca layouts/app ni el DS. --}}
+{{-- Layout V2 — UI de producción desde el cutover del 30/06 (commit effdce9).
+     V1 (layouts/app) queda como legacy vía toggle "UI clásica" hasta Fase 4.
+     Ver docs/MIGRACION-V2.md, DESIGN-SYSTEM.md y CONCEPTO_UI_UX_V2.md. --}}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -43,7 +44,6 @@
             <img src="/logo.jpg" alt="Crecer">
             Crecer <span class="mod">· {{ $modulo ?? 'Atención' }}</span>
         </span>
-        <span class="v2-pill neutral" title="Prueba de concepto — la UI de producción sigue en /atencion">PoC V2</span>
         <span class="spacer"></span>
         <span class="tb-item" id="bots-status" title="Estado de los bots WhatsApp">
             <span class="v2-dot warn" id="bots-dot"></span><span id="bots-txt">Bots…</span>
