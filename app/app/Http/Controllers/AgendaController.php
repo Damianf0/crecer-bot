@@ -10,12 +10,6 @@ use Illuminate\Support\Facades\Auth;
 
 class AgendaController extends Controller
 {
-    public function index()
-    {
-        $usuarios = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
-        return view('agenda.index', compact('usuarios'));
-    }
-
     public function data(Request $request): JsonResponse
     {
         $estado   = $request->input('estado', 'pendiente');   // pendiente | completada | todas

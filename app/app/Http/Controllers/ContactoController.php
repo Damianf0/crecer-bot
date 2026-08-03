@@ -9,11 +9,6 @@ use Illuminate\Support\Facades\DB;
 
 class ContactoController extends Controller
 {
-    public function index()
-    {
-        return view('contactos.index');
-    }
-
     public function data(Request $request): JsonResponse
     {
         $q       = trim($request->input('q', ''));

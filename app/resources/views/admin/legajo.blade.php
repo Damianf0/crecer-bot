@@ -1,4 +1,4 @@
-@extends($layout ?? 'layouts.app')
+@extends($layout ?? 'layouts.v2')
 @section('title', 'Admin · Legajo')
 
 @section('content')

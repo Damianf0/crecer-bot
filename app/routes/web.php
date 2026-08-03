@@ -1,8 +1,5 @@
 <?php
 
-use App\Livewire\ColaBot;
-use App\Livewire\ColaSecretaria;
-use App\Livewire\InboxWA;
 use App\Livewire\DeclaracionColas;
 use App\Http\Controllers\AtencionController;
 use App\Http\Controllers\AgendaController;
@@ -26,30 +23,14 @@ Route::get('/', function () {
     if (!Auth::check()) return redirect('/login');
     $u = Auth::user();
 
-    // Cutover V2 (Fase 3): si el usuario eligió la interfaz nueva, lo mandamos a
-    // su home V2. Cada destino tiene el mismo middleware que su equivalente de
-    // prod, así que es seguro. Mi día (/v2/mi-dia) es el home de los usuarios de
-    // cola (secretaria/atencion); médicos y admins van a su panel propio.
-    if ($u->prefiereV2()) {
-        if ($u->hasPermiso('secretaria') || $u->hasPermiso('atencion')) return redirect('/v2/mi-dia');
-        if ($u->hasPermiso('medico'))     return redirect('/v2/medico');
-        if ($u->hasPermiso('admin'))      return redirect('/v2/admin');
-    }
-
-    if ($u->hasPermiso('secretaria')) return redirect('/secretaria');
-    if ($u->hasPermiso('medico'))     return redirect('/medico');
-    if ($u->hasPermiso('atencion'))   return redirect('/atencion');
-    if ($u->hasPermiso('admin'))      return redirect('/admin');
+    // Fase 4 (23/07): V1 retirada — V2 es la única interfaz. Mi día es el home
+    // de los usuarios de cola (secretaria/atencion); médicos y admins van a su
+    // panel propio.
+    if ($u->hasPermiso('secretaria') || $u->hasPermiso('atencion')) return redirect('/v2/mi-dia');
+    if ($u->hasPermiso('medico'))     return redirect('/v2/medico');
+    if ($u->hasPermiso('admin'))      return redirect('/v2/admin');
     return redirect('/login');
 });
-
-// Cutover V2: cambia la interfaz preferida del usuario y vuelve al home, que
-// rutea según el flag. Toggle de los navbars (prod → "Probar V2", V2 → "UI clásica").
-Route::get('/cambiar-ui/{pref}', function (string $pref) {
-    if (!Auth::check()) return redirect('/login');
-    Auth::user()->update(['ui_pref' => $pref]);
-    return redirect('/');
-})->whereIn('pref', ['v1', 'v2']);
 
 // Auth
 Route::get('/login',  Login::class)->name('login');
@@ -78,7 +59,7 @@ Route::get('/llamador/data', [LlamadorController::class, 'data']);
 
 // Panel médico — auth + permiso:medico, sin requerir declaración de colas.
 Route::middleware(['auth', 'permiso:medico'])->prefix('medico')->group(function () {
-    Route::get('/',                  [MedicoController::class, 'index']);
+    Route::get('/',                  fn() => redirect('/v2/medico'));
     Route::get('/data',              [MedicoController::class, 'data']);
     Route::post('/tareas',           [MedicoController::class, 'crearTarea']);
     Route::post('/{id}/llamar',      [MedicoController::class, 'llamar'])->whereNumber('id');
@@ -128,9 +109,10 @@ Route::middleware([SecretariaAuth::class])->group(function () {
 
     // Cola de recepción
     Route::middleware('permiso:secretaria')->group(function () {
-        Route::get('/secretaria', ColaSecretaria::class);
-        Route::get('/cola-bot',   ColaBot::class);
-        Route::get('/inbox-wa',   InboxWA::class);
+        // Fase 4: páginas Livewire V1 retiradas — redirects para bookmarks viejos.
+        Route::get('/secretaria', fn() => redirect('/v2/recepcion'));
+        Route::get('/cola-bot',   fn() => redirect('/v2/recepcion'));
+        Route::get('/inbox-wa',   fn() => redirect('/v2/atencion/atencion'));
 
         // Recepción en el shell V2 — reescribe ColaSecretaria + ColaBot a
         // JS+endpoints (InboxWA queda cubierto por /v2/atencion). Ver RecepcionController.
@@ -154,7 +136,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Atención y mis tareas
     Route::middleware('permiso:atencion')->group(function () {
         // Una cola por área (= número de WhatsApp). /atencion redirige a la de la clínica.
-        Route::get('/atencion', fn() => redirect('/atencion/atencion'));
+        Route::get('/atencion', fn() => redirect('/v2/atencion/atencion'));
         Route::get('/atencion/items',             [AtencionController::class, 'items']); // legacy → área atención por default
         Route::get('/atencion/conversacion/{id}', [AtencionController::class, 'conversacion']);
         Route::post('/atencion/conversacion/{id}/agregar-contacto', [AtencionController::class, 'agregarContactoDesdeConv']);
@@ -170,21 +152,21 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/atencion/enviar-archivo',   [AtencionController::class, 'enviarArchivo']);
         Route::post('/atencion/iniciar',          [AtencionController::class, 'iniciarConversacion']);
         Route::post('/atencion/reabrir',          [AtencionController::class, 'reabrir']);
-        // Cola y polling por área (constraint para no chocar con las rutas de arriba).
-        Route::get('/atencion/{area}',            [AtencionController::class, 'index'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+        // Fase 4: página V1 por área retirada — redirect (la data /items sigue viva abajo).
+        Route::get('/atencion/{area}',            fn(string $area) => redirect("/v2/atencion/$area"))->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
         Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
 
-        // PoC UI V2 — en paralelo a producción, misma data y permisos. Ver docs/DESIGN-SYSTEM.md.
+        // UI V2 (producción desde el cutover 30/06).
         Route::get('/v2/atencion', fn() => redirect('/v2/atencion/atencion'));
         Route::get('/v2/atencion/{area}',         [AtencionController::class, 'indexV2'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
         Route::get('/v2/mis-conversaciones',      [\App\Http\Controllers\V2Controller::class, 'misConversaciones']);
         Route::get('/v2/centro-tareas',           [\App\Http\Controllers\V2Controller::class, 'centroTareas']);
-        // Mis conversaciones WA asignadas
-        Route::get('/mis-conversaciones',         [AtencionController::class, 'misConversaciones']);
+        // Mis conversaciones WA asignadas (página V1 → redirect; /data la usa V2)
+        Route::get('/mis-conversaciones',         fn() => redirect('/v2/mis-conversaciones'));
         Route::get('/mis-conversaciones/data',    [AtencionController::class, 'misConversacionesData']);
 
-        // Centro de tareas (tareas + derivaciones del bot tomadas)
-        Route::get('/centro-tareas',              [AtencionController::class, 'centroTareas']);
+        // Centro de tareas (página V1 → redirect con deep-link; /derivaciones la usa V2)
+        Route::get('/centro-tareas',              fn(Request $r) => redirect('/v2/centro-tareas' . ($r->filled('tarea_id') ? '?tarea_id=' . (int) $r->input('tarea_id') : '')));
         Route::get('/centro-tareas/derivaciones', [AtencionController::class, 'centroTareasDerivaciones']);
 
         // Respuestas rápidas (plantillas) del área — alimenta el dropdown 📋 en la conv.
@@ -195,9 +177,9 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         // El deep-link ?tarea_id=N va al centro de tareas; el resto, a mis conversaciones.
         Route::get('/mis-tareas', function (Request $request) {
             if ($request->filled('tarea_id')) {
-                return redirect('/centro-tareas?tarea_id=' . (int) $request->input('tarea_id'));
+                return redirect('/v2/centro-tareas?tarea_id=' . (int) $request->input('tarea_id'));
             }
-            return redirect('/mis-conversaciones');
+            return redirect('/v2/mis-conversaciones');
         });
         Route::get('/mis-tareas/data', fn() => redirect('/mis-conversaciones/data'));
 
@@ -210,9 +192,9 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::delete('/tareas/comentario/{id}',  [TareaController::class, 'eliminarComentario']);
     });
 
-    // Historial
+    // Historial (página V1 → redirect preservando filtros GET)
     Route::middleware('permiso:historial')->group(function () {
-        Route::get('/historial', [AtencionController::class, 'historial']);
+        Route::get('/historial', fn(Request $r) => redirect('/v2/historial' . ($r->getQueryString() ? '?' . $r->getQueryString() : '')));
         Route::get('/v2/historial', [\App\Http\Controllers\V2Controller::class, 'historial']);
     });
 
@@ -220,7 +202,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     Route::middleware('permiso:contactos')->group(function () {
         // Shell V2 (mismos endpoints de data/acciones que producción).
         Route::get('/v2/pacientes/{id}/documentos',       [\App\Http\Controllers\V2Controller::class, 'documentos'])->whereNumber('id');
-        Route::get('/pacientes/{id}/documentos',          [DocumentoController::class, 'indexPaciente']);
+        Route::get('/pacientes/{id}/documentos',          fn(int $id) => redirect("/v2/pacientes/$id/documentos"))->whereNumber('id');
         Route::get('/pacientes/{id}/documentos/data',     [DocumentoController::class, 'dataPaciente']);
         Route::post('/pacientes/{id}/documentos/upload',  [DocumentoController::class, 'uploadManual']);
         Route::post('/pacientes/{id}/documentos/zip',     [DocumentoController::class, 'descargarZip']);
@@ -235,7 +217,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Contactos
     Route::middleware('permiso:contactos')->group(function () {
         Route::get('/v2/contactos',                 [\App\Http\Controllers\V2Controller::class, 'contactos']);
-        Route::get('/contactos',                    [ContactoController::class, 'index']);
+        Route::get('/contactos',                    fn() => redirect('/v2/contactos'));
         Route::get('/contactos/data',               [ContactoController::class, 'data']);
         Route::post('/contactos',                   [ContactoController::class, 'store']);
         Route::patch('/contactos/{id}',             [ContactoController::class, 'update']);
@@ -251,46 +233,48 @@ Route::middleware([SecretariaAuth::class])->group(function () {
 
     // Admin (panel de administración del bot via web)
     Route::middleware('permiso:admin')->prefix('admin')->group(function () {
-        Route::get('/',                         [AdminController::class, 'dashboard']);
+        // Fase 4: las páginas HTML de admin viven en el shell V2 (/v2/admin/*);
+        // acá quedan los redirects de bookmarks + todos los endpoints de data.
+        Route::get('/',                         fn() => redirect('/v2/admin'));
         Route::get('/bot/status',               [AdminController::class, 'botStatus']);
         Route::get('/tareas',                   [AdminController::class, 'tareas']);
 
-        Route::get('/textos',                   [AdminController::class, 'textos']);
+        Route::get('/textos',                   fn() => redirect('/v2/admin/textos'));
         Route::get('/textos/data',              [AdminController::class, 'textosGet']);
         Route::post('/textos/save',             [AdminController::class, 'textosSave']);
 
-        Route::get('/pruebas',                  [AdminController::class, 'pruebas']);
+        Route::get('/pruebas',                  fn() => redirect('/v2/admin/pruebas'));
         Route::post('/pruebas/modo',            [AdminController::class, 'pruebasModo']);
         Route::get('/pruebas/stream',           [AdminController::class, 'pruebasStream']);
 
-        Route::get('/logs',                     [AdminController::class, 'logs']);
+        Route::get('/logs',                     fn() => redirect('/v2/admin/logs'));
         Route::get('/logs/stream',              [AdminController::class, 'logsStream']);
 
-        Route::get('/legajo',                   [AdminController::class, 'legajoConfig']);
+        Route::get('/legajo',                   fn() => redirect('/v2/admin/legajo'));
         Route::post('/legajo/save',             [AdminController::class, 'legajoConfigSave']);
 
-        Route::get('/usuarios',                 [AdminController::class, 'usuarios']);
+        Route::get('/usuarios',                 fn() => redirect('/v2/admin/usuarios'));
         Route::get('/usuarios/data',            [AdminController::class, 'usuariosData']);
         Route::post('/usuarios/save',           [AdminController::class, 'usuariosSave']);
         Route::post('/usuarios/{id}/save',      [AdminController::class, 'usuariosSave']);
 
-        Route::get('/respuestas-rapidas',           [AdminController::class, 'respuestasRapidas']);
+        Route::get('/respuestas-rapidas',           fn() => redirect('/v2/admin/respuestas-rapidas'));
         Route::get('/respuestas-rapidas/data',      [AdminController::class, 'respuestasRapidasData']);
         Route::post('/respuestas-rapidas',          [AdminController::class, 'respuestasRapidasSave']);
         Route::post('/respuestas-rapidas/{id}',     [AdminController::class, 'respuestasRapidasSave']);
         Route::delete('/respuestas-rapidas/{id}',   [AdminController::class, 'respuestasRapidasDelete']);
 
-        Route::get('/estadisticas',              [EstadisticasController::class, 'index']);
+        Route::get('/estadisticas',              fn() => redirect('/v2/reportes'));
         Route::get('/estadisticas/hoy',          [EstadisticasController::class, 'hoy']);
         Route::get('/estadisticas/secretarias',  [EstadisticasController::class, 'secretarias']);
         Route::get('/estadisticas/tendencias',   [EstadisticasController::class, 'tendencias']);
 
-        Route::get('/medicos',           [AdminController::class, 'medicos']);
+        Route::get('/medicos',           fn() => redirect('/v2/admin/medicos'));
         Route::get('/medicos/data',      [AdminController::class, 'medicosData']);
         Route::post('/medicos/save',     [AdminController::class, 'medicosSave']);
         Route::delete('/medicos/{id}',   [AdminController::class, 'medicosDestroy']);
 
-        Route::get('/tunnel',         [AdminController::class, 'tunnel']);
+        Route::get('/tunnel',         fn() => redirect('/v2/admin/tunnel'));
         Route::get('/tunnel/status',  [AdminController::class, 'tunnelStatus']);
         Route::post('/tunnel/start',  [AdminController::class, 'tunnelStart']);
         Route::post('/tunnel/stop',   [AdminController::class, 'tunnelStop']);
@@ -299,7 +283,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Agenda
     Route::middleware('permiso:agenda')->group(function () {
         Route::get('/v2/agenda',         [\App\Http\Controllers\V2Controller::class, 'agenda']);
-        Route::get('/agenda',            [AgendaController::class, 'index']);
+        Route::get('/agenda',            fn() => redirect('/v2/agenda'));
         Route::get('/agenda/data',       [AgendaController::class, 'data']);
         Route::post('/agenda',           [AgendaController::class, 'store']);
         Route::patch('/agenda/{id}',     [AgendaController::class, 'update']);

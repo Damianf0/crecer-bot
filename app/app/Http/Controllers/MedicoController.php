@@ -96,25 +96,6 @@ class MedicoController extends Controller
         }
     }
 
-    // ── Vista ─────────────────────────────────────────────────────────
-
-    public function index()
-    {
-        $m = $this->medicoActual();
-        if (!$m) {
-            abort(403, 'Tu usuario no está vinculado a un médico. Pedile a un administrador que te asocie uno.');
-        }
-
-        return view('medico.index', [
-            'medico'   => $m,
-            'enSala'   => $this->pacientesEnSala($m),
-            'llamados' => $this->pacientesLlamados($m),
-            'agenda'   => $this->agendaHoy($m),
-            'destinatarios' => $this->destinatariosTareas(),
-            'tareasDelegadas' => $this->tareasDelegadas(),
-        ]);
-    }
-
     /** Usuarios a los que el médico puede delegar tareas (secretarias / supervisoras / admin). */
     private function destinatariosTareas()
     {

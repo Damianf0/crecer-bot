@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-{{-- Layout V2 — UI de producción desde el cutover del 30/06 (commit effdce9).
-     V1 (layouts/app) queda como legacy vía toggle "UI clásica" hasta Fase 4.
+{{-- Layout V2 — la única interfaz desde Fase 4 (23/07; V1 retirada, las URLs
+     viejas redirigen a /v2/*). Cutover original: 30/06, commit effdce9.
      Ver docs/MIGRACION-V2.md, DESIGN-SYSTEM.md y CONCEPTO_UI_UX_V2.md. --}}
 <html lang="es">
 <head>
@@ -49,7 +49,6 @@
             <span class="v2-dot warn" id="bots-dot"></span><span id="bots-txt">Bots…</span>
         </span>
         <button class="tb-btn" id="theme-btn" title="Cambiar tema">🌙</button>
-        <a class="tb-btn" href="/cambiar-ui/v1" style="text-decoration:none;" title="Volver a la interfaz clásica y dejarla como predeterminada">UI clásica</a>
         @if(auth()->user()?->hasPermiso('secretaria'))
         <a class="tb-btn" href="/declarar-colas" style="text-decoration:none;" title="Cambiar mis colas">⇄</a>
         @endif

@@ -18,11 +18,6 @@ class EstadisticasController extends Controller
 {
     private const TZ = 'America/Argentina/Buenos_Aires';
 
-    public function index()
-    {
-        return view('admin.estadisticas');
-    }
-
     // ── Tab Hoy ────────────────────────────────────────────
 
     public function hoy(): JsonResponse

@@ -13,16 +13,6 @@ use Illuminate\Support\Facades\Http;
 
 class DocumentoController extends Controller
 {
-    /** Pantalla del legajo de un paciente. */
-    public function indexPaciente(int $contactoId)
-    {
-        $contacto = Contacto::findOrFail($contactoId);
-        return response()
-            ->view('contactos.documentos', ['contacto' => $contacto])
-            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-            ->header('Pragma', 'no-cache');
-    }
-
     /** GET /pacientes/{id}/documentos/data — listado paginado con filtros. */
     public function dataPaciente(int $contactoId, Request $request): JsonResponse
     {

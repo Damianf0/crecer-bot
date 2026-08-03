@@ -56,19 +56,9 @@ class AtencionController extends Controller
         return in_array($ext, self::EXTENSIONES_BLOQUEADAS, true) ? $ext : null;
     }
 
-    public function index(string $area = 'atencion')
-    {
-        $area = isset(ConversacionWA::AREAS[$area]) ? $area : 'atencion';
-        $usuarios  = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
-        $itemsData = $this->buildItems($area);
-        $areaLabel = ConversacionWA::AREAS[$area];
-        return view('atencion.index', compact('usuarios', 'itemsData', 'area', 'areaLabel'));
-    }
-
     /**
-     * PoC de la UI V2 (/v2/atencion/{area}): misma data y endpoints que index(),
-     * renderizada con el layout y patrón bandeja|detalle|legajo nuevos. Corre en
-     * paralelo a producción — no reemplaza nada.
+     * Cola de conversaciones por área en el shell V2 (/v2/atencion/{area}).
+     * (El index V1 se retiró en Fase 4 — 23/07; la ruta vieja redirige acá.)
      */
     public function indexV2(string $area = 'atencion')
     {
@@ -473,30 +463,9 @@ class AtencionController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    public function misConversaciones()
-    {
-        $items    = $this->misConvItems();
-        $usuarios = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
-
-        return view('atencion.mis-conversaciones', compact('items', 'usuarios'));
-    }
-
     public function misConversacionesData(): JsonResponse
     {
         return response()->json(['ok' => true, 'data' => $this->misConvItems()]);
-    }
-
-    public function centroTareas()
-    {
-        $usuarios = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
-
-        $conversaciones = ConversacionWA::where('estado', 'activa')
-            ->orderByDesc('ultima_actividad')
-            ->limit(50)
-            ->get()
-            ->map(fn($c) => ['id' => $c->id, 'label' => $c->nombreOTelefono . ' — ' . $c->telefono]);
-
-        return view('atencion.centro-tareas', compact('usuarios', 'conversaciones'));
     }
 
     /**
@@ -892,7 +861,9 @@ class AtencionController extends Controller
 
         $usuarios = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
 
-        return view('atencion.historial', compact('items', 'desde', 'hasta', 'tipo', 'q', 'area', 'usuarios', 'page', 'pages', 'total', 'perPage'));
+        // Fase 4: la vista V1 (atencion/historial) se retiró; V2Controller::historial
+        // toma la data de acá con getData() y re-renderiza v2.historial con el shell.
+        return view('v2.historial', compact('items', 'desde', 'hasta', 'tipo', 'q', 'area', 'usuarios', 'page', 'pages', 'total', 'perPage'));
     }
 
     /**
