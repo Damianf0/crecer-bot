@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual de uso — Plataforma Crecer</title>
+<style>
+:root{
+  --bg:#f7f7f5; --card:#fff; --hover:#f0f0ec; --border:#e5e5e0; --border-s:#d4d4cd;
+  --text:#1a1a1a; --text2:#4a4a4a; --mute:#8a8a82;
+  --accent:#C0273A; --accent-bg:#f9e9ec;
+  --ok:#1a7f37; --ok-bg:#e7f4ea; --warn:#b86e00; --warn-bg:#fdf3e4;
+  --urg:#c8312b; --urg-bg:#fbe8e6; --info:#2563eb; --info-bg:#e6efff;
+  --radius:10px; --radius-sm:7px;
+  --mono:'JetBrains Mono','Consolas','Courier New',monospace;
+}
+@media print{
+  .toc,.topbar,.totop{display:none!important}
+  main{margin:0!important;max-width:100%!important}
+  .sec{break-inside:avoid}
+  body{background:#fff}
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg); color:var(--text); line-height:1.6; font-size:15px;
+}
+
+/* ── Topbar ─────────────────────────────────────────── */
+.topbar{
+  position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:12px;
+  background:var(--card); border-bottom:1px solid var(--border); padding:11px 22px;
+}
+.topbar .logo{
+  width:30px;height:30px;border-radius:7px;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;
+}
+.topbar b{font-size:15px;font-weight:700}
+.topbar .sub{font-size:12px;color:var(--mute)}
+.topbar .spacer{flex:1}
+.topbar .ver{font-size:11px;color:var(--mute);font-family:var(--mono)}
+.menu-btn{display:none;background:none;border:1px solid var(--border);border-radius:6px;
+  padding:5px 10px;font-size:16px;cursor:pointer;color:var(--text)}
+
+/* ── Layout ─────────────────────────────────────────── */
+.wrap{display:flex;align-items:flex-start}
+.toc{
+  position:sticky; top:53px; width:290px; flex-shrink:0; max-height:calc(100vh - 53px);
+  overflow-y:auto; padding:20px 14px 40px; border-right:1px solid var(--border);
+}
+.toc h4{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);
+  margin:16px 0 6px 10px;font-weight:700}
+.toc h4:first-child{margin-top:0}
+.toc a{
+  display:block;padding:5px 10px;border-radius:6px;font-size:13.5px;
+  color:var(--text2);text-decoration:none;line-height:1.45;
+}
+.toc a:hover{background:var(--hover);color:var(--text)}
+.toc a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.toc a .n{font-family:var(--mono);font-size:11px;color:var(--mute);margin-right:6px}
+.toc a.on .n{color:var(--accent)}
+
+main{flex:1;min-width:0;max-width:940px;margin:0 auto;padding:34px 30px 100px}
+
+/* ── Portada ────────────────────────────────────────── */
+.cover{
+  background:linear-gradient(135deg,var(--accent) 0%,#8e1c2b 100%);
+  color:#fff;border-radius:var(--radius);padding:38px 34px;margin-bottom:34px;
+}
+.cover h1{font-size:31px;font-weight:750;line-height:1.2;margin-bottom:8px;letter-spacing:-.4px}
+.cover p{font-size:15px;opacity:.93;max-width:640px}
+.cover .meta{
+  margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.25);
+  display:flex;gap:26px;flex-wrap:wrap;font-size:12.5px;opacity:.9
+}
+.cover .meta b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.6px;opacity:.75;margin-bottom:2px;font-weight:600}
+
+/* ── Secciones ──────────────────────────────────────── */
+.sec{margin-bottom:46px;scroll-margin-top:70px}
+.sec-h{display:flex;align-items:baseline;gap:11px;padding-bottom:9px;
+  border-bottom:2px solid var(--accent);margin-bottom:20px}
+.sec-h .num{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)}
+.sec-h h2{font-size:22px;font-weight:700;letter-spacing:-.2px}
+.sec-h .who{margin-left:auto;font-size:11px;color:var(--mute);white-space:nowrap;
+  border:1px solid var(--border-s);border-radius:20px;padding:2px 11px;background:var(--card)}
+.lead{font-size:15.5px;color:var(--text2);margin-bottom:22px;max-width:750px}
+
+h3.sub{font-size:17px;font-weight:700;margin:32px 0 12px;padding-left:11px;
+  border-left:3px solid var(--accent)}
+h4.min{font-size:14px;font-weight:700;margin:20px 0 8px;color:var(--text)}
+p{margin-bottom:11px;max-width:760px}
+ul,ol{margin:0 0 13px 22px}
+li{margin-bottom:5px;max-width:730px}
+
+/* ── Ficha opción: concepto / utilidad / uso ────────── */
+.opt{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  margin-bottom:18px;overflow:hidden
+}
+.opt-h{
+  display:flex;align-items:center;gap:10px;padding:12px 17px;
+  background:var(--hover);border-bottom:1px solid var(--border)
+}
+.opt-h .ico{font-size:17px;line-height:1}
+.opt-h .name{font-weight:700;font-size:15px;flex:1;min-width:0}
+.opt-h .where{font-family:var(--mono);font-size:11px;color:var(--mute);
+  background:var(--card);border:1px solid var(--border);border-radius:5px;padding:2px 8px;white-space:nowrap}
+.opt-b{padding:15px 17px}
+.block{margin-bottom:14px}
+.block:last-child{margin-bottom:0}
+.block .lbl{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;
+  color:var(--accent);margin-bottom:5px;display:flex;align-items:center;gap:6px
+}
+.block .lbl::after{content:'';flex:1;height:1px;background:var(--border)}
+.block p{margin-bottom:6px}
+.block p:last-child{margin-bottom:0}
+
+/* Pasos numerados */
+ol.steps{list-style:none;margin:0;counter-reset:s}
+ol.steps>li{
+  counter-increment:s;position:relative;padding-left:33px;margin-bottom:9px;max-width:720px
+}
+ol.steps>li::before{
+  content:counter(s);position:absolute;left:0;top:1px;
+  width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11.5px;font-weight:700;font-family:var(--mono)
+}
+ol.steps ul{margin:6px 0 0 18px}
+
+/* ── Píldoras y chips de UI ─────────────────────────── */
+.pill{display:inline-block;border-radius:20px;padding:1px 9px;font-size:11.5px;font-weight:650;
+  vertical-align:middle;white-space:nowrap}
+.pill.n{background:var(--accent-bg);color:var(--accent)}
+.pill.p{background:var(--info-bg);color:var(--info)}
+.pill.u{background:var(--urg-bg);color:var(--urg)}
+.pill.o{background:var(--ok-bg);color:var(--ok)}
+.pill.w{background:var(--warn-bg);color:var(--warn)}
+.pill.g{background:var(--hover);color:var(--text2);border:1px solid var(--border-s)}
+kbd{font-family:var(--mono);font-size:11.5px;background:var(--hover);border:1px solid var(--border-s);
+  border-bottom-width:2px;border-radius:4px;padding:1px 6px;white-space:nowrap}
+code{font-family:var(--mono);font-size:12.5px;background:var(--hover);
+  border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+.btn-ui{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;
+  background:var(--card);border:1px solid var(--border-s);border-radius:6px;padding:2px 9px;
+  vertical-align:middle;white-space:nowrap}
+.btn-ui.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* ── Callouts ───────────────────────────────────────── */
+.note{
+  border-radius:var(--radius-sm);padding:12px 15px;margin:14px 0;font-size:14px;
+  border-left:3px solid;max-width:760px
+}
+.note b{display:block;margin-bottom:3px;font-size:12.5px;text-transform:uppercase;letter-spacing:.4px}
+.note.tip{background:var(--ok-bg);border-color:var(--ok)} .note.tip b{color:var(--ok)}
+.note.warn{background:var(--warn-bg);border-color:var(--warn)} .note.warn b{color:var(--warn)}
+.note.dgr{background:var(--urg-bg);border-color:var(--urg)} .note.dgr b{color:var(--urg)}
+.note.inf{background:var(--info-bg);border-color:var(--info)} .note.inf b{color:var(--info)}
+.note p:last-child{margin-bottom:0}
+
+/* ── Capturas ───────────────────────────────────────── */
+figure.shot{margin:16px 0 20px;max-width:900px}
+figure.shot img{
+  width:100%;display:block;border:1px solid var(--border-s);border-radius:var(--radius);
+  background:var(--card);box-shadow:0 2px 10px rgba(0,0,0,.06)
+}
+figure.shot figcaption{
+  font-size:12.5px;color:var(--mute);margin-top:7px;padding-left:3px;line-height:1.5
+}
+figure.shot figcaption b{color:var(--text2);font-weight:650}
+.ph{
+  border:2px dashed var(--border-s);border-radius:var(--radius);background:var(--card);
+  padding:34px 20px;text-align:center;color:var(--mute);font-size:13px
+}
+.ph .f{font-family:var(--mono);font-size:11.5px;display:block;margin-top:5px;color:var(--border-s)}
+
+/* ── Tablas ─────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:14px 0;
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--mute);background:var(--hover);padding:9px 12px;border-bottom:1px solid var(--border);font-weight:700}
+td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td b{font-weight:650}
+
+/* ── Diagramas de flujo ─────────────────────────────── */
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:16px 0;max-width:880px}
+.flow .st{
+  flex:1;min-width:125px;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:11px 13px;position:relative
+}
+.flow .st .t{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--accent);margin-bottom:3px}
+.flow .st .d{font-size:12.5px;color:var(--text2);line-height:1.45}
+.flow .ar{display:flex;align-items:center;justify-content:center;color:var(--border-s);
+  font-size:19px;padding:0 6px;flex-shrink:0}
+@media(max-width:760px){.flow{flex-direction:column}.flow .ar{transform:rotate(90deg);padding:3px 0}}
+
+/* ── Grilla de atajos ───────────────────────────────── */
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:14px 0}
+.mini{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px}
+.mini .h{font-weight:700;font-size:13.5px;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.mini .p{font-size:12.5px;color:var(--text2);line-height:1.5}
+
+.totop{
+  position:fixed;right:22px;bottom:22px;z-index:60;background:var(--accent);color:#fff;
+  border:none;border-radius:50%;width:40px;height:40px;font-size:17px;cursor:pointer;
+  box-shadow:0 3px 12px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:opacity .2s
+}
+.totop.on{opacity:1;pointer-events:auto}
+
+@media(max-width:1000px){
+  .toc{position:fixed;left:0;top:53px;bottom:0;background:var(--card);z-index:40;
+    transform:translateX(-100%);transition:transform .2s;box-shadow:3px 0 14px rgba(0,0,0,.1)}
+  .toc.open{transform:translateX(0)}
+  .menu-btn{display:block}
+  main{padding:24px 18px 80px}
+  .cover{padding:28px 22px}.cover h1{font-size:25px}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <button class="menu-btn" onclick="document.querySelector('.toc').classList.toggle('open')">☰</button>
+  <div class="logo">C</div>
+  <div>
+    <b>Manual de uso</b>
+    <div class="sub">Plataforma operativa · Crecer Reproducción</div>
+  </div>
+  <span class="spacer"></span>
+  <span class="ver">v1 · agosto 2026</span>
+</div>
+
+<div class="wrap">
+<nav class="toc" id="toc">
+  <h4>Empezar</h4>
+  <a href="#s0"><span class="n">0</span>Cómo leer este manual</a>
+  <a href="#s1"><span class="n">1</span>Entrar al sistema</a>
+  <a href="#s2"><span class="n">2</span>La pantalla y el menú</a>
+  <a href="#s3"><span class="n">3</span>Mi día</a>
+  <h4>WhatsApp</h4>
+  <a href="#s4"><span class="n">4</span>Las tres colas</a>
+  <a href="#s5"><span class="n">5</span>Trabajar una conversación</a>
+  <a href="#s6"><span class="n">6</span>Acciones sobre la conversación</a>
+  <a href="#s7"><span class="n">7</span>El legajo lateral</a>
+  <a href="#s8"><span class="n">8</span>Iniciar una conversación</a>
+  <a href="#s9"><span class="n">9</span>Mis conversaciones</a>
+  <h4>Trabajo diario</h4>
+  <a href="#s10"><span class="n">10</span>Tareas</a>
+  <a href="#s11"><span class="n">11</span>Agenda</a>
+  <a href="#s12"><span class="n">12</span>Historial</a>
+  <a href="#s13"><span class="n">13</span>Contactos</a>
+  <a href="#s14"><span class="n">14</span>Documentos del paciente</a>
+  <h4>Por área</h4>
+  <a href="#s15"><span class="n">15</span>Recepción</a>
+  <a href="#s16"><span class="n">16</span>Mi consultorio (médico)</a>
+  <a href="#s17"><span class="n">17</span>La tablet de la entrada</a>
+  <h4>Supervisión</h4>
+  <a href="#s18"><span class="n">18</span>Reportes</a>
+  <a href="#s19"><span class="n">19</span>Administración</a>
+  <h4>Referencia</h4>
+  <a href="#s20"><span class="n">20</span>Roles y permisos</a>
+  <a href="#s21"><span class="n">21</span>Problemas frecuentes</a>
+</nav>
+
+<main>
+
+<div class="cover">
+  <h1>Manual de uso de la plataforma</h1>
+  <p>Todo lo que hace el sistema, opción por opción: qué es, para qué sirve y cómo se usa paso a paso. Escrito para el equipo de Crecer Reproducción — recepción, atención, médicos y administración.</p>
+  <div class="meta">
+    <div><b>Versión</b>Agosto 2026 · interfaz V2</div>
+    <div><b>Dirigido a</b>Todo el equipo</div>
+    <div><b>Dónde entrar</b>http://localhost — desde cualquier PC de la clínica</div>
+  </div>
+</div>
+
+<!-- ══════════════════ 0 ══════════════════ -->
+<section class="sec" id="s0">
+  <div class="sec-h"><span class="num">00</span><h2>Cómo leer este manual</h2></div>
+  <p class="lead">Cada función del sistema está explicada siempre con la misma estructura, para que puedas saltar directo a lo que necesitás sin leer todo.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📖</span><span class="name">La estructura de cada ficha</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>El concepto: qué representa esa opción dentro del sistema.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>La utilidad concreta en el trabajo del día: qué problema te resuelve.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <p>Los pasos numerados, en orden, tal como aparecen en pantalla.</p></div>
+    </div>
+  </div>
+
+  <h4 class="min">Convenciones</h4>
+  <ul>
+    <li><span class="btn-ui">Botón</span> — un botón que ves en pantalla, con el texto exacto.</li>
+    <li><code>/v2/atencion</code> — la dirección de la pantalla, la que aparece arriba en el navegador.</li>
+    <li><kbd>Ctrl</kbd> + <kbd>Enter</kbd> — teclas que tenés que apretar juntas.</li>
+    <li><span class="pill n">Píldora</span> — una etiqueta de color del sistema (estado, prioridad, área).</li>
+  </ul>
+
+  <div class="note inf"><b>Sobre las imágenes</b>
+    <p>Las capturas son del sistema real en funcionamiento, así que muestran datos de pacientes reales. Este manual es de circulación interna: no lo compartas fuera de la clínica ni lo subas a ningún lado.</p></div>
+
+  <div class="note tip"><b>Un atajo útil</b>
+    <p>Podés buscar cualquier palabra dentro del manual con <kbd>Ctrl</kbd> + <kbd>F</kbd>, igual que en cualquier página.</p></div>
+</section>
+
+<!-- ══════════════════ 1 ══════════════════ -->
+<section class="sec" id="s1">
+  <div class="sec-h"><span class="num">01</span><h2>Entrar al sistema</h2><span class="who">Todos</span></div>
+  <p class="lead">El sistema se usa desde el navegador, sin instalar nada. Funciona desde cualquier computadora de la clínica conectada a la red.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🔑</span><span class="name">Iniciar sesión</span><span class="where">/login</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>La puerta de entrada. Tu usuario define qué pantallas ves y qué podés hacer; nadie comparte cuenta con nadie.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que cada acción quede registrada con tu nombre: quién tomó una conversación, quién respondió, quién resolvió. Eso es lo que después permite mirar el historial y saber qué pasó con un paciente.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Abrí el navegador y entrá a <code>http://localhost</code>.</li>
+          <li>Escribí tu <b>email</b> y tu <b>contraseña</b>.</li>
+          <li>Tocá <span class="btn-ui pri">Ingresar →</span>. El sistema te lleva solo a la pantalla que corresponde a tu rol.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <figure class="shot">
+    <img src="img/01-login.png" alt="Pantalla de inicio de sesión" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/01-login.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Pantalla de ingreso.</b> Si te equivocás varias veces seguidas, el sistema bloquea el usuario por 15 minutos como medida de seguridad.</figcaption>
+  </figure>
+
+  <div class="note warn"><b>Si te bloqueaste</b>
+    <p>Después de 5 intentos fallidos el acceso queda bloqueado 15 minutos. No es un error: es una protección para que nadie pueda adivinar contraseñas probando. Esperá y volvé a intentar, o pedile a un administrador que te la reinicie.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">⇄</span><span class="name">Declarar mis colas</span><span class="where">/declarar-colas</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una pantalla que aparece al entrar (solo para recepción) donde marcás <b>qué colas de WhatsApp vas a atender hoy</b>: Atención, Administración, Ovodonación, o varias.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que el sistema sepa quién está cubriendo cada número y no queden mensajes esperando sin dueño. Si sos la única en el turno y marcás las tres, ves todo; si son varias repartidas, cada una ve lo suyo y no se pisan.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Marcá las casillas de las colas que vas a atender en este turno.</li>
+          <li>Tocá <span class="btn-ui pri">Confirmar</span>.</li>
+          <li>Si más tarde cambia el reparto, tocá el botón <span class="btn-ui">⇄</span> arriba a la derecha y volvé a declarar.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <figure class="shot">
+    <img src="img/01b-declarar-colas.png" alt="Pantalla de declaración de colas" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/01b-declarar-colas.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Declaración de colas.</b> A la izquierda los teléfonos que vas a atender; a la derecha, los tipos de consulta. Hasta no tocar <b>Empezar turno</b>, el sistema te devuelve siempre a esta pantalla.</figcaption>
+  </figure>
+
+  <div class="note tip"><b>Si no marcás nada</b>
+    <p>El sistema asume que atendés todas las colas. Es el comportamiento seguro: preferimos que veas de más y no que un mensaje quede sin mirar.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🚪</span><span class="name">Salir</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>El botón <span class="btn-ui">Salir</span> arriba a la derecha cierra tu sesión.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que nadie use el sistema con tu nombre si te levantás de la PC. Es especialmente importante en las computadoras compartidas de recepción.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">Salir</span> arriba a la derecha.</li>
+          <li>Confirmá en el cartelito que aparece.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 2 ══════════════════ -->
+<section class="sec" id="s2">
+  <div class="sec-h"><span class="num">02</span><h2>La pantalla y el menú</h2><span class="who">Todos</span></div>
+  <p class="lead">Todas las pantallas del sistema comparten la misma estructura: una barra arriba, un menú a la izquierda y el contenido en el centro. Aprendiendo esto una vez, ya sabés moverte por todo.</p>
+
+  <figure class="shot">
+    <img src="img/02-shell.png" alt="Estructura general de la pantalla" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/02-shell.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>La estructura común.</b> Arriba la barra de estado, a la izquierda el menú agrupado por secciones, y el contenido ocupando el resto. Los números rojos del menú son las conversaciones sin tomar de cada cola.</figcaption>
+  </figure>
+
+  <h3 class="sub">La barra de arriba</h3>
+  <div class="grid2">
+    <div class="mini"><div class="h">☰ Colapsar menú</div><div class="p">Achica el menú lateral a solo íconos para ganar espacio. Queda guardado para la próxima vez que entres.</div></div>
+    <div class="mini"><div class="h">🟢 Estado de los bots</div><div class="p">El semáforo de WhatsApp. <b>Verde “Bots ok”</b>: todo funcionando. <b>Amarillo</b>: un bot está arrancando. <b>Rojo “Bot caído”</b>: no se puede enviar ni recibir. Se actualiza solo cada 20 segundos.</div></div>
+    <div class="mini"><div class="h">🌙 Cambiar tema</div><div class="p">Alterna entre fondo claro y oscuro. Es solo tuyo y queda guardado en esa computadora.</div></div>
+    <div class="mini"><div class="h">⇄ Cambiar mis colas</div><div class="p">Vuelve a la pantalla de declaración de colas. Solo aparece si tenés permiso de recepción.</div></div>
+  </div>
+
+  <div class="note dgr"><b>Si el semáforo está en rojo</b>
+    <p>Con “Bot caído” los mensajes que mandes van a fallar y los que envíen los pacientes no van a entrar hasta que se recupere. El sistema se repara solo en la mayoría de los casos; si sigue en rojo más de unos minutos, avisá al área de sistemas. Todo lo demás (tareas, contactos, recepción) sigue funcionando normal.</p></div>
+
+  <h3 class="sub">El menú lateral</h3>
+  <p>Está agrupado por tipo de trabajo. <b>Solo ves las secciones para las que tenés permiso</b>, así que tu menú puede tener menos entradas que el de un compañero — es normal.</p>
+
+  <table>
+    <thead><tr><th style="width:180px">Sección</th><th>Qué agrupa</th></tr></thead>
+    <tbody>
+      <tr><td><b>Uso diario</b></td><td>Mi día — el resumen de lo tuyo al empezar la jornada.</td></tr>
+      <tr><td><b>WhatsApp</b></td><td>Las tres colas (Atención, Administración, Ovodonación) y Mis conversaciones.</td></tr>
+      <tr><td><b>Trabajo</b></td><td>Tareas, Historial, Contactos y Agenda.</td></tr>
+      <tr><td><b>Recepción</b></td><td>La sala de espera y los mensajes derivados por el bot.</td></tr>
+      <tr><td><b>Consultorio</b></td><td>La pantalla del médico: sala, llamados y tareas delegadas.</td></tr>
+      <tr><td><b>Supervisión</b></td><td>Reportes y Administración.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note inf"><b>Los números rojos del menú</b>
+    <p>El globito al lado de cada cola muestra <b>cuántas conversaciones sin tomar tienen mensajes sin leer</b>. Es el indicador de trabajo pendiente: si está en cero, esa cola está al día.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">💬</span><span class="name">Chat interno del equipo</span><span class="where">botón flotante</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Un chat entre compañeros, adentro del sistema. Tiene un canal de <b>Equipo</b> (lo ven todos) y mensajes directos a una persona.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para coordinar sin salir del sistema ni usar el WhatsApp personal: “te paso la conversación de la señora Gómez”, “subí a consultorio 3”. Queda registrado y no se mezcla con los mensajes de pacientes.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá el botón flotante de chat, abajo a la derecha.</li>
+          <li>Elegí <b>Equipo</b> para hablarle a todos, o el nombre de una persona para un mensaje directo.</li>
+          <li>Escribí y mandá. Los mensajes nuevos aparecen solos cada pocos segundos.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 3 ══════════════════ -->
+<section class="sec" id="s3">
+  <div class="sec-h"><span class="num">03</span><h2>Mi día</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">La pantalla con la que conviene arrancar la jornada. Junta en un solo lugar lo que tenés pendiente vos, sin que tengas que ir a buscarlo por las distintas secciones.</p>
+
+  <figure class="shot">
+    <img src="img/03-mi-dia.png" alt="Pantalla Mi día" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/03-mi-dia.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Mi día.</b> Saludo, los tres indicadores clickeables, tus tareas de hoy, tus conversaciones y el pulso del equipo. En el ejemplo el usuario no tiene nada asignado, así que los dos bloques del medio aparecen vacíos: así se ve cuando estás al día.</figcaption>
+  </figure>
+
+  <h3 class="sub">Los tres indicadores de arriba</h3>
+  <p>No son adornos: <b>cada uno es un atajo</b>. Tocalos para ir directo a la lista que resumen.</p>
+  <table>
+    <thead><tr><th style="width:190px">Indicador</th><th>Qué te está diciendo</th></tr></thead>
+    <tbody>
+      <tr><td><b>Mis conversaciones</b></td><td>Cuántas conversaciones de WhatsApp tenés asignadas a vos. Abajo aclara cuántas son urgentes y cuántas tienen mensajes sin leer.</td></tr>
+      <tr><td><b>Tareas pendientes</b></td><td>Cuántas tareas tuyas siguen sin completar, y cuántas vencen hoy o ya vencieron.</td></tr>
+      <tr><td><b>Sin asignar en colas</b></td><td>Cuántas conversaciones están esperando que <b>alguien</b> las tome. Es el número del equipo, no el tuyo: si crece, hay gente esperando respuesta.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">⏰</span><span class="name">Para hoy</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>La lista de tus tareas que vencen hoy o que ya están vencidas. Las vencidas aparecen marcadas en rojo con la fecha en que vencieron.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para no depender de la memoria ni de papelitos: lo que hay que hacer hoy está acá, y se tacha desde acá mismo.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Leé la lista. El puntito rojo a la izquierda marca <b>prioridad alta</b>.</li>
+          <li>Cuando terminás una, tocá el círculo <span class="btn-ui">✓</span> de la izquierda: se tacha y desaparece.</li>
+          <li>Si no vence nada, vas a ver “Nada vence hoy 🎉”.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📊</span><span class="name">Pulso del equipo</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una franja al pie con el estado de las tres colas: cuántas conversaciones abiertas tiene cada una y cuántas urgentes están sin tomar. Abajo, quiénes están conectados en los últimos 5 minutos.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para ver de un vistazo dónde está el cuello de botella y quién está disponible. Si Ovodonación tiene 3 urgentes sin tomar y vos estás liviana, ya sabés dónde meterte.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Mirá el número grande de cada área: son las conversaciones abiertas.</li>
+          <li>Si abajo dice algo en rojo (“2 urgentes sin tomar”), esa cola necesita atención ya.</li>
+          <li>Tocá el recuadro del área para ir directo a esa cola.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="sub">Los dos botones de acción rápida</h3>
+  <div class="grid2">
+    <div class="mini"><div class="h">💬 Conversación</div><div class="p">Abre el formulario para <b>iniciar una conversación nueva</b> de WhatsApp con alguien: elegís el área desde la que sale, buscás el contacto (o escribís el número a mano) y mandás el primer mensaje. Ver la sección 8.</div></div>
+    <div class="mini"><div class="h">+ Tarea</div><div class="p">Crea una tarea rápida sin salir de la pantalla: título, detalle, a quién se la asignás, prioridad y cuándo vence.</div></div>
+  </div>
+</section>
+
+<!-- ══════════════════ 4 ══════════════════ -->
+<section class="sec" id="s4">
+  <div class="sec-h"><span class="num">04</span><h2>Las tres colas de WhatsApp</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">El corazón del sistema. Cada número de WhatsApp de la clínica tiene su propia cola, y los mensajes que entran caen ahí para que alguien los tome y los responda.</p>
+
+  <table>
+    <thead><tr><th style="width:170px">Cola</th><th style="width:180px">Número</th><th>Para qué se usa</th></tr></thead>
+    <tbody>
+      <tr><td><b>Atención</b></td><td><code>+54 9 223 599-7247</code></td><td>La línea general de la clínica: turnos, consultas de pacientes, estudios.</td></tr>
+      <tr><td><b>Administración</b></td><td><code>+54 9 223 346-9767</code></td><td>Temas administrativos: facturación, obras sociales, autorizaciones.</td></tr>
+      <tr><td><b>Ovodonación</b></td><td><code>+54 9 223 456-5067</code></td><td>El programa de ovodonación, que tiene su propio circuito y sus tiempos.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note inf"><b>Por qué están separadas</b>
+    <p>Son tres teléfonos distintos de verdad, no tres carpetas. La paciente que escribe a Ovodonación recibe respuesta desde ese mismo número, y quien atiende esa cola no se mezcla con las consultas de turnos. Se puede pasar una conversación de un área a otra cuando entró por el número equivocado (ver sección 6).</p></div>
+
+  <figure class="shot">
+    <img src="img/04-cola.png" alt="Cola de conversaciones de WhatsApp" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/04-cola.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Las tres columnas.</b> Izquierda: la bandeja con las conversaciones. Centro: la conversación abierta. Derecha: el legajo del paciente.</figcaption>
+  </figure>
+
+  <h3 class="sub">La bandeja (columna izquierda)</h3>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🗂</span><span class="name">Los tres filtros</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Tres botones que parten la cola según el estado, con el número al lado de cada uno.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para separar lo que espera de lo que ya está siendo trabajado, y para ir primero a lo urgente.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ul>
+          <li><b>En espera</b> — nadie las tomó todavía. Es la pila de trabajo por hacer.</li>
+          <li><b>En proceso</b> — alguien ya las tomó y las está trabajando (dice quién).</li>
+          <li><b>Urgentes</b> — las marcadas con la banderita, sin importar si están tomadas o no.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <h4 class="min">Cómo leer una tarjeta de la bandeja</h4>
+  <table>
+    <thead><tr><th style="width:200px">Lo que ves</th><th>Qué significa</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill n">En espera · 3</span></td><td>Nadie la tomó y tiene 3 mensajes sin leer.</td></tr>
+      <tr><td><span class="pill p">En proceso</span></td><td>Ya la está trabajando alguien del equipo.</td></tr>
+      <tr><td><span class="pill u">Urgente</span></td><td>Marcada como urgente: va primera en la lista y el borde de la tarjeta se pone rojo.</td></tr>
+      <tr><td><b>○ Sin tomar</b></td><td>Está libre, la podés tomar vos.</td></tr>
+      <tr><td><b>● Carla la tiene</b></td><td>Está asignada a esa persona. Podés abrirla igual para leerla.</td></tr>
+      <tr><td><b>El texto gris</b></td><td>El resumen de la conversación. Cuando el paciente escribió algo sustancioso, lo genera la IA; si no, es el último mensaje.</td></tr>
+      <tr><td><b>La hora a la derecha</b></td><td>Hace cuánto fue el último movimiento. Se pone roja si es urgente.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note tip"><b>El orden no es casual</b>
+    <p>Las conversaciones se ordenan solas: primero las urgentes, y dentro de cada grupo, las de actividad más reciente arriba. No hace falta que las ordenes.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🔍</span><span class="name">Buscar en la bandeja</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>El campo de búsqueda arriba de la lista. Filtra por nombre del contacto o por teléfono.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Cuando el paciente te llama por teléfono mientras tenés 40 conversaciones abiertas y necesitás encontrar la suya ya.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Escribí parte del nombre o del número.</li>
+          <li>La lista se filtra sola mientras tipeás.</li>
+          <li>Borrá el texto para volver a ver todo.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note inf"><b>Se actualiza sola</b>
+    <p>La bandeja se refresca cada 8 segundos y la conversación abierta cada 10. No hace falta que recargues la página: si entra un mensaje nuevo, aparece solo.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🔔</span><span class="name">Avisos del navegador</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Notificaciones del sistema operativo (las que salen en la esquina de la pantalla) más un tono corto.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para enterarte sin estar mirando la pantalla. Saltan en dos casos: <b>entra una conversación urgente nueva</b>, o <b>alguien te delega una conversación a vos</b>.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>La primera vez, el navegador te pregunta si permitís notificaciones: aceptá.</li>
+          <li>Dejá la pestaña del sistema abierta (puede estar de fondo).</li>
+          <li>Si no querés más avisos, se desactivan desde la configuración del navegador para este sitio.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 5 ══════════════════ -->
+<section class="sec" id="s5">
+  <div class="sec-h"><span class="num">05</span><h2>Trabajar una conversación</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">La columna del centro: el ida y vuelta con el paciente. Es lo más parecido a WhatsApp que vas a encontrar en el sistema, con algunos agregados que WhatsApp no tiene.</p>
+
+  <figure class="shot">
+    <img src="img/05-conversacion.png" alt="Detalle de una conversación" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/05-conversacion.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Una conversación abierta.</b> Arriba el contacto y las acciones; en el medio los mensajes; abajo el cuadro para escribir.</figcaption>
+  </figure>
+
+  <h3 class="sub">Leer el hilo</h3>
+  <ul>
+    <li><b>A la izquierda</b>, en gris: lo que escribió el paciente.</li>
+    <li><b>A la derecha</b>, en color: lo que mandó la clínica. Debajo dice <b>quién</b> lo mandó y a qué hora — si lo mandó el bot automático, dice “Bot”.</li>
+    <li><b>En el centro</b>, en amarillo: las <b>notas internas</b>, que el paciente nunca ve.</li>
+    <li><b>Líneas grises finitas</b>: los eventos. “Carla tomó la conversación”, “Marina la derivó de área”. Es la trazabilidad de quién hizo qué.</li>
+    <li><b>Los audios</b> se escuchan con el reproductor, y abajo aparece la <b>transcripción</b> en cursiva: podés leer lo que dijo el paciente sin ponerte los auriculares.</li>
+  </ul>
+
+  <div class="note tip"><b>Resumen IA</b>
+    <p>Arriba del hilo, en un recuadro, puede aparecer un resumen automático de lo que viene pidiendo el paciente. Sirve para ponerte al día en 5 segundos cuando agarrás una conversación larga que venía trabajando otra persona. No lo escribió nadie del equipo: lo genera el sistema.</p></div>
+
+  <h4 class="min">Ver mensajes viejos</h4>
+  <p>Se cargan los últimos 100 mensajes. Si la conversación es más larga, aparece arriba <span class="btn-ui">Ver mensajes anteriores</span>. También se cargan solos al llegar arriba de todo haciendo scroll.</p>
+
+  <h3 class="sub">Responder</h3>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">✍️</span><span class="name">Responder / Nota interna</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Dos modos del mismo cuadro de escritura. <b>Responder</b> le manda el mensaje al paciente por WhatsApp. <b>Nota interna</b> guarda un comentario que queda en el hilo pero <b>no se envía</b>.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>La nota interna es para dejarle contexto al que siga: “llamé y no atiende”, “la obra social pidió la orden firmada”. Así el que agarra la conversación mañana no arranca de cero.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Elegí el modo: <span class="btn-ui">Responder</span> o <span class="btn-ui">Nota interna</span>.</li>
+          <li>Escribí en el cuadro de abajo.</li>
+          <li>Tocá <span class="btn-ui pri">Enviar</span> (o <span class="btn-ui">Guardar nota</span>), o apretá <kbd>Ctrl</kbd> + <kbd>Enter</kbd>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note dgr"><b>Fijate siempre en qué modo estás</b>
+    <p>Es el error más fácil de cometer: escribir una nota para tus compañeras y que se le mande al paciente. Antes de enviar, mirá que el botón activo sea el correcto — en modo nota el cuadro dice “Nota interna (no se envía al paciente)”.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📋</span><span class="name">Respuestas rápidas</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Textos ya escritos y guardados, propios de cada área, que se insertan con un clic.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para no reescribir 30 veces por día lo mismo, y para que todo el equipo conteste igual las preguntas típicas (horarios, requisitos, preparación de estudios).</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">📋 Respuestas</span>.</li>
+          <li>Elegí la que necesitás: el texto se carga en el cuadro de escritura.</li>
+          <li>Editalo si hace falta (agregar el nombre, cambiar un horario) y enviá.</li>
+        </ol>
+        <p style="margin-top:8px">Las respuestas se cargan y editan desde <b>Admin → Respuestas rápidas</b>. Si el menú aparece vacío es porque esa área todavía no tiene ninguna cargada.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📎</span><span class="name">Adjuntar un archivo</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Mandar una imagen, un PDF o un documento por WhatsApp desde el sistema.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para enviar órdenes, indicaciones de preparación, resultados o formularios sin tener que agarrar el celular.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">📎 Adjuntar</span> y elegí el archivo.</li>
+          <li>Aparece una tira con el nombre del archivo. Si te equivocaste, tocá la <span class="btn-ui">✕</span> para quitarlo.</li>
+          <li>Si querés, escribí una leyenda en el cuadro de texto.</li>
+          <li>Tocá <span class="btn-ui pri">Enviar</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>Los adjuntos solo van como mensaje</b>
+    <p>No se puede adjuntar un archivo a una nota interna: el botón desaparece cuando pasás a ese modo. Si necesitás guardar un documento del paciente, va al legajo (sección 14), no al chat.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">↩</span><span class="name">Citar un mensaje puntual</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Responder apuntando a un mensaje específico, igual que la función “responder” de WhatsApp. El paciente ve tu respuesta con el mensaje citado arriba.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Cuando el paciente mandó cinco cosas juntas y contestás una en particular, para que se entienda a cuál.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Pasá el mouse sobre el mensaje y tocá la flechita <span class="btn-ui">↩</span> que aparece debajo.</li>
+          <li>Arriba del cuadro de escritura aparece “Respondiendo a…”.</li>
+          <li>Escribí y enviá. Para cancelar la cita, tocá la <span class="btn-ui">✕</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 6 ══════════════════ -->
+<section class="sec" id="s6">
+  <div class="sec-h"><span class="num">06</span><h2>Acciones sobre la conversación</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">Los botones de arriba a la derecha. Son los que hacen que el trabajo no se pise entre compañeras y que nada quede sin cerrar.</p>
+
+  <div class="flow">
+    <div class="st"><div class="t">1 · Entra</div><div class="d">El paciente escribe. Cae en la cola como <b>En espera</b>.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">2 · Tomar</div><div class="d">Alguien la toma. Pasa a <b>En proceso</b> con su nombre.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">3 · Trabajar</div><div class="d">Se responde, se agenda, se deriva o se delega.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">4 · Resolver</div><div class="d">Se archiva. Sale de la cola y queda en el historial.</div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">✋</span><span class="name">Tomar</span><span class="where">botón Tomar</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Asignarte la conversación a vos. Deja tu nombre visible para todo el equipo.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para evitar que dos personas le contesten lo mismo al mismo paciente. Es la regla básica de convivencia de la cola: <b>primero tomar, después responder</b>.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Abrí la conversación desde la bandeja.</li>
+          <li>Tocá <span class="btn-ui pri">Tomar</span>. La píldora pasa a decir “La tenés vos”.</li>
+          <li>Si ya la tiene otra persona, el botón dice <span class="btn-ui">Tomarla yo</span> — usalo solo si esa persona no está o te la pasó.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">👥</span><span class="name">Delegar</span><span class="where">Delegar ▾</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Pasarle la conversación a una persona concreta del equipo.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Cuando el tema no es tuyo o te vas del turno: la persona que la recibe <b>ve un aviso en pantalla</b> y le aparece en “Mis conversaciones”. No queda librado a que alguien la mire.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">Delegar ▾</span>.</li>
+          <li>Elegí la persona de la lista que se despliega.</li>
+          <li>Listo: queda a su nombre y le llega la notificación.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">⚑</span><span class="name">Marcar urgente</span><span class="where">botón ⚑</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una marca que sube la conversación al tope de la cola y le pone borde rojo.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que algo que no puede esperar no quede sepultado entre 50 mensajes. Además dispara un aviso al resto del equipo cuando entra una urgente nueva.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">⚑</span> para marcarla.</li>
+          <li>Tocá de nuevo el mismo botón para sacarle la marca.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>Usá urgente con criterio</b>
+    <p>Si todo es urgente, nada es urgente. Reservalo para lo que realmente no puede esperar al resto del día.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🗓</span><span class="name">Agendar</span><span class="where">botón 🗓 Agendar</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Crear una <b>tarea</b> o agendar una <b>llamada</b> ligada a esa conversación y a ese paciente.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para lo que no se resuelve ahora: “llamarla el lunes”, “chequear si llegó la autorización”. La tarea queda pegada a la conversación, así que cuando la abras de nuevo vas a ver qué había quedado pendiente.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">🗓 Agendar</span>.</li>
+          <li>Elegí <span class="btn-ui">📋 Tarea</span> o <span class="btn-ui">📞 Llamada</span> — solo cambia el título sugerido.</li>
+          <li>Completá título, cuándo vence, prioridad y a quién se la asignás (por defecto, a vos).</li>
+          <li>Tocá <span class="btn-ui pri">Crear</span>. Aparece en el legajo de la derecha y en el Centro de tareas.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">↪</span><span class="name">Derivar a otra área</span><span class="where">botón ↪ Área</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Mandar la conversación a la cola de otra área (Clínica, Administración u Ovodonación).</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Cuando el paciente escribió al número equivocado. En vez de contestarle “escribí al otro número”, la conversación se pasa sola a la cola correcta.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">↪ Área</span>.</li>
+          <li>Elegí el área destino.</li>
+          <li>El sistema <b>le avisa al paciente</b> por el número actual que va a recibir respuesta desde el número de la otra área, y la conversación pasa a esa cola.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📤</span><span class="name">Reenviar la conversación</span><span class="where">botón 📤</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Mandarle el hilo completo a <b>otro contacto</b> por WhatsApp, y archivar la conversación.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para pasarle un caso a alguien de afuera del sistema — un médico, un laboratorio, un referente. Lo recibe como un mensaje de WhatsApp común.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">📤</span>.</li>
+          <li>Buscá el contacto destino por nombre o teléfono y seleccionalo.</li>
+          <li>Agregá un comentario si querés dar contexto.</li>
+          <li>Tocá <span class="btn-ui">Reenviar y archivar</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>Reenviar archiva la conversación</b>
+    <p>No es solo “compartir”: al reenviar, la conversación se cierra y sale de la cola. Si necesitás seguir hablando con el paciente después, tenés que reabrirla desde el Historial.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">✅</span><span class="name">Resolver</span><span class="where">botón Resolver</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Cerrar la conversación. Sale de la cola y queda archivada en el Historial.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que la cola muestre solo lo que falta hacer. Una cola que nadie resuelve deja de servir como lista de pendientes.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Terminá lo que había que hacer con ese paciente.</li>
+          <li>Tocá <span class="btn-ui pri">Resolver</span>.</li>
+          <li>Si el paciente vuelve a escribir, la conversación se reabre sola con el mensaje nuevo.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note tip"><b>Resolver no borra nada</b>
+    <p>Todo queda guardado y se puede consultar en el Historial, con el hilo completo. Resolver es “ya está atendido”, no “eliminar”.</p></div>
+</section>
+
+<!-- ══════════════════ 7 ══════════════════ -->
+<section class="sec" id="s7">
+  <div class="sec-h"><span class="num">07</span><h2>El legajo lateral</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">La columna de la derecha. Te dice con quién estás hablando sin que tengas que irte a otra pantalla a buscarlo.</p>
+
+  <table>
+    <thead><tr><th style="width:190px">Bloque</th><th>Qué muestra y para qué</th></tr></thead>
+    <tbody>
+      <tr><td><b>Identificación</b></td><td>Foto de WhatsApp, nombre y DNI. Si dice <span class="pill w">No está en contactos</span>, esa persona no está en el directorio.</td></tr>
+      <tr><td><b>Datos</b></td><td>Teléfono, DNI, email, fecha de nacimiento y notas del contacto.</td></tr>
+      <tr><td><b>Lo de esta conversación</b></td><td>El resumen automático del pedido del paciente.</td></tr>
+      <tr><td><b>🗓 Agendado</b></td><td>Las tareas ligadas a este paciente. Se tildan desde acá y se crean con <span class="btn-ui">+ Nueva</span>.</td></tr>
+      <tr><td><b>Actividad</b></td><td>Desplegable con quién hizo qué y cuándo: tomó, delegó, resolvió, marcó urgente.</td></tr>
+      <tr><td><b>Enlaces</b></td><td>Atajos a los <b>documentos del paciente</b> y a su <b>ficha en Contactos</b>.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">➕</span><span class="name">Agregar a contactos</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Dar de alta en el directorio a alguien que escribió pero no estaba cargado. El botón aparece solo en esas conversaciones.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que deje de ser un número suelto: al agregarlo, la conversación queda vinculada a la ficha y podés ver su legajo, sus documentos y su historial.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui pri">+ Agregar a contactos</span> abajo del legajo.</li>
+          <li>Completá <b>nombre</b> y <b>teléfono</b> (obligatorios) y el DNI si lo tenés.</li>
+          <li>Tocá <span class="btn-ui pri">Guardar contacto</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>El teléfono hay que escribirlo a mano</b>
+    <p>Por una cuestión de privacidad de WhatsApp, en la mayoría de los chats el sistema <b>no puede saber el número real</b> de quien escribe (ves un identificador interno que termina en <code>@lid</code>). En esos casos el campo teléfono viene vacío y lo tenés que cargar vos — preguntándoselo al paciente o buscándolo en Omnia por DNI.</p></div>
+</section>
+
+<!-- ══════════════════ 8 ══════════════════ -->
+<section class="sec" id="s8">
+  <div class="sec-h"><span class="num">08</span><h2>Iniciar una conversación</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">Escribirle primero al paciente, en vez de esperar a que escriba él.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">💬</span><span class="name">Nueva conversación</span><span class="where">botón + Nueva</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Un formulario que crea la conversación y manda el primer mensaje desde el número de WhatsApp del área en la que estás parada.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Recordatorios de turno, avisar que una receta está lista, pedir que se acerquen a firmar algo, coordinar una muestra. Todo queda registrado en el sistema, no en el celular de alguien.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui pri">+ Nueva</span> arriba de la bandeja (o <span class="btn-ui">💬 Conversación</span> en Mi día).</li>
+          <li>Elegí cómo identificar al destinatario:
+            <ul>
+              <li><b>Buscar contacto</b> — escribí nombre, teléfono o DNI y elegilo de la lista.</li>
+              <li><b>Número manual</b> — 10 dígitos con código de área, sin 0 ni 15. Ejemplo: <code>2231234567</code>.</li>
+            </ul>
+          </li>
+          <li>Si querés, elegí una <b>plantilla rápida</b> (recordatorio de turno, receta lista, solicitar muestra, pedido de información) y editá el texto.</li>
+          <li>Tocá <span class="btn-ui pri">Iniciar y enviar</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note inf"><b>Verifica antes de mandar</b>
+    <p>Antes de enviar, el sistema chequea contra WhatsApp que el número exista. Si no existe o está mal escrito, te avisa y no manda nada. Si esa persona ya tenía una conversación abierta, en vez de duplicarla la <b>reabre</b>.</p></div>
+
+  <div class="note warn"><b>Sale por el número del área donde estás</b>
+    <p>Si abrís el formulario parada en la cola de Ovodonación, el mensaje sale por el número de Ovodonación. Fijate en qué cola estás antes de mandar, o elegí el área en el desplegable cuando lo abrís desde Mi día.</p></div>
+</section>
+
+<!-- ══════════════════ 9 ══════════════════ -->
+<section class="sec" id="s9">
+  <div class="sec-h"><span class="num">09</span><h2>Mis conversaciones</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">Las conversaciones que están a tu nombre, de todas las áreas juntas. Tu lista de trabajo personal.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">👤</span><span class="name">Mis conversaciones</span><span class="where">/v2/mis-conversaciones</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>La misma pantalla de tres columnas de las colas, pero la bandeja muestra <b>solo lo asignado a vos</b>, sin importar el área.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para trabajar tu propia carga sin el ruido de la cola general, y para no olvidarte de algo que tomaste hace dos días. Si atendés varias áreas, las ves todas juntas acá.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Entrá desde el menú, en <b>WhatsApp → Mis conversaciones</b>.</li>
+          <li>Filtrá con los tres botones: <b>Todas</b>, <b>Con mensajes nuevos</b>, <b>Urgentes</b>.</li>
+          <li>Trabajalas igual que en la cola: se responde y se actúa exactamente igual.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note tip"><b>Cuando resolvés o delegás, desaparece</b>
+    <p>La lista muestra lo que sigue siendo tuyo. Al resolver una conversación o pasársela a otra persona, sale sola de acá — así lo que queda es siempre lo que te falta hacer.</p></div>
+</section>
+
+<!-- ══════════════════ 10 ══════════════════ -->
+<section class="sec" id="s10">
+  <div class="sec-h"><span class="num">10</span><h2>Tareas</h2><span class="who">Recepción · Atención</span></div>
+  <p class="lead">El centro de tareas: todo lo que hay que hacer y que no es responder un mensaje. Reemplaza los papelitos y el “acordate de llamar a la señora”.</p>
+
+  <figure class="shot">
+    <img src="img/10-tareas.png" alt="Centro de tareas" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/10-tareas.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Centro de tareas.</b> Arriba las tres vistas, debajo los filtros de a quién pertenecen. A la derecha se abre el detalle de la tarea que elijas, con sus comentarios.</figcaption>
+  </figure>
+
+  <h3 class="sub">Las tres vistas</h3>
+  <table>
+    <thead><tr><th style="width:200px">Vista</th><th>Qué muestra</th></tr></thead>
+    <tbody>
+      <tr><td><b>Activas</b></td><td>Las tareas sin completar. Es la vista de trabajo.</td></tr>
+      <tr><td><b>Derivaciones del bot</b></td><td>Los mensajes que el bot clasificó y vos tomaste para gestionar. No son tareas que creó una persona: las generó el sistema al leer un WhatsApp.</td></tr>
+      <tr><td><b>Completadas</b></td><td>El archivo de lo que ya se hizo.</td></tr>
+    </tbody>
+  </table>
+
+  <h4 class="min">Y los filtros de a quién pertenecen</h4>
+  <p>Debajo de las vistas hay una segunda fila: <b>Mías</b>, <b>Asignadas a mí</b>, <b>Creadas por mí</b>, <b>Todas</b>, más un botón <span class="btn-ui">⚠ Vencidas</span> que deja solo las que pasaron de fecha sin completarse.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">➕</span><span class="name">Crear una tarea</span><span class="where">botón + Nueva</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Un pendiente con título, detalle, responsable, prioridad y fecha de vencimiento.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que el trabajo que no se hace en el momento no dependa de que alguien se acuerde. Y para repartirlo: la persona a la que se la asignás la ve en su “Mi día”.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui pri">+ Nueva</span>.</li>
+          <li>Escribí el <b>título</b> (obligatorio) y el detalle si hace falta.</li>
+          <li>Elegí a quién se la asignás — por defecto viene a tu nombre.</li>
+          <li>Poné <b>cuándo vence</b> y la <b>prioridad</b>.</li>
+          <li>Tocá <span class="btn-ui pri">Crear tarea</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="sub">Qué se hace con una tarea abierta</h3>
+  <div class="grid2">
+    <div class="mini"><div class="h">Empezar</div><div class="p">La pasa a “en progreso”. Le avisa al resto que ya la estás haciendo.</div></div>
+    <div class="mini"><div class="h">Completar</div><div class="p">La cierra. Sale de las activas y pasa a completadas.</div></div>
+    <div class="mini"><div class="h">✏ Editar</div><div class="p">Cambia título, detalle, responsable, vencimiento o prioridad.</div></div>
+    <div class="mini"><div class="h">Eliminar</div><div class="p">La borra definitivamente. Pide confirmación y no se puede deshacer.</div></div>
+    <div class="mini"><div class="h">Comentar</div><div class="p">Deja un comentario en la tarea con tu nombre y la hora. Sirve para el ida y vuelta sin tener que hablar por otro lado.</div></div>
+    <div class="mini"><div class="h">Reabrir</div><div class="p">En una tarea completada, la vuelve a poner pendiente.</div></div>
+  </div>
+
+  <div class="note tip"><b>Las tareas nacidas de un WhatsApp</b>
+    <p>Cuando creás una tarea desde el botón <span class="btn-ui">🗓 Agendar</span> de una conversación, queda ligada a ese paciente. La ves tanto acá como en el legajo de la conversación, y podés saltar de una a otra.</p></div>
+
+  <div class="note inf"><b>Eliminar vs completar</b>
+    <p>Completar deja registro de que la tarea existió y se hizo. Eliminar la borra como si nunca hubiera estado. Salvo que la hayas creado por error, siempre conviene completar.</p></div>
+</section>
+
+<!-- ══════════════════ 11 ══════════════════ -->
+<section class="sec" id="s11">
+  <div class="sec-h"><span class="num">11</span><h2>Agenda</h2><span class="who">Con permiso de agenda</span></div>
+  <p class="lead">La misma información de tareas, pero ordenada por cuándo vencen. Es la vista de calendario del trabajo pendiente.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📅</span><span class="name">Agenda</span><span class="where">/v2/agenda</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una lista agrupada por vencimiento: <b>Vencidas</b>, <b>Hoy</b>, <b>Mañana</b>, después por fecha, y al final <b>Sin fecha</b>.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para planificar. El Centro de tareas responde “qué tengo que hacer”; la Agenda responde “cuándo”. Es la vista que conviene mirar si estás organizando la semana o repartiendo trabajo.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Filtrá por estado en la columna izquierda: <b>Pendientes</b>, <b>Completadas</b> o <b>Todas</b>.</li>
+          <li>Filtrá por responsable: <b>Mías</b>, <b>Todas</b>, o una persona.</li>
+          <li>Buscá por texto con el campo de arriba.</li>
+          <li>Tildá el círculo de la izquierda para completar, <span class="btn-ui">✎</span> para editar, <span class="btn-ui">✕</span> para eliminar.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note tip"><b>El chip de origen</b>
+    <p>Si la tarea salió de un WhatsApp o de una derivación del bot, tiene un chip <span class="pill p">💬 WA</span> o <span class="pill n">🤖 BOT</span>. Tocalo para ir a la conversación que la originó.</p></div>
+</section>
+
+<!-- ══════════════════ 12 ══════════════════ -->
+<section class="sec" id="s12">
+  <div class="sec-h"><span class="num">12</span><h2>Historial</h2><span class="who">Con permiso de historial</span></div>
+  <p class="lead">Todo lo que ya se cerró: conversaciones resueltas, derivaciones del bot y tareas completadas. Es la memoria de la clínica.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🕘</span><span class="name">Buscar en el historial</span><span class="where">/v2/historial</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una tabla con filtros por fecha, tipo, área y texto libre.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para responder preguntas del tipo “¿qué le dijimos a esta paciente el mes pasado?”, “¿quién atendió este caso?”, “¿esto se resolvió o quedó colgado?”. Es la fuente cuando hay un reclamo o hay que reconstruir qué pasó.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Poné el rango de fechas en <b>Desde</b> y <b>Hasta</b>.</li>
+          <li>Elegí el <b>Tipo</b>: Todos, Bot, WhatsApp o Tareas.</li>
+          <li>Elegí el <b>Área</b> si querés acotar a una cola.</li>
+          <li>Escribí en <b>Buscar</b> el nombre del contacto o el título.</li>
+          <li>Tocá <span class="btn-ui pri">Filtrar</span>. Con <span class="btn-ui">Limpiar</span> volvés a empezar.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h4 class="min">Sobre cada fila</h4>
+  <ul>
+    <li><span class="btn-ui">Ver ▾</span> — despliega el detalle ahí mismo: el hilo de mensajes, los eventos y los comentarios.</li>
+    <li><span class="btn-ui">↩ Reabrir</span> — devuelve la conversación o la derivación a la cola de su área, para seguir trabajándola. No aparece en las tareas.</li>
+  </ul>
+
+  <div class="note inf"><b>Los filtros quedan en la dirección</b>
+    <p>Cuando filtrás, los criterios quedan guardados en la dirección de la página. Podés marcar esa búsqueda como favorita en el navegador o pasarle el link a un compañero, y va a ver exactamente lo mismo.</p></div>
+</section>
+
+<!-- ══════════════════ 13 ══════════════════ -->
+<section class="sec" id="s13">
+  <div class="sec-h"><span class="num">13</span><h2>Contactos</h2><span class="who">Con permiso de contactos</span></div>
+  <p class="lead">El directorio de pacientes: quién es quién, con su teléfono, DNI y vínculo con Omnia.</p>
+
+  <figure class="shot">
+    <img src="img/13-contactos.png" alt="Directorio de contactos" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/13-contactos.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Directorio de contactos.</b> Búsqueda arriba, listado con foto de WhatsApp y acciones por fila.</figcaption>
+  </figure>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🔍</span><span class="name">Buscar un contacto</span><span class="where">/v2/contactos</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>El buscador principal. Encuentra por nombre, teléfono, DNI o identificador de WhatsApp.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Es el punto de partida cuando el paciente llama por teléfono: buscás por DNI o apellido y desde ahí llegás a su ficha, sus documentos o le abrís un WhatsApp.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Escribí en el campo de búsqueda. Los resultados se filtran solos.</li>
+          <li>Si hay muchos, tocá <span class="btn-ui">Ver más contactos</span> abajo para seguir cargando.</li>
+          <li>Hacé clic en la fila para abrir la ficha completa.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h4 class="min">Los botones de cada fila</h4>
+  <div class="grid2">
+    <div class="mini"><div class="h">📁 Legajo</div><div class="p">Abre los documentos de ese paciente (sección 14).</div></div>
+    <div class="mini"><div class="h">💬 Chat por WhatsApp</div><div class="p">Inicia una conversación con esa persona, con plantillas rápidas. Solo aparece si el contacto tiene teléfono cargado.</div></div>
+    <div class="mini"><div class="h">✏️ Editar</div><div class="p">Abre la ficha para corregir datos.</div></div>
+  </div>
+
+  <h4 class="min">Las etiquetas que podés ver</h4>
+  <ul>
+    <li><span class="pill p">Omnia</span> — el contacto está vinculado al sistema Omnia, así que se le puede traer la agenda y los turnos.</li>
+    <li><span class="pill w">LID</span> — WhatsApp identifica a esa persona con un código interno en vez del número real, por privacidad. Su teléfono hay que cargarlo a mano.</li>
+  </ul>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">➕</span><span class="name">Agregar o editar un contacto</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>La ficha del paciente: teléfono, nombre, email, DNI, ID de Omnia y notas internas.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Un contacto bien cargado hace que todo lo demás funcione: los mensajes muestran el nombre en vez de un número, se puede cruzar con Omnia y el legajo queda ordenado.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui pri">+ Agregar</span>, o hacé clic en un contacto existente para editarlo.</li>
+          <li>Completá los datos. El <b>nombre</b> es obligatorio; el teléfono es lo que habilita el WhatsApp.</li>
+          <li>Tocá <span class="btn-ui pri">Guardar</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">↑</span><span class="name">Importar desde el CSV de Omnia</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una carga masiva de pacientes a partir del archivo que exporta Omnia, con vista previa antes de confirmar.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para no cargar cientos de pacientes a mano y para mantener el directorio al día con el padrón real de la clínica.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui">↑ Importar CSV</span>.</li>
+          <li>Elegí el archivo exportado de Omnia y tocá <span class="btn-ui pri">Previsualizar →</span>.</li>
+          <li>Revisá la lista: el sistema marca cuáles son nuevos y cuáles ya existen.</li>
+          <li>Destildá lo que no quieras traer y tocá <span class="btn-ui pri">Importar seleccionados</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>Revisá siempre la vista previa</b>
+    <p>Es el paso que evita duplicar medio padrón. Si algo no cierra en la previsualización, no confirmes: volvé y revisá el archivo.</p></div>
+</section>
+
+<!-- ══════════════════ 14 ══════════════════ -->
+<section class="sec" id="s14">
+  <div class="sec-h"><span class="num">14</span><h2>Documentos del paciente</h2><span class="who">Con permiso de contactos</span></div>
+  <p class="lead">El legajo digital: estudios, órdenes, resultados y comprobantes de cada paciente, todo junto.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📁</span><span class="name">El legajo</span><span class="where">/v2/pacientes/{id}/documentos</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una galería con todos los archivos de ese paciente: los que mandó por WhatsApp y los que subió el equipo.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para no tener que rastrear un estudio scrolleando meses de conversación. Todo lo que llegó por WhatsApp se archiva acá automáticamente.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Entrá desde <b>Contactos → 📁 Legajo</b>, o desde el legajo lateral de una conversación.</li>
+          <li>Filtrá por tipo con los chips: <b>Imágenes</b>, <b>PDFs</b>, <b>Audios</b>, <b>Videos</b>.</li>
+          <li>Tocá <span class="btn-ui">⭐ Destacados</span> para ver solo lo importante.</li>
+          <li>Hacé clic en un documento para verlo en grande.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note tip"><b>La búsqueda lee adentro de los archivos</b>
+    <p>El buscador no mira solo el nombre: también busca dentro del <b>contenido de las imágenes</b> mediante reconocimiento de texto. Si el paciente mandó la foto de una orden, podés encontrarla buscando una palabra que aparezca escrita en la foto.</p></div>
+
+  <h4 class="min">Acciones sobre un documento</h4>
+  <div class="grid2">
+    <div class="mini"><div class="h">⭐ Destacar</div><div class="p">Lo marca como importante para que suba en la lista y aparezca en el filtro de destacados.</div></div>
+    <div class="mini"><div class="h">📝 Nota</div><div class="p">Le agrega una descripción: “Análisis del 12/03”, “Orden firmada”.</div></div>
+    <div class="mini"><div class="h">↗ Re-enviar al paciente</div><div class="p">Se lo vuelve a mandar por WhatsApp. Útil cuando lo perdió o cambió de teléfono.</div></div>
+    <div class="mini"><div class="h">↓ Descargar</div><div class="p">Baja el archivo a la computadora.</div></div>
+    <div class="mini"><div class="h">Selección múltiple</div><div class="p">Podés elegir varios y reenviarlos juntos, bajarlos en un ZIP o eliminarlos en lote.</div></div>
+    <div class="mini"><div class="h">Subir</div><div class="p">Agrega un archivo desde la computadora, con nota y marca de destacado.</div></div>
+  </div>
+
+  <div class="note dgr"><b>Eliminar borra de verdad</b>
+    <p>Un documento eliminado no se recupera. Si tenés dudas, mejor dejarlo sin destacar que borrarlo.</p></div>
+</section>
+
+<!-- ══════════════════ 15 ══════════════════ -->
+<section class="sec" id="s15">
+  <div class="sec-h"><span class="num">15</span><h2>Recepción</h2><span class="who">Recepción</span></div>
+  <p class="lead">La pantalla del mostrador. Tiene dos solapas: la <b>sala de espera</b> con los pacientes presentes, y los <b>mensajes del bot</b> que hay que gestionar.</p>
+
+  <h3 class="sub">Solapa 🪑 Sala de espera</h3>
+
+  <div class="flow">
+    <div class="st"><div class="t">1 · Llega</div><div class="d">La paciente se registra en la tablet de la entrada.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">2 · Aparece</div><div class="d">Entra en la cola de recepción con su hora de llegada.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">3 · Check-in</div><div class="d">Se completa el checklist y se cargan las notas.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">4 · Liberar</div><div class="d">Pasa a la pantalla del médico, lista para ser llamada.</div></div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🪑</span><span class="name">La cola de sala</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>La lista de pacientes presentes en la clínica, en orden de atención, con los minutos que llevan esperando.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para saber quién está, hace cuánto y qué le falta. Cuando alguien espera de más, la tarjeta se pone roja: es la señal para priorizarla o ir a explicarle la demora.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>La lista se actualiza sola cada 6 segundos.</li>
+          <li>Usá <span class="btn-ui">▲</span> y <span class="btn-ui">▼</span> para cambiar el orden de atención.</li>
+          <li>Hacé clic en una paciente para abrir su ficha a la derecha.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h4 class="min">Las marcas de color de cada tarjeta</h4>
+  <table>
+    <thead><tr><th style="width:190px">Marca</th><th>Qué significa</th></tr></thead>
+    <tbody>
+      <tr><td><b>Tarjeta roja</b></td><td>Espera excesiva. Necesita atención.</td></tr>
+      <tr><td><span class="pill p">En atención</span></td><td>Ya la está atendiendo alguien del mostrador.</td></tr>
+      <tr><td><b>Los minutos</b></td><td>Cuánto lleva esperando desde que llegó. Se pone rojo al pasar el umbral.</td></tr>
+      <tr><td><b>Etiquetas de colores</b></td><td>Avisos sobre esa paciente: primera vez, sin turno, viene derivada de WhatsApp, etc.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">✅</span><span class="name">El checklist de recepción</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>La lista de cosas que hay que verificar antes de que la paciente pase: documentación, obra social, consentimientos. Los que tienen <span style="color:var(--urg);font-weight:700">*</span> son obligatorios.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que no pase nadie a consultorio sin lo que tiene que tener. Evita que el médico descubra a mitad de la consulta que falta una orden.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Abrí la ficha de la paciente haciendo clic en su tarjeta.</li>
+          <li>Tocá cada ítem para tildarlo a medida que lo verificás.</li>
+          <li>Escribí lo que haga falta en <b>Nota interna</b> y tocá <span class="btn-ui">Guardar nota</span>.</li>
+          <li>Cuando estén todos los obligatorios, se habilita <span class="btn-ui pri">Liberar a sala →</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>El botón Liberar aparece deshabilitado</b>
+    <p>Es porque falta tildar algún ítem obligatorio del checklist. Pasá el mouse por encima y te lo aclara. No es una falla del sistema.</p></div>
+
+  <div class="note inf"><b>Resolver sin liberar</b>
+    <p>Se usa cuando la persona vino por algo que se resuelve en el mostrador y no pasa a consultorio: retirar un resultado, entregar una orden, hacer una consulta. Sale de la cola sin ir a la pantalla del médico.</p></div>
+
+  <h3 class="sub">Solapa 💬 Mensajes del bot</h3>
+
+  <figure class="shot">
+    <img src="img/15-recepcion.png" alt="Derivaciones del bot en la pantalla de recepción" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/15-recepcion.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Las derivaciones del bot.</b> A la izquierda la lista, cada una con el tema que detectó el bot y sus marcas. A la derecha, la ficha con el mensaje del paciente, el resumen de la IA, la nota interna y el botón para resolver.</figcaption>
+  </figure>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🤖</span><span class="name">Derivaciones del bot</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Mensajes de WhatsApp que el bot leyó, clasificó por tema y derivó para que una persona los gestione.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>El bot hace el triage: lee lo que llega, entiende de qué se trata y lo etiqueta. Vos recibís el trabajo ya ordenado por tipo en vez de una lista cruda de mensajes.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Hacé clic en una derivación para abrir su ficha.</li>
+          <li>Leé el <b>mensaje del paciente</b> y, si está, el <b>resumen de la IA</b>.</li>
+          <li>Gestioná lo que corresponda y dejá constancia en <b>Nota interna</b>.</li>
+          <li>Tocá <span class="btn-ui pri">Marcar resuelto ✓</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h4 class="min">Las etiquetas de una derivación</h4>
+  <ul>
+    <li><span class="pill p">Etiqueta azul</span> — el tema que detectó el bot (turno, consulta clínica, receta…).</li>
+    <li><span class="pill g">🧪 prueba</span> — es una clasificación de prueba, no un caso real. Se puede ocultar destildando <b>mostrar pruebas</b>.</li>
+    <li><span class="pill w">Fuera de horario</span> — entró cuando la clínica estaba cerrada.</li>
+  </ul>
+
+  <div class="note inf"><b>Por qué hay tantas marcadas como prueba</b>
+    <p>El bot está funcionando en modo prueba a propósito: clasifica y deriva, pero <b>no le responde solo al paciente</b>. Es la configuración elegida para que ninguna respuesta automática salga sin que una persona la haya visto. No es un error.</p></div>
+</section>
+
+<!-- ══════════════════ 16 ══════════════════ -->
+<section class="sec" id="s16">
+  <div class="sec-h"><span class="num">16</span><h2>Mi consultorio</h2><span class="who">Médicos</span></div>
+  <p class="lead">La pantalla del profesional: quién está esperando, a quién llamó y qué le pidió a las secretarias.</p>
+
+  <figure class="shot">
+    <img src="img/16-medico.png" alt="Pantalla del médico" onerror="this.outerHTML='&lt;div class=&quot;ph&quot;&gt;Captura pendiente&lt;span class=&quot;f&quot;&gt;img/16-medico.png&lt;/span&gt;&lt;/div&gt;'">
+    <figcaption><b>Mi consultorio.</b> Agenda del día, sala de espera, llamados y tareas delegadas; a la derecha, el chat con secretaría.</figcaption>
+  </figure>
+
+  <h3 class="sub">Los bloques de la pantalla</h3>
+  <table>
+    <thead><tr><th style="width:200px">Bloque</th><th>Qué muestra</th></tr></thead>
+    <tbody>
+      <tr><td><b>🗓️ Mi agenda de hoy</b></td><td>Los turnos del día traídos de Omnia, solo los pendientes. Se actualiza cada 60 segundos. Aparece si el usuario está vinculado a Omnia.</td></tr>
+      <tr><td><b>🪑 En sala de espera</b></td><td>Las pacientes que ya hicieron el check-in y recepción liberó. Están listas para ser llamadas.</td></tr>
+      <tr><td><b>✓ Llamados / Atendidos hoy</b></td><td>A quiénes llamaste y a quiénes ya atendiste en la jornada.</td></tr>
+      <tr><td><b>📋 Tareas que delegué</b></td><td>Lo que le pediste a las secretarias y en qué estado está.</td></tr>
+      <tr><td><b>💬 Comunicarme con</b></td><td>Atajos de chat a las secretarias, con un punto verde si están conectadas.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📢</span><span class="name">Llamar a una paciente</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Avisar que pase a tu consultorio. El llamado se muestra en la pantalla de la sala de espera.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para no salir a la sala a llamar en voz alta, y para que quede registrado a qué hora se llamó a cada persona.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Ubicá a la paciente en <b>En sala de espera</b>.</li>
+          <li>Tocá el botón de llamar. Se usa tu consultorio por defecto.</li>
+          <li>Pasa a la lista de <b>Llamados</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📋</span><span class="name">Encargar una tarea a una secretaria</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Crear un pendiente y asignárselo a alguien del equipo administrativo.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para no interrumpir la consulta ni depender de acordarse después: “llamar a la paciente Pérez para reprogramar”, “pedir la autorización de la obra social”. Le llega a esa persona y vos ves cómo avanza.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui pri">+ Nueva tarea</span> en el bloque de tareas.</li>
+          <li>Escribí el título y el detalle.</li>
+          <li>Elegí a quién se la asignás y la prioridad.</li>
+          <li>Poné vencimiento si corresponde y tocá <span class="btn-ui pri">Crear tarea</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note inf"><b>Si no ves la agenda de Omnia</b>
+    <p>Ese bloque aparece solo si tu usuario está vinculado a tu ficha en Omnia. Si no lo ves y deberías, un administrador tiene que hacer el vínculo desde <b>Admin → Médicos</b>.</p></div>
+</section>
+
+<!-- ══════════════════ 17 ══════════════════ -->
+<section class="sec" id="s17">
+  <div class="sec-h"><span class="num">17</span><h2>La tablet de la entrada</h2><span class="who">Pacientes</span></div>
+  <p class="lead">La pantalla de autogestión con la que la paciente avisa que llegó. No la usa el equipo: la usa el público, pero conviene entender cómo funciona porque alimenta la cola de recepción.</p>
+
+  <div class="flow">
+    <div class="st"><div class="t">1 · DNI</div><div class="d">La paciente escribe su DNI en el teclado grande.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">2 · Turno</div><div class="d">El sistema busca sus turnos del día en Omnia.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">3 · Confirma</div><div class="d">Elige su turno, o el motivo si no tiene.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="t">4 · Listo</div><div class="d">Entra en la cola de recepción y se le pide que aguarde.</div></div>
+  </div>
+
+  <h4 class="min">Los tres caminos posibles</h4>
+  <table>
+    <thead><tr><th style="width:200px">Situación</th><th>Qué pasa</th></tr></thead>
+    <tbody>
+      <tr><td><b>Tiene turno hoy</b></td><td>Se le muestran sus turnos, elige el suyo y confirma la llegada.</td></tr>
+      <tr><td><b>No tiene turno</b></td><td>Se le pregunta el motivo: <b>📅 Turnos</b>, <b>📋 Recetas</b> o <b>🧪 Muestras</b>. Confirma y entra igual a la cola.</td></tr>
+      <tr><td><b>El DNI no aparece</b></td><td>Se le pide que se acerque al mostrador, para que recepción lo cargue a mano.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note tip"><b>Todo lo que entra por la tablet cae en Recepción</b>
+    <p>Cada confirmación de llegada aparece en la solapa <b>Sala de espera</b> con la hora real. Por eso los minutos de espera son confiables: los marca la paciente al llegar, no una carga manual posterior.</p></div>
+</section>
+
+<!-- ══════════════════ 18 ══════════════════ -->
+<section class="sec" id="s18">
+  <div class="sec-h"><span class="num">18</span><h2>Reportes</h2><span class="who">Administración</span></div>
+  <p class="lead">Los números de la operación: cuánto entra, cuánto se resuelve y cómo se reparte el trabajo.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📈</span><span class="name">Reportes</span><span class="where">/v2/reportes</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Un tablero con tres partes: la foto de <b>hoy</b>, el rendimiento por <b>secretaria</b> y las <b>tendencias</b> en el tiempo.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para decidir con datos en vez de con impresiones: si hace falta reforzar un turno, en qué franja horaria se satura la atención, si una cola quedó sin cubrir.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Mirá el bloque de <b>hoy</b>: llegadas por la tablet y documentos cargados.</li>
+          <li>En <b>secretarias</b>, elegí el rango de fechas y tocá <span class="btn-ui pri">Aplicar</span>.</li>
+          <li>En <b>tendencias</b>, elegí el período y tocá <span class="btn-ui pri">Aplicar</span>.</li>
+          <li>Usá <span class="btn-ui">↻ Refrescar</span> para traer los datos del momento.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h4 class="min">Los gráficos de tendencias</h4>
+  <div class="grid2">
+    <div class="mini"><div class="h">Conversaciones nuevas por día</div><div class="p">Cuánta demanda entra cada día. Sirve para ver si el volumen crece y para detectar días atípicos.</div></div>
+    <div class="mini"><div class="h">Recibidos vs enviados</div><div class="p">Compara lo que llega con lo que se responde. Si la brecha se abre, hay mensajes quedando sin respuesta.</div></div>
+    <div class="mini"><div class="h">Llegadas por motivo</div><div class="p">Por qué viene la gente a la clínica: turnos, recetas o muestras.</div></div>
+    <div class="mini"><div class="h">Mapa de calor por hora</div><div class="p">En qué día y hora se concentran los mensajes. Es el dato para decidir cómo cubrir los turnos.</div></div>
+  </div>
+</section>
+
+<!-- ══════════════════ 19 ══════════════════ -->
+<section class="sec" id="s19">
+  <div class="sec-h"><span class="num">19</span><h2>Administración</h2><span class="who">Administración</span></div>
+  <p class="lead">La configuración del sistema. Son diez solapas; las más usadas en el día a día son <b>Estado bot</b>, <b>Usuarios</b> y <b>Respuestas rápidas</b>.</p>
+
+  <div class="note dgr"><b>Zona sensible</b>
+    <p>Acá se cambian cosas que afectan a todo el equipo. Si no estás seguro de qué hace una opción, no la toques: preguntá primero.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🤖</span><span class="name">Estado bot</span><span class="where">/v2/admin</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>Una tarjeta por cada uno de los tres bots de WhatsApp, con su estado, el número conectado y hace cuánto está funcionando. Abajo, las tareas programadas del sistema.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Es el primer lugar donde mirar cuando alguien dice “no me llegan los WhatsApp”. Te dice cuál de los tres números está caído y desde cuándo.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Mirá el estado de cada bot: <b>listo</b> es lo normal.</li>
+          <li>Verificá que el <b>número</b> de cada tarjeta sea el correcto de esa área.</li>
+          <li>Si un bot dice <b>Esperando escaneo de QR</b>, aparece el código en pantalla: hay que escanearlo con el WhatsApp del celular de <b>ese</b> número.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note dgr"><b>Cuidado con el QR</b>
+    <p>Escanear el código con el celular equivocado conecta el número equivocado y deja esa cola sirviendo mensajes de otra área. Antes de escanear, confirmá qué número corresponde a la tarjeta que estás mirando.</p></div>
+
+  <h3 class="sub">Las demás solapas</h3>
+  <table>
+    <thead><tr><th style="width:180px">Solapa</th><th>Qué se hace ahí</th></tr></thead>
+    <tbody>
+      <tr><td><b>Textos</b></td><td>Editar los mensajes automáticos que manda el bot, sin tocar código.</td></tr>
+      <tr><td><b>Pruebas</b></td><td>Probar cómo clasifica el bot un mensaje, y activar o desactivar el modo prueba.</td></tr>
+      <tr><td><b>Logs</b></td><td>Ver en vivo lo que hace el sistema. Se puede pausar, limpiar y filtrar por texto. Es la herramienta para diagnosticar un problema.</td></tr>
+      <tr><td><b>Usuarios</b></td><td>Crear usuarios, cambiar contraseñas, asignar rol y permisos, dar de baja.</td></tr>
+      <tr><td><b>Médicos</b></td><td>Cargar profesionales, su especialidad, consultorio y el vínculo con Omnia y con su usuario del sistema.</td></tr>
+      <tr><td><b>Respuestas rápidas</b></td><td>Crear y editar los textos predefinidos de cada área, y su orden en el menú.</td></tr>
+      <tr><td><b>Legajo</b></td><td>Configurar dónde se guardan físicamente los documentos de los pacientes.</td></tr>
+      <tr><td><b>Estadísticas</b></td><td>Números de uso del sistema.</td></tr>
+      <tr><td><b>Acceso remoto</b></td><td>Iniciar o detener el túnel que permite entrar al sistema desde fuera de la clínica, y copiar la dirección.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">👥</span><span class="name">Crear o editar un usuario</span><span class="where">Admin → Usuarios</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>El alta de una persona en el sistema, con su rol y sus permisos.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que cada uno entre con lo suyo y vea solo lo que le corresponde.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Tocá <span class="btn-ui pri">+ Nuevo usuario</span>, o <span class="btn-ui">Editar</span> en una fila existente.</li>
+          <li>Completá nombre y email.</li>
+          <li>Poné la contraseña: mínimo 10 caracteres y que no sea una palabra común. <b>Si editás y dejás el campo vacío, la contraseña no cambia.</b></li>
+          <li>Elegí el <b>rol</b>: eso ya carga los permisos habituales de ese puesto.</li>
+          <li>Ajustá los <b>permisos</b> uno por uno si esa persona necesita algo distinto.</li>
+          <li>Tocá <span class="btn-ui pri">Guardar</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>Dar de baja en vez de borrar</b>
+    <p>Cuando alguien deja de trabajar en la clínica, destildá <b>Activo</b> en lugar de eliminar el usuario. Así no puede entrar más, pero se conserva el historial de todo lo que hizo.</p></div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📋</span><span class="name">Respuestas rápidas</span><span class="where">Admin → Respuestas rápidas</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>El listado de textos predefinidos, organizado por área.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para estandarizar lo que se contesta. Si cambia un horario o un requisito, se corrige acá una vez y todo el equipo pasa a mandar la versión nueva.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>Elegí la solapa del área.</li>
+          <li>Tocá <span class="btn-ui pri">+ Nueva respuesta</span>.</li>
+          <li>Poné un <b>título</b> corto (es lo que ve el operador en el menú) y el <b>texto</b> completo del mensaje.</li>
+          <li>Usá el <b>orden</b> para poner primero las más usadas: número menor, más arriba.</li>
+          <li>Tocá <span class="btn-ui pri">Guardar</span>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ 20 ══════════════════ -->
+<section class="sec" id="s20">
+  <div class="sec-h"><span class="num">20</span><h2>Roles y permisos</h2><span class="who">Referencia</span></div>
+  <p class="lead">Qué ve cada rol. Si a alguien le falta una sección en el menú, acá está la explicación.</p>
+
+  <table>
+    <thead><tr><th style="width:170px">Rol</th><th>Qué alcanza</th></tr></thead>
+    <tbody>
+      <tr><td><b>Secretaria</b></td><td>Cola de recepción, atención de WhatsApp y contactos.</td></tr>
+      <tr><td><b>Supervisora</b></td><td>Todo lo de secretaria, más agenda, historial y panel de administración.</td></tr>
+      <tr><td><b>Administrativo</b></td><td>Lo mismo que supervisora.</td></tr>
+      <tr><td><b>Médico</b></td><td>Solo su consultorio.</td></tr>
+      <tr><td><b>Técnico</b></td><td>Acceso completo, para soporte del sistema.</td></tr>
+    </tbody>
+  </table>
+
+  <h4 class="min">Los permisos, uno por uno</h4>
+  <table>
+    <thead><tr><th style="width:220px">Permiso</th><th>Qué habilita</th></tr></thead>
+    <tbody>
+      <tr><td><b>Cola de recepción</b></td><td>La pantalla de Recepción y la declaración de colas.</td></tr>
+      <tr><td><b>Atención y mis tareas</b></td><td>Las colas de WhatsApp, Mis conversaciones y el Centro de tareas.</td></tr>
+      <tr><td><b>Contactos</b></td><td>El directorio y los documentos de pacientes.</td></tr>
+      <tr><td><b>Agenda</b></td><td>La vista de agenda.</td></tr>
+      <tr><td><b>Ver historial</b></td><td>El historial de lo cerrado.</td></tr>
+      <tr><td><b>Administración</b></td><td>El panel de admin y los reportes.</td></tr>
+      <tr><td><b>Panel médico</b></td><td>Mi consultorio.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note inf"><b>El rol es un punto de partida</b>
+    <p>Elegir un rol carga los permisos habituales de ese puesto, pero después se pueden ajustar uno por uno. Por eso dos personas con el mismo rol pueden tener menús distintos.</p></div>
+</section>
+
+<!-- ══════════════════ 21 ══════════════════ -->
+<section class="sec" id="s21">
+  <div class="sec-h"><span class="num">21</span><h2>Problemas frecuentes</h2><span class="who">Todos</span></div>
+  <p class="lead">Lo que más aparece en el día a día, con qué hacer en cada caso.</p>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🔴</span><span class="name">Dice “Bot caído” y no puedo mandar mensajes</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué pasó</div>
+        <p>Se cortó la conexión con WhatsApp. Ni salen ni entran mensajes hasta que se recupere.</p></div>
+      <div class="block"><div class="lbl">Qué hacer</div>
+        <ol class="steps">
+          <li>Esperá unos minutos: el sistema se repara solo en la mayoría de los casos.</li>
+          <li>Mirá <b>Admin → Estado bot</b> para ver cuál de los tres está caído.</li>
+          <li>Si sigue caído, avisá a sistemas indicando <b>qué área</b> y <b>desde cuándo</b>.</li>
+          <li>Mientras tanto podés seguir trabajando en tareas, contactos y recepción con normalidad.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">⏳</span><span class="name">Me dice “Sesión expirada — recargá (F5)”</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué pasó</div>
+        <p>La sesión venció por inactividad. Es normal si dejaste la pantalla abierta mucho tiempo.</p></div>
+      <div class="block"><div class="lbl">Qué hacer</div>
+        <ol class="steps">
+          <li>Apretá <kbd>F5</kbd> para recargar.</li>
+          <li>Si te lleva al login, volvé a entrar.</li>
+          <li>Si el mensaje se repite todo el tiempo en la misma computadora, avisá a sistemas: puede ser el antivirus interfiriendo.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">👤</span><span class="name">La conversación muestra un número raro en vez del nombre</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué pasó</div>
+        <p>Esa persona no está en el directorio de contactos, y WhatsApp no revela su número real por privacidad.</p></div>
+      <div class="block"><div class="lbl">Qué hacer</div>
+        <ol class="steps">
+          <li>En el legajo de la derecha, tocá <span class="btn-ui pri">+ Agregar a contactos</span>.</li>
+          <li>Cargá nombre y teléfono a mano (preguntáselo al paciente o buscalo en Omnia por DNI).</li>
+          <li>Al guardar, la conversación queda vinculada y ya muestra el nombre.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🚫</span><span class="name">No veo una sección que sí ve mi compañera</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué pasó</div>
+        <p>Tu usuario no tiene ese permiso. El menú muestra solo lo habilitado para cada uno.</p></div>
+      <div class="block"><div class="lbl">Qué hacer</div>
+        <p>Pedile a un administrador que revise tus permisos en <b>Admin → Usuarios</b>. En la sección 20 está el detalle de qué habilita cada uno.</p></div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">🔒</span><span class="name">Me bloqueó el ingreso</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué pasó</div>
+        <p>Cinco intentos fallidos seguidos bloquean el usuario 15 minutos. Es una protección contra intentos de adivinar contraseñas.</p></div>
+      <div class="block"><div class="lbl">Qué hacer</div>
+        <p>Esperá 15 minutos, o pedile a un administrador que te asigne una contraseña nueva desde <b>Admin → Usuarios</b>.</p></div>
+    </div>
+  </div>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">📵</span><span class="name">Mandé un mensaje y dice que no se pudo enviar</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué pasó</div>
+        <p>Casi siempre es el bot de esa área desconectado. También puede ser que el número no exista en WhatsApp.</p></div>
+      <div class="block"><div class="lbl">Qué hacer</div>
+        <ol class="steps">
+          <li>Fijate en el semáforo de arriba: si no dice “Bots ok”, es eso.</li>
+          <li>Si el semáforo está verde, revisá que el número esté bien escrito: 10 dígitos con código de área, sin 0 ni 15.</li>
+          <li>Volvé a intentar. El mensaje no se manda dos veces si falló.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note tip"><b>Antes de avisar a sistemas</b>
+    <p>Ayuda muchísimo decir <b>qué pantalla</b> estabas usando, <b>qué hiciste</b> y <b>qué decía el mensaje de error</b> textual. Con eso el problema se resuelve mucho más rápido que con “no anda”.</p></div>
+</section>
+
+</main>
+</div>
+
+<button class="totop" id="totop" onclick="scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+<script>
+// Resalta en el índice la sección que se está leyendo
+const links = [...document.querySelectorAll('.toc a')];
+const secs  = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const obs = new IntersectionObserver(es => {
+  es.forEach(e => {
+    if (!e.isIntersecting) return;
+    links.forEach(l => l.classList.toggle('on', l.getAttribute('href') === '#' + e.target.id));
+  });
+}, { rootMargin: '-70px 0px -70% 0px' });
+secs.forEach(s => obs.observe(s));
+
+// Botón "volver arriba"
+const tt = document.getElementById('totop');
+addEventListener('scroll', () => tt.classList.toggle('on', scrollY > 600));
+
+// En pantallas chicas, cerrar el índice al elegir una sección
+links.forEach(a => a.addEventListener('click', () => document.querySelector('.toc').classList.remove('open')));
+</script>
+</body>
+</html>
