@@ -243,6 +243,7 @@ async function toggleDetalle(tipo, id, item) {
                 urgente_off:   { icon: '⚐',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> sacó urgencia` },
                 reenviada:     { icon: '🔁', label: (e) => `<strong>${esc(e.usuario||'—')}</strong> reenvió y archivó` },
                 derivada_area: { icon: '↗',  label: (e) => `<strong>${esc(e.usuario||'—')}</strong> derivó a otra área` },
+                archivada_auto:{ icon: '🗄', label: () => `Archivada automáticamente por inactividad` },
             };
 
             const items = [];

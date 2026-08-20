@@ -61,6 +61,7 @@ window.V2Conv = (function () {
         tomada: 'tomó la conversación', delegada: 'la delegó', resuelta: 'la resolvió',
         reabierta: 'la reabrió', urgente_on: 'la marcó urgente', urgente_off: 'le sacó urgente',
         iniciada: 'inició la conversación', derivada_area: 'la derivó de área', reenviada: 'la reenvió',
+        archivada_auto: 'la archivó por inactividad',   // usuario null → renderiza "Sistema la archivó…"
     };
 
     // Plantillas del modal "Nueva conversación" (mismas que V1).

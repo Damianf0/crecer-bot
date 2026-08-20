@@ -719,3 +719,134 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
     $this->info("Creados: $creados · Completados: $actualizados");
     return 0;
 })->purpose('Sincroniza contactos (dni/email/nacimiento/nuevos) desde los turnos de Omnia; dry-run sin --apply');
+
+/**
+ * Archiva conversaciones activas sin actividad hace N días (default 7), en las
+ * tres áreas/bots o en una sola con --area.
+ *
+ * Misma semántica que el botón "Resolver" del panel: estado=archivada,
+ * asignada_a=null, urgente=false + evento en el historial (tipo archivada_auto,
+ * sin usuario porque lo hace el sistema). NO toca no_leidos ni borra mensajes:
+ * todas las colas y badges filtran por estado='activa', así que archivar ya las
+ * saca de la vista, y si se reabre la conversación vuelve como estaba.
+ *
+ * El corte usa COALESCE(ultima_actividad, created_at): una conversación sin
+ * ultima_actividad (import viejo) no se archiva por un NULL, se juzga por su fecha
+ * de creación.
+ *
+ * Cada corrida con --apply deja un JSON de rollback en storage/logs/ con el estado
+ * previo de cada conversación; --revertir=<archivo> lo deshace.
+ *
+ * Uso: docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas
+ *      docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas --apply
+ *      docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas --dias=30 --area=ovodonacion --apply
+ *      docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas --revertir=/var/www/html/storage/logs/archivadas-20260820-1530.json
+ */
+Artisan::command('conversaciones:archivar-inactivas {--dias=7} {--area=} {--apply} {--muestra=15} {--revertir=}', function () {
+    // ── Rollback ──────────────────────────────────────────────────────────
+    if ($archivo = $this->option('revertir')) {
+        if (!file_exists($archivo)) { $this->error("No existe: $archivo"); return 1; }
+        $prev = json_decode(file_get_contents($archivo), true);
+        if (!is_array($prev) || empty($prev)) { $this->error('Archivo de rollback vacío o ilegible.'); return 1; }
+
+        $revertidas = 0;
+        foreach (array_chunk($prev, 200) as $chunk) {
+            foreach ($chunk as $r) {
+                ConversacionWA::whereKey($r['id'])->where('estado', 'archivada')->update([
+                    'estado'     => $r['estado'],
+                    'asignada_a' => $r['asignada_a'],
+                    'urgente'    => $r['urgente'],
+                ]);
+                $revertidas++;
+            }
+        }
+        ConversacionWA::invalidarColaCache();
+        $this->info("Revertidas: {$revertidas} (solo las que seguían archivadas).");
+        return 0;
+    }
+
+    // ── Selección ─────────────────────────────────────────────────────────
+    $dias    = max(1, (int) $this->option('dias') ?: 7);
+    $area    = $this->option('area');
+    $apply   = (bool) $this->option('apply');
+    $muestra = $this->option('muestra') !== null ? (int) $this->option('muestra') : 15;
+
+    if ($area && !isset(ConversacionWA::AREAS[$area])) {
+        $this->error("Área inválida: {$area}. Válidas: " . implode(', ', array_keys(ConversacionWA::AREAS)));
+        return 1;
+    }
+
+    $corte = now()->subDays($dias);
+
+    $base = fn() => ConversacionWA::where('estado', 'activa')
+        ->whereRaw('COALESCE(ultima_actividad, created_at) < ?', [$corte])
+        ->when($area, fn($q) => $q->where('area', $area));
+
+    $total = $base()->count();
+
+    $this->newLine();
+    $this->info(sprintf('Corte: sin actividad desde %s (más de %d días)%s',
+        $corte->format('d/m/Y H:i'), $dias, $area ? " · área={$area}" : ' · las 3 áreas'));
+
+    if ($total === 0) { $this->info('No hay conversaciones para archivar.'); return 0; }
+
+    // Desglose por área para que se vea qué bot aporta qué
+    $porArea = $base()->selectRaw('area, COUNT(*) c, SUM(no_leidos > 0) nl, SUM(asignada_a IS NOT NULL) asig')
+        ->groupBy('area')->get();
+
+    $this->newLine();
+    $this->table(['Área', 'A archivar', 'Con no leídos', 'Asignadas a alguien'], $porArea->map(fn($r) => [
+        ConversacionWA::AREAS[$r->area] ?? $r->area, $r->c, $r->nl, $r->asig,
+    ])->all());
+    $this->info("TOTAL: {$total}");
+
+    if ($muestra > 0) {
+        $this->newLine();
+        $this->line("Más recientes de la selección (primeras {$muestra}):");
+        $this->table(['ID', 'Área', 'Contacto', 'Última actividad'], $base()
+            ->orderByDesc('ultima_actividad')->limit($muestra)->get()
+            ->map(fn($c) => [$c->id, $c->area, $c->nombre ?: $c->telefono,
+                optional($c->ultima_actividad)->format('d/m/Y H:i') ?: '—'])->all());
+    }
+
+    if (!$apply) {
+        $this->newLine();
+        $this->warn('DRY-RUN — nada se archivó. Pasá --apply para ejecutar.');
+        return 0;
+    }
+
+    // ── Aplicar ───────────────────────────────────────────────────────────
+    $rollback = [];
+    $ahora    = now();
+    $archivadas = 0;
+
+    $base()->select(['id', 'estado', 'asignada_a', 'urgente'])->orderBy('id')
+        ->chunkById(200, function ($chunk) use (&$rollback, &$archivadas, $ahora) {
+            $ids = [];
+            foreach ($chunk as $c) {
+                $ids[] = $c->id;
+                $rollback[] = ['id' => $c->id, 'estado' => $c->estado,
+                    'asignada_a' => $c->asignada_a, 'urgente' => (int) $c->urgente];
+            }
+
+            ConversacionWA::whereIn('id', $ids)->update([
+                'estado' => 'archivada', 'asignada_a' => null, 'urgente' => false,
+            ]);
+
+            \App\Models\ConversacionEvento::insert(array_map(fn($id) => [
+                'conversacion_id' => $id, 'tipo' => 'archivada_auto', 'usuario_id' => null,
+                'usuario_destino_id' => null, 'created_at' => $ahora, 'updated_at' => $ahora,
+            ], $ids));
+
+            $archivadas += count($ids);
+        });
+
+    $path = storage_path('logs/archivadas-' . $ahora->format('Ymd-Hi') . '.json');
+    file_put_contents($path, json_encode($rollback, JSON_PRETTY_PRINT));
+    ConversacionWA::invalidarColaCache();
+
+    $this->newLine();
+    $this->info("Archivadas: {$archivadas}");
+    $this->line("Rollback: php artisan conversaciones:archivar-inactivas --revertir={$path}");
+    return 0;
+})->purpose('Archiva conversaciones activas sin actividad hace N dias (default 7) en todas las areas; dry-run sin --apply');
