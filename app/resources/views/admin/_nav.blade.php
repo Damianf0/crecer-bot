@@ -42,6 +42,7 @@
     <a href="{{ $base }}/medicos"   class="{{ str_starts_with($cur, 'admin/medicos') ? 'active' : '' }}">Médicos</a>
     <a href="{{ $base }}/respuestas-rapidas" class="{{ str_starts_with($cur, 'admin/respuestas-rapidas') ? 'active' : '' }}">Respuestas rápidas</a>
     <a href="{{ $base }}/legajo"    class="{{ str_starts_with($cur, 'admin/legajo') ? 'active' : '' }}">Legajo</a>
+    <a href="{{ $base }}/archivar"  class="{{ str_starts_with($cur, 'admin/archivar') ? 'active' : '' }}">Archivar</a>
     <a href="{{ $base }}/estadisticas" class="{{ str_starts_with($cur, 'admin/estadisticas') ? 'active' : '' }}">Estadísticas</a>
     <a href="{{ $base }}/tunnel"    class="{{ str_starts_with($cur, 'admin/tunnel') ? 'active' : '' }}">Acceso remoto</a>
 </nav>

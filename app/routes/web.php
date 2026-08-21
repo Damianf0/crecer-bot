@@ -274,6 +274,12 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/medicos/save',     [AdminController::class, 'medicosSave']);
         Route::delete('/medicos/{id}',   [AdminController::class, 'medicosDestroy']);
 
+        Route::get('/archivar',                     fn() => redirect('/v2/admin/archivar'));
+        Route::post('/archivar/preview',            [AdminController::class, 'archivarPreview']);
+        Route::post('/archivar/aplicar',            [AdminController::class, 'archivarAplicar']);
+        Route::get('/archivar/lotes',               [AdminController::class, 'archivarLotes']);
+        Route::post('/archivar/lotes/{id}/revertir', [AdminController::class, 'archivarRevertir']);
+
         Route::get('/tunnel',         fn() => redirect('/v2/admin/tunnel'));
         Route::get('/tunnel/status',  [AdminController::class, 'tunnelStatus']);
         Route::post('/tunnel/start',  [AdminController::class, 'tunnelStart']);

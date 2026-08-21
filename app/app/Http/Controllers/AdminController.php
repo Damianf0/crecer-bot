@@ -7,8 +7,10 @@ use App\Models\RespuestaRapida;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class AdminController extends Controller
 {
@@ -481,6 +483,115 @@ class AdminController extends Controller
         \App\Models\User::where('medico_id', $med->id)->update(['medico_id' => null]);
         $med->delete();
         return response()->json(['ok' => true]);
+    }
+
+    // ── Archivado masivo de conversaciones ───────────────────────────
+    //
+    // Limpieza de cola sin pasar por consola: por inactividad (N días) o por
+    // rango de fechas (ej: la semana que la clínica no atendió). Toda la lógica
+    // vive en ArchivadoConversaciones — acá solo se valida y se serializa.
+
+    public function archivar()
+    {
+        return view('admin.archivar', [
+            'areas' => \App\Models\ConversacionWA::AREAS,
+        ]);
+    }
+
+    /** Reglas comunes de preview y aplicar. */
+    private function archivarCriterio(Request $r): array
+    {
+        $data = $r->validate([
+            'modo'              => 'required|in:dias,rango',
+            'dias'              => 'required_if:modo,dias|nullable|integer|min:1|max:3650',
+            'desde'             => 'required_if:modo,rango|nullable|date',
+            'hasta'             => 'required_if:modo,rango|nullable|date|after_or_equal:desde',
+            'area'              => 'nullable|in:' . implode(',', array_keys(\App\Models\ConversacionWA::AREAS)),
+            'excluir_asignadas' => 'boolean',
+        ]);
+
+        return \App\Services\ArchivadoConversaciones::normalizarCriterio($data);
+    }
+
+    public function archivarPreview(Request $r): JsonResponse
+    {
+        $criterio = $this->archivarCriterio($r);
+        $prev     = \App\Services\ArchivadoConversaciones::previsualizar($criterio, 20);
+
+        // Aviso (no bloquea): un rango que llega hasta hoy puede llevarse
+        // conversaciones que están vivas y esperando respuesta.
+        $aviso = null;
+        if ($criterio['modo'] === 'rango') {
+            [, $hasta] = \App\Services\ArchivadoConversaciones::rango($criterio);
+            if ($hasta->gt(now()->subDays(2))) {
+                $aviso = 'El rango llega hasta hace menos de 2 días: puede incluir conversaciones que todavía están esperando respuesta.';
+            }
+        }
+
+        return response()->json(['ok' => true, 'aviso' => $aviso] + $prev);
+    }
+
+    public function archivarAplicar(Request $r): JsonResponse
+    {
+        $criterio = $this->archivarCriterio($r);
+
+        $lote = \App\Services\ArchivadoConversaciones::aplicar($criterio, Auth::id(), 'panel');
+
+        Log::info('Archivado masivo desde el panel', [
+            'lote'     => $lote->id,
+            'usuario'  => Auth::user()?->nombre_completo,
+            'criterio' => $criterio,
+            'total'    => $lote->total,
+        ]);
+
+        return response()->json([
+            'ok'    => true,
+            'lote'  => $lote->id,
+            'total' => $lote->total,
+        ]);
+    }
+
+    public function archivarLotes(): JsonResponse
+    {
+        $lotes = \App\Models\ArchivadoLote::with(['usuario:id,nombre_completo', 'revertidoPor:id,nombre_completo'])
+            ->latest('id')->limit(30)->get()
+            ->map(fn($l) => [
+                'id'            => $l->id,
+                'fecha'         => $l->created_at->format('d/m/Y H:i'),
+                'usuario'       => $l->usuario?->nombre_completo ?? ($l->origen === 'consola' ? 'Consola' : 'Sistema'),
+                'origen'        => $l->origen,
+                'criterio'      => \App\Services\ArchivadoConversaciones::descripcionCorte($l->criterio ?? []),
+                'total'         => $l->total,
+                'revertido'     => $l->revertido_at !== null,
+                'revertido_txt' => $l->revertido_at
+                    ? sprintf('%s por %s (%d)', $l->revertido_at->format('d/m/Y H:i'),
+                        $l->revertidoPor?->nombre_completo ?? '—', (int) $l->revertidas)
+                    : null,
+            ]);
+
+        return response()->json(['ok' => true, 'lotes' => $lotes]);
+    }
+
+    public function archivarRevertir(int $id): JsonResponse
+    {
+        $lote = \App\Models\ArchivadoLote::findOrFail($id);
+
+        if ($lote->revertido_at) {
+            return response()->json(['ok' => false, 'error' => 'Este lote ya fue revertido.'], 422);
+        }
+
+        $revertidas = \App\Services\ArchivadoConversaciones::revertir($lote, Auth::id());
+
+        Log::info('Archivado masivo revertido', [
+            'lote' => $lote->id, 'usuario' => Auth::user()?->nombre_completo,
+            'revertidas' => $revertidas, 'total' => $lote->total,
+        ]);
+
+        return response()->json([
+            'ok'          => true,
+            'revertidas'  => $revertidas,
+            'reabiertas'  => $lote->total - $revertidas,
+        ]);
     }
 
     // ── Cloudflare Quick Tunnel ──────────────────────────────────────

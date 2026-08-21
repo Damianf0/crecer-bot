@@ -203,6 +203,7 @@ class V2Controller extends Controller
             'usuarios'           => 'usuarios',
             'medicos'            => 'medicos',
             'respuestas-rapidas' => 'respuestasRapidas',
+            'archivar'           => 'archivar',
             'tunnel'             => 'tunnel',
         ];
 
