@@ -269,7 +269,7 @@ Hoy WhatsApp identifica usuarios con dos formatos:
 
 ### CORS
 
-Whitelist en `bot/.env` → `ALLOWED_ORIGINS=http://localhost,http://192.168.1.125,http://nginx`. No `*`.
+Whitelist en `bot/.env` → `ALLOWED_ORIGINS=http://localhost,http://192.168.1.115,http://nginx`. No `*`.
 
 ### Mimetypes en uploads
 
@@ -288,6 +288,7 @@ Whitelist en `bot/.env` → `ALLOWED_ORIGINS=http://localhost,http://192.168.1.1
 |---|---|---|---|
 | `Crecer\BackupMySQL` | Diaria | 03:00 | `C:\crecer\docker\backup-mysql.ps1` |
 | `Crecer\CleanBotCache` | Diaria | 04:00 | `C:\crecer\docker\clean-bot-cache.ps1` |
+| `Crecer\SyncOmnia` | Diaria | 04:00 | `C:\crecer\docker\sync-omnia.ps1` |
 | `Crecer\MapearWA` | Diaria | 04:30 | `C:\crecer\docker\mapear-wa.ps1` |
 | `Crecer\SyncAvatares` | Diaria | 05:00 | `C:\crecer\docker\sync-avatares.ps1` |
 

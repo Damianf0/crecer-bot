@@ -656,6 +656,7 @@ emisor).
 | `Crecer\BackupFull` | diaria 02:30 | Backup total (§22.1), incluye limpieza de caché Chromium por bot |
 | `Crecer\BackupMySQL` | diaria 03:00 | Dump adicional con retención 7d/4w/12m |
 | `Crecer\CleanBotCache` | **deshabilitada** | Redundante desde que el backup limpia caché (se conserva el script) |
+| `Crecer\SyncOmnia` | diaria 04:00 | `contactos:sync-omnia --apply` sobre [hoy-10d, hoy+60d], con sonda `omnia:status` previa |
 | `Crecer\MapearWA` | diaria 04:30 | `contactos:mapear-wa --limit=300 --max-errors=10` |
 | `Crecer\SyncAvatares` | domingos 05:00 | Refresco de fotos de perfil (TTL 7 días) |
 | `Crecer\WatchdogBot` | cada 5 min | Watchdog de host (§16.5 capa 3) |
@@ -877,7 +878,7 @@ y la **normalización de teléfonos argentinos** (04/05) que recuperó el 91% de
 
 ## A. Mapa de URLs y puertos
 
-**Aplicación (LAN, `http://192.168.1.125` / `http://localhost`):**
+**Aplicación (LAN, `http://192.168.1.115` / `http://localhost`):**
 
 | URL | Qué es |
 |---|---|

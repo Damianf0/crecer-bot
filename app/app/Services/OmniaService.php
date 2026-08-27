@@ -24,9 +24,16 @@ class OmniaService
     /** Mapeo nombre de servicio (Omnia) → planta física en la clínica. */
     private array $plantaPorServicio;
 
-    private const CACHE_KEY_TOKEN = 'omnia_token';
-    private const TOKEN_TTL_SEC   = 1500;   // margen 5min sobre los 1800s reales
-    private const HTTP_TIMEOUT    = 8;
+    private const CACHE_KEY_TOKEN   = 'omnia_token';
+    private const CACHE_KEY_REFRESH = 'omnia_refresh_token';
+    private const TOKEN_TTL_SEC     = 1500;   // margen 5min sobre los 1800s reales
+    private const REFRESH_TTL_SEC   = 86400;  // el refreshToken vive mucho más que el access
+    private const HTTP_TIMEOUT      = 8;
+
+    /** Reintentos ante errores transitorios del lado de Omnia (502/503/504). */
+    private const RETRY_STATUSES = [502, 503, 504];
+    private const RETRY_MAX      = 2;
+    private const RETRY_BASE_MS  = 800;
 
     public function __construct()
     {
@@ -80,24 +87,74 @@ class OmniaService
             return null;
         }
 
+        // Guardamos el refreshToken para renovar sin re-enviar credenciales.
+        if ($rt = $r->json('refreshToken')) {
+            Cache::put(self::CACHE_KEY_REFRESH, $rt, self::REFRESH_TTL_SEC);
+        }
+
         return $token;
     }
 
-    /** GET autenticado, con re-login y reintento si la respuesta es 401. */
-    private function get(string $url, array $query = [], int $timeout = self::HTTP_TIMEOUT): mixed
+    /**
+     * Renueva el accessToken con el refreshToken cacheado. Devuelve null si no
+     * hay refresh guardado o si Omnia lo rechaza — el caller cae a signin().
+     */
+    private function refresh(): ?string
+    {
+        $rt = Cache::get(self::CACHE_KEY_REFRESH);
+        if (!$rt) return null;
+
+        try {
+            $r = Http::timeout(self::HTTP_TIMEOUT)->asJson()->post(
+                $this->fhirBase() . '/auth/refreshToken',
+                ['refreshToken' => $rt]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('[Omnia] refresh exception', ['msg' => $e->getMessage()]);
+            return null;
+        }
+
+        if (!$r->successful()) {
+            Log::info('[Omnia] refreshToken rechazado, cae a signin', ['status' => $r->status()]);
+            Cache::forget(self::CACHE_KEY_REFRESH);
+            return null;
+        }
+
+        $token = $r->json('accessToken');
+        if (!$token) return null;
+
+        // Omnia puede rotar el refreshToken en la respuesta.
+        if ($nuevoRt = $r->json('refreshToken')) {
+            Cache::put(self::CACHE_KEY_REFRESH, $nuevoRt, self::REFRESH_TTL_SEC);
+        }
+
+        return $token;
+    }
+
+    /**
+     * GET autenticado. Ante 401 renueva el token (refresh, y si falla signin) y
+     * reintenta; ante 502/503/504 reintenta con backoff exponencial.
+     *
+     * @param int $retries  Reintentos por error transitorio. Ojo con los pedidos
+     *                      de timeout largo (reporte ambulatorio): cada reintento
+     *                      puede costar el timeout completo.
+     */
+    private function get(string $url, array $query = [], int $timeout = self::HTTP_TIMEOUT, int $retries = self::RETRY_MAX): mixed
     {
         $token = $this->token();
         if (!$token) return null;
 
-        $r = $this->doGet($url, $query, $token, $timeout);
+        $r = $this->doGet($url, $query, $token, $timeout, $retries);
 
         if ($r && $r->status() === 401) {
-            Log::info('[Omnia] Token rechazado, re-signin');
+            Log::info('[Omnia] Token rechazado, renovando');
             Cache::forget(self::CACHE_KEY_TOKEN);
-            $token = $this->signin();
+
+            $token = $this->refresh() ?? $this->signin();
             if (!$token) return null;
+
             Cache::put(self::CACHE_KEY_TOKEN, $token, self::TOKEN_TTL_SEC);
-            $r = $this->doGet($url, $query, $token, $timeout);
+            $r = $this->doGet($url, $query, $token, $timeout, $retries);
         }
 
         if (!$r || !$r->successful()) {
@@ -112,17 +169,77 @@ class OmniaService
         return $r->json();
     }
 
-    private function doGet(string $url, array $query, string $token, int $timeout = self::HTTP_TIMEOUT)
+    private function doGet(string $url, array $query, string $token, int $timeout = self::HTTP_TIMEOUT, int $retries = self::RETRY_MAX)
     {
-        try {
-            return Http::timeout($timeout)
-                ->withToken($token)
-                ->acceptJson()
-                ->get($url, $query);
-        } catch (\Throwable $e) {
-            Log::error('[Omnia] GET exception', ['url' => $url, 'msg' => $e->getMessage()]);
-            return null;
+        $intento = 0;
+
+        while (true) {
+            try {
+                $r = Http::timeout($timeout)
+                    ->withToken($token)
+                    ->acceptJson()
+                    ->get($url, $query);
+            } catch (\Throwable $e) {
+                if ($intento >= $retries) {
+                    Log::error('[Omnia] GET exception', ['url' => $url, 'msg' => $e->getMessage()]);
+                    return null;
+                }
+                $this->esperarBackoff($intento, $url, 'exception: ' . $e->getMessage());
+                $intento++;
+                continue;
+            }
+
+            // 502/503/504 suelen ser transitorios del lado de Omnia. Ojo: el
+            // reporte ambulatorio del 10/09/2025 da 502 SIEMPRE (registro
+            // podrido en Omnia), así que el reintento no siempre salva.
+            if (in_array($r->status(), self::RETRY_STATUSES, true) && $intento < $retries) {
+                $this->esperarBackoff($intento, $url, 'HTTP ' . $r->status());
+                $intento++;
+                continue;
+            }
+
+            return $r;
         }
+    }
+
+    private function esperarBackoff(int $intento, string $url, string $motivo): void
+    {
+        $ms = self::RETRY_BASE_MS * (2 ** $intento);
+        Log::info('[Omnia] reintento', ['url' => $url, 'motivo' => $motivo, 'espera_ms' => $ms]);
+        usleep($ms * 1000);
+    }
+
+    /**
+     * Sonda de salud: signin + healthcheck FHIR. La usa el comando omnia:status
+     * y cualquier monitoreo externo. No usa el token cacheado a propósito —
+     * prueba el circuito de autenticación completo.
+     *
+     * @return array{ok:bool, signin:bool, healthcheck:bool, ms:int, error:?string}
+     */
+    public function estado(): array
+    {
+        $t0  = microtime(true);
+        $out = ['ok' => false, 'signin' => false, 'healthcheck' => false, 'ms' => 0, 'error' => null];
+
+        $token = $this->signin();
+        if (!$token) {
+            $out['error'] = 'signin fallido (ver laravel.log)';
+            $out['ms']    = (int) ((microtime(true) - $t0) * 1000);
+            return $out;
+        }
+        $out['signin'] = true;
+        Cache::put(self::CACHE_KEY_TOKEN, $token, self::TOKEN_TTL_SEC);
+
+        $r = $this->doGet($this->fhirBase() . '/healthcheck', [], $token, self::HTTP_TIMEOUT, 1);
+        $out['healthcheck'] = (bool) ($r && $r->successful());
+        if (!$out['healthcheck']) {
+            $out['error'] = 'healthcheck HTTP ' . ($r?->status() ?? 'sin respuesta');
+        }
+
+        $out['ok'] = $out['signin'] && $out['healthcheck'];
+        $out['ms'] = (int) ((microtime(true) - $t0) * 1000);
+
+        return $out;
     }
 
     /**
@@ -137,7 +254,8 @@ class OmniaService
         $data = $this->get(
             $this->externalBase() . '/reports/appointments/ambulatory',
             ['start' => $start, 'end' => $end],
-            $timeout
+            $timeout,
+            1   // un solo reintento: acá el timeout es largo (hasta 180s por tramo)
         );
 
         return is_array($data) ? $data : null;

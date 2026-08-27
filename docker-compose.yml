@@ -60,7 +60,7 @@ services:
   # Servidor WebSocket para broadcasts en tiempo real (Laravel Reverb).
   # Lo usa el chat interno (React) para evitar polling cada 6s. Misma imagen
   # que web pero corre el server WebSocket en puerto 8080. Expone al host
-  # para que el browser pueda conectarse directo via ws://192.168.1.125:8080.
+  # para que el browser pueda conectarse directo via ws://192.168.1.115:8080.
   reverb:
     build: ./docker/php
     restart: unless-stopped
@@ -149,7 +149,7 @@ services:
       - TZ=America/Argentina/Buenos_Aires
       - BOT_AREA=atencion
       - PORT=3001
-      - BOT_PUBLIC_URL=http://192.168.1.125:3001
+      - BOT_PUBLIC_URL=http://192.168.1.115:3001
     labels:
       - autoheal=true
     healthcheck:
@@ -185,7 +185,7 @@ services:
       - TZ=America/Argentina/Buenos_Aires
       - BOT_AREA=administracion
       - PORT=3002
-      - BOT_PUBLIC_URL=http://192.168.1.125:3002
+      - BOT_PUBLIC_URL=http://192.168.1.115:3002
     labels:
       - autoheal=true
     healthcheck:
@@ -212,7 +212,7 @@ services:
       - TZ=America/Argentina/Buenos_Aires
       - BOT_AREA=ovodonacion
       - PORT=3003
-      - BOT_PUBLIC_URL=http://192.168.1.125:3003
+      - BOT_PUBLIC_URL=http://192.168.1.115:3003
       # Umbral zombie alto: cola de bajo tráfico + evaluate() roto crónico en
       # esta cuenta → 25 min de silencio es normal, no señal de página muerta.
       - WATCHDOG_ZOMBIE_MIN=120

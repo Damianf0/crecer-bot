@@ -20,7 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Trust proxies: necesario cuando el panel se sirve detrás de un túnel
         // (ngrok, cloudflared, etc). Sin esto, Laravel genera redirects a APP_URL
-        // (http://192.168.1.125/...) y el cliente externo no llega.
+        // (http://192.168.1.115/...) y el cliente externo no llega.
         // `at: '*'` confía en cualquier proxy upstream — el túnel ya está atado a
         // localhost del host, así que no hay riesgo de spoofing externo.
         $middleware->trustProxies(at: '*', headers:

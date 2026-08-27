@@ -550,7 +550,8 @@ Artisan::command('conversaciones:regenerar-resumenes {--dry-run} {--limit=}', fu
 Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestra=15}', function () {
     $tz      = 'America/Argentina/Buenos_Aires';
     $apply   = (bool) $this->option('apply');
-    $muestra = (int) $this->option('muestra') ?: 15;
+    // (int) directo: el signature ya trae default 15, y así --muestra=0 se respeta
+    $muestra = (int) $this->option('muestra');
     $desde   = $this->option('desde')
         ? \Carbon\Carbon::parse($this->option('desde'), $tz)->startOfDay()
         : now($tz)->subMonths(12)->startOfDay();
@@ -562,25 +563,10 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
 
     // ── 1. Bajar el reporte por meses y consolidar pacientes por DNI ──
     $pacientes = [];   // dni => [nombre, celular, email, fnac]
-    $stats = ['turnos' => 0, 'sin_dni' => 0, 'placeholder' => 0, 'meses_fallidos' => 0];
+    $stats = ['turnos' => 0, 'sin_dni' => 0, 'placeholder' => 0, 'dias_perdidos' => []];
 
-    $cursor = $desde->copy();
-    while ($cursor < $hasta) {
-        $finTramo = min($cursor->copy()->addMonth(), $hasta->copy());
-        $s = $cursor->copy()->utc()->timestamp;
-        $e = $finTramo->copy()->utc()->timestamp;
-
-        $this->output->write(sprintf('  %s → %s ... ', $cursor->format('d/m/Y'), $finTramo->format('d/m/Y')));
-        $rep = $svc->reporteAmbulatorio($s, $e, 180);
-
-        if ($rep === null) {
-            $this->warn('FALLÓ (ver laravel.log)');
-            $stats['meses_fallidos']++;
-            $cursor = $finTramo;
-            continue;
-        }
-        $this->line(count($rep) . ' turnos');
-
+    // Procesamiento de los turnos de un tramo — común a todos los tramos.
+    $procesarTurnos = function (array $rep) use (&$pacientes, &$stats) {
         foreach ($rep as $t) {
             $stats['turnos']++;
             $dni = preg_replace('/\D/', '', (string) ($t['NúmeroDeDocumento'] ?? ''));
@@ -603,13 +589,51 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
             if ($fila['fnac'] === '')    $fila['fnac']    = trim((string) ($t['FechaDeNacimiento'] ?? ''));
             $pacientes[$dni] = $fila;
         }
+    };
 
+    // Baja un tramo; si Omnia lo rechaza, lo parte al medio y reintenta cada
+    // mitad, hasta llegar al día. Así un solo día podrido (el 10/09/2025 da 502
+    // SIEMPRE) cuesta ese día y no el mes entero, que era el comportamiento
+    // viejo. Los días que fallan aislados quedan listados en $stats.
+    $bajarTramo = function (\Carbon\Carbon $ini, \Carbon\Carbon $fin) use (&$bajarTramo, $svc, $procesarTurnos, &$stats) {
+        $rep = $svc->reporteAmbulatorio($ini->copy()->utc()->timestamp, $fin->copy()->utc()->timestamp, 180);
+
+        if ($rep !== null) {
+            $this->line(sprintf('  %s → %s   %d turnos',
+                $ini->format('d/m/Y'), $fin->format('d/m/Y'), count($rep)));
+            $procesarTurnos($rep);
+            return;
+        }
+
+        // Un solo día que falla: no queda nada por subdividir.
+        if ($ini->diffInDays($fin) < 1) {
+            $this->warn(sprintf('  %s   FALLÓ — día salteado', $ini->format('d/m/Y')));
+            $stats['dias_perdidos'][] = $ini->format('Y-m-d');
+            return;
+        }
+
+        $medio = $ini->copy()->addSeconds((int) ($ini->diffInSeconds($fin) / 2))->endOfDay();
+        if ($medio >= $fin) $medio = $fin->copy()->subDay()->endOfDay();
+
+        $this->line(sprintf('  %s → %s   falló, subdividiendo',
+            $ini->format('d/m/Y'), $fin->format('d/m/Y')));
+        $bajarTramo($ini, $medio);
+        $bajarTramo($medio->copy()->addSecond(), $fin);
+    };
+
+    $cursor = $desde->copy();
+    while ($cursor < $hasta) {
+        $finTramo = min($cursor->copy()->addMonth(), $hasta->copy());
+        $bajarTramo($cursor->copy(), $finTramo->copy());
         $cursor = $finTramo;
     }
 
     $this->newLine();
-    $this->info(sprintf('Turnos leídos: %d · Pacientes únicos: %d · Sin DNI: %d · Placeholder: %d · Meses fallidos: %d',
-        $stats['turnos'], count($pacientes), $stats['sin_dni'], $stats['placeholder'], $stats['meses_fallidos']));
+    $this->info(sprintf('Turnos leídos: %d · Pacientes únicos: %d · Sin DNI: %d · Placeholder: %d · Días perdidos: %d',
+        $stats['turnos'], count($pacientes), $stats['sin_dni'], $stats['placeholder'], count($stats['dias_perdidos'])));
+    if (!empty($stats['dias_perdidos'])) {
+        $this->warn('  Días que Omnia rechazó: ' . implode(', ', $stats['dias_perdidos']));
+    }
 
     // ── 2. Matchear contra contactos y decidir acción ──
     $acciones = ['actualizar' => [], 'crear' => [], 'sin_cambios' => 0, 'sin_celular' => 0, 'conflictos' => []];
@@ -697,7 +721,7 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
     if (!$apply) {
         $this->newLine();
         $this->warn('DRY-RUN — nada se escribió. Pasá --apply para ejecutar.');
-        return 0;
+        return empty($stats["dias_perdidos"]) ? 0 : 1;
     }
 
     // ── 4. Aplicar ──
@@ -717,8 +741,45 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
 
     $this->newLine();
     $this->info("Creados: $creados · Completados: $actualizados");
-    return 0;
+    // Exit != 0 si Omnia rechazó algún día: el script de la tarea programada lo
+    // detecta y lo deja registrado en el log en vez de fallar en silencio.
+    return empty($stats["dias_perdidos"]) ? 0 : 1;
 })->purpose('Sincroniza contactos (dni/email/nacimiento/nuevos) desde los turnos de Omnia; dry-run sin --apply');
+
+/**
+ * Sonda de salud de la API de Omnia: signin + healthcheck contra el ambiente
+ * configurado en OMNIA_BASE_URL. No usa el token cacheado — prueba el circuito
+ * de autenticación completo, que es justamente lo que se rompe cuando cambian
+ * o vencen las credenciales.
+ *
+ * Exit 0 = OK, 1 = caído, para que la tarea programada pueda alertar.
+ *
+ * Uso: docker exec crecer-web-1 php artisan omnia:status
+ *      docker exec crecer-web-1 php artisan omnia:status --json
+ */
+Artisan::command('omnia:status {--json}', function () {
+    $svc = app(\App\Services\OmniaService::class);
+    $e   = $svc->estado();
+
+    if ($this->option('json')) {
+        $this->line(json_encode($e, JSON_UNESCAPED_UNICODE));
+        return $e['ok'] ? 0 : 1;
+    }
+
+    $this->line('Ambiente:    ' . config('services.omnia.base_url'));
+    $this->line('Usuario:     ' . (config('services.omnia.user') ?: '(sin configurar)'));
+    $this->line('signin:      ' . ($e['signin']      ? 'OK' : 'FALLÓ'));
+    $this->line('healthcheck: ' . ($e['healthcheck'] ? 'OK' : 'FALLÓ'));
+    $this->line("Latencia:    {$e['ms']} ms");
+
+    if ($e['ok']) {
+        $this->info('Omnia responde correctamente.');
+        return 0;
+    }
+
+    $this->error('Omnia NO responde: ' . ($e['error'] ?? 'desconocido'));
+    return 1;
+})->purpose('Chequea el acceso a la API de Omnia (signin + healthcheck); exit 1 si está caído');
 
 /**
  * Archiva conversaciones activas sin actividad hace N días (default 7), en las

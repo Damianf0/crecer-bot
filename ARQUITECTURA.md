@@ -194,7 +194,7 @@ bot/
 
 ## 9. Acceso y autenticación
 
-- **Panel web**: `http://192.168.1.125/` (red local) o `https://crazed-eggplant-unrated.ngrok-free.dev` (remoto, sólo testing). Login con usuario+password. Rate limit + lockout 5 intentos × 15 min. `PasswordSegura` valida ≥10 chars, sin diccionario.
+- **Panel web**: `http://192.168.1.115/` (red local) o `https://crazed-eggplant-unrated.ngrok-free.dev` (remoto, sólo testing). Login con usuario+password. Rate limit + lockout 5 intentos × 15 min. `PasswordSegura` valida ≥10 chars, sin diccionario.
 - **API bot**: HTTP local entre containers, Bearer token (`BOT_INGRESS_TOKEN`).
 - **MySQL**: solo desde la red `clinica-net`, sin puerto publicado al host.
 - **Reverb**: 8080 publicado al host (para que el chat interno se conecte desde el browser).
