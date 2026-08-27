@@ -233,11 +233,17 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     Route::get('/procedimientos/data',      [ProcedimientoController::class, 'data']);
     Route::get('/procedimientos/{id}',      [ProcedimientoController::class, 'show'])->whereNumber('id');
 
+    // Adjuntos: se sirven por controller (con sesión), nunca por public/storage.
+    Route::get('/procedimientos/adjunto/{id}',            [ProcedimientoController::class, 'verAdjunto'])->whereNumber('id');
+    Route::get('/procedimientos/adjunto/{id}/descargar',  [ProcedimientoController::class, 'descargarAdjunto'])->whereNumber('id');
+
     // Alta y edición: solo supervisión.
     Route::middleware('permiso:admin')->group(function () {
-        Route::post('/procedimientos',        [ProcedimientoController::class, 'store']);
-        Route::post('/procedimientos/{id}',   [ProcedimientoController::class, 'save'])->whereNumber('id');
-        Route::delete('/procedimientos/{id}', [ProcedimientoController::class, 'destroy'])->whereNumber('id');
+        Route::post('/procedimientos',                 [ProcedimientoController::class, 'store']);
+        Route::post('/procedimientos/{id}',            [ProcedimientoController::class, 'save'])->whereNumber('id');
+        Route::delete('/procedimientos/{id}',          [ProcedimientoController::class, 'destroy'])->whereNumber('id');
+        Route::post('/procedimientos/{id}/adjuntos',   [ProcedimientoController::class, 'subirAdjunto'])->whereNumber('id');
+        Route::delete('/procedimientos/adjunto/{id}',  [ProcedimientoController::class, 'borrarAdjunto'])->whereNumber('id');
     });
 
     // PoC V2 — admin con shell V2 reusando las vistas de producción.

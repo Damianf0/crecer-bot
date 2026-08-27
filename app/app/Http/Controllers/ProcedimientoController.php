@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Procedimiento;
+use App\Models\ProcedimientoAdjunto;
 use App\Models\ProcedimientoCodigo;
 use App\Models\ProcedimientoPaso;
 use App\Services\HtmlSeguro;
@@ -10,6 +11,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Base de conocimiento: consulta de procedimientos de atención.
@@ -217,6 +220,113 @@ class ProcedimientoController extends Controller
     public function destroy(int $id): JsonResponse
     {
         Procedimiento::findOrFail($id)->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    // ── Adjuntos ──────────────────────────────────────────────
+
+    /**
+     * POST /procedimientos/{id}/adjuntos — sube una captura o un instructivo.
+     *
+     * Los archivos van al disk `local` (storage/app/private), NO a
+     * storage/app/public: ese último cuelga del symlink public/storage y nginx
+     * lo serviría sin pedir sesión, y una captura de un procedimiento puede
+     * tener datos de una paciente.
+     */
+    public function subirAdjunto(Request $request, int $id): JsonResponse
+    {
+        $proc = Procedimiento::findOrFail($id);
+
+        // 8 MB y no los 25 de DocumentoController: el php.ini del container
+        // tiene upload_max_filesize=20M, así que un cap mayor sería letra
+        // muerta y el usuario vería un error críptico de PHP en vez del nuestro.
+        $request->validate([
+            'archivo' => [
+                'required', 'file', 'max:8192',
+                'mimetypes:' . implode(',', ProcedimientoAdjunto::MIMES_PERMITIDOS),
+            ],
+            'paso_id' => 'nullable|integer',
+        ]);
+
+        $archivo = $request->file('archivo');
+        $nombre  = $archivo->getClientOriginalName();
+
+        if ($ext = AtencionController::extensionBloqueada($nombre)) {
+            return response()->json(['ok' => false, 'error' => "Extensión .{$ext} no permitida"], 422);
+        }
+
+        // El paso tiene que ser de ESTE procedimiento; si no, se guarda suelto.
+        $pasoId = $request->input('paso_id');
+        if ($pasoId && !$proc->pasos()->whereKey($pasoId)->exists()) {
+            $pasoId = null;
+        }
+
+        $mime      = $archivo->getMimeType();
+        $extension = strtolower($archivo->getClientOriginalExtension() ?: 'bin');
+
+        // Nombre generado, nunca el del cliente: evita traversal y colisiones.
+        $ruta = $archivo->storeAs(
+            'procedimientos/' . $proc->id,
+            (string) Str::ulid() . '.' . $extension,
+            'local'
+        );
+
+        if (!$ruta) {
+            return response()->json(['ok' => false, 'error' => 'No se pudo guardar el archivo'], 500);
+        }
+
+        $adj = ProcedimientoAdjunto::create([
+            'procedimiento_id' => $proc->id,
+            'paso_id'          => $pasoId,
+            'tipo'             => str_starts_with((string) $mime, 'image/') ? 'imagen' : 'archivo',
+            'path'             => $ruta,
+            'nombre_original'  => mb_substr($nombre, 0, 255),
+            'mime'             => $mime,
+            'tamano'           => $archivo->getSize(),
+        ]);
+
+        return response()->json(['ok' => true, 'adjunto' => [
+            'id'     => $adj->id,
+            'tipo'   => $adj->tipo,
+            'nombre' => $adj->nombre_original,
+            'url'    => "/procedimientos/adjunto/{$adj->id}",
+            'imagen' => $adj->esImagen(),
+        ]], 201);
+    }
+
+    /** GET /procedimientos/adjunto/{id} — lo sirve con sesión, nunca por URL pública. */
+    public function verAdjunto(int $id, bool $descargar = false)
+    {
+        $adj = ProcedimientoAdjunto::findOrFail($id);
+        $abs = Storage::disk('local')->path($adj->path);
+
+        if (!is_file($abs)) abort(404);
+
+        $disposicion = $descargar ? 'attachment' : 'inline';
+
+        return response()->file($abs, [
+            'Content-Type'        => $adj->mime ?: 'application/octet-stream',
+            'Content-Disposition' => $disposicion . '; filename="' . addslashes($adj->nombre_original) . '"',
+            // El navegador no debe adivinar el tipo: un .pdf que en realidad es
+            // HTML se ejecutaría en el origen del panel.
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /** GET /procedimientos/adjunto/{id}/descargar */
+    public function descargarAdjunto(int $id)
+    {
+        return $this->verAdjunto($id, true);
+    }
+
+    /** DELETE /procedimientos/adjunto/{id} */
+    public function borrarAdjunto(int $id): JsonResponse
+    {
+        $adj = ProcedimientoAdjunto::findOrFail($id);
+
+        Storage::disk('local')->delete($adj->path);
+        $adj->delete();
 
         return response()->json(['ok' => true]);
     }

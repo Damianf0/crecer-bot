@@ -12,7 +12,7 @@
 window.CrecerEditor = (function () {
 
     // Espejo de HtmlSeguro::PERMITIDOS. Si allá cambia, acá también.
-    const TAGS_OK   = ['P','BR','STRONG','EM','U','UL','OL','LI','A'];
+    const TAGS_OK   = ['P','BR','STRONG','EM','U','UL','OL','LI','A','IMG'];
     const RENOMBRAR = { B:'STRONG', I:'EM', DIV:'P', INS:'U',
                         H1:'P', H2:'P', H3:'P', H4:'P', H5:'P', H6:'P' };
     const ELIMINAR  = ['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','FORM','INPUT',
@@ -79,15 +79,26 @@ window.CrecerEditor = (function () {
                 hijo.replaceWith(el);
             }
 
-            // Fuera todo atributo salvo href en <a>
+            // Fuera todo atributo salvo href en <a> y src/alt en <img>
+            const attrsOk = el.tagName === 'A' ? ['href'] : (el.tagName === 'IMG' ? ['src','alt'] : []);
             Array.from(el.attributes).forEach(a => {
-                if (!(el.tagName === 'A' && a.name.toLowerCase() === 'href')) el.removeAttribute(a.name);
+                if (!attrsOk.includes(a.name.toLowerCase())) el.removeAttribute(a.name);
             });
 
             if (el.tagName === 'A') {
                 const ok = hrefValido(el.getAttribute('href'));
                 if (!ok) { limpiarNodo(el); desenvolver(el); return; }
                 el.setAttribute('href', ok);
+            }
+
+            // Solo adjuntos propios: al pegar desde una web, las imágenes
+            // externas se descartan en vez de dejar que el server las borre
+            // después y parezca que "se perdieron".
+            if (el.tagName === 'IMG') {
+                if (!/^\/procedimientos\/adjunto\/\d+$/.test(el.getAttribute('src') || '')) {
+                    el.remove();
+                    return;
+                }
             }
 
             limpiarNodo(el);
@@ -124,6 +135,8 @@ window.CrecerEditor = (function () {
 .ed-area ul, .ed-area ol { margin:0 0 8px; padding-left:22px; }
 .ed-area li { margin-bottom:3px; }
 .ed-area a { color:var(--v2-accent); }
+.ed-area img { max-width:100%; display:block; margin:8px 0; border-radius:var(--v2-radius-sm);
+               border:1px solid var(--v2-border); }
 .ed-area:empty::before { content:attr(data-placeholder); color:var(--v2-text-mute); }
 .ed-link { display:none; gap:6px; align-items:center; padding:7px 8px; border-top:1px solid var(--v2-border);
            background:var(--v2-bg-app); flex-wrap:wrap; }
@@ -148,6 +161,7 @@ window.CrecerEditor = (function () {
         { accion:'link',              txt:'🔗',        title:'Insertar link' },
         { cmd:'unlink',               txt:'⛓',         title:'Quitar link' },
         { cmd:'removeFormat',         txt:'🧹',        title:'Limpiar formato' },
+        { accion:'imagen',            txt:'🖼',        title:'Insertar imagen', requiereSubida:true },
     ];
 
     function crear(host, opts) {
@@ -162,6 +176,9 @@ window.CrecerEditor = (function () {
         const toolbar = document.createElement('div');
         toolbar.className = 'ed-toolbar';
         BOTONES.forEach(b => {
+            // El botón de imagen solo existe si quien usa el editor sabe subir
+            // archivos (necesita un procedimiento ya creado que la sostenga).
+            if (b.requiereSubida && !opts.onSubirImagen) return;
             if (b.sep) { const s = document.createElement('span'); s.className = 'ed-sep'; toolbar.appendChild(s); return; }
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -216,7 +233,8 @@ window.CrecerEditor = (function () {
             if (!btn) return;
             ev.preventDefault();
 
-            if (btn.dataset.accion === 'link') { abrirPanelLink(); return; }
+            if (btn.dataset.accion === 'link')   { abrirPanelLink(); return; }
+            if (btn.dataset.accion === 'imagen') { pedirImagen(); return; }
             if (!btn.dataset.cmd) return;
 
             document.execCommand(btn.dataset.cmd, false, null);
@@ -286,11 +304,61 @@ window.CrecerEditor = (function () {
             });
         }
 
+        // ── Imágenes ──────────────────────────────────────────
+        function guardarRango() {
+            const sel = document.getSelection();
+            if (sel && sel.rangeCount && area.contains(sel.anchorNode)) {
+                rangoGuardado = sel.getRangeAt(0).cloneRange();
+            }
+        }
+
+        function restaurarRango() {
+            if (!rangoGuardado) { area.focus(); return; }
+            const sel = document.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(rangoGuardado);
+        }
+
+        function pedirImagen() {
+            // Abrir el selector de archivos mata la selección: hay que guardarla
+            // antes y reponerla cuando vuelve la subida.
+            guardarRango();
+
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/jpeg,image/png,image/gif,image/webp';
+            input.onchange = () => { if (input.files && input.files[0]) subirEInsertar(input.files[0]); };
+            input.click();
+        }
+
+        async function subirEInsertar(file) {
+            let r;
+            try { r = await opts.onSubirImagen(file); }
+            catch (e) { if (window.v2toast) v2toast(e.message || 'No se pudo subir la imagen', 'err'); return; }
+
+            if (!r || !r.url) return;
+
+            restaurarRango();
+            area.focus();
+            document.execCommand('insertHTML', false,
+                '<img src="' + r.url + '" alt="">');
+            avisarCambio();
+        }
+
         // ── Pegado ────────────────────────────────────────────
         area.addEventListener('paste', ev => {
             ev.preventDefault();
             const dt = ev.clipboardData;
             if (!dt) return;
+
+            // Captura de pantalla pegada directo: es el caso de uso central
+            // para documentar "hacé clic acá" del portal de turnos.
+            const img = Array.from(dt.files || []).find(f => f.type.startsWith('image/'));
+            if (img && opts.onSubirImagen) {
+                guardarRango();
+                subirEInsertar(img);
+                return;
+            }
 
             const html = dt.getData('text/html');
             if (html) {

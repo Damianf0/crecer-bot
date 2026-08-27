@@ -43,6 +43,24 @@
 .pr-wa-txt { font-size:13px; line-height:1.5; white-space:pre-wrap; color:var(--v2-text-2); }
 .pr-loading { text-align:center; padding:40px; color:var(--v2-text-mute); font-size:13px; }
 
+/* Las imágenes dentro del contenido de un paso */
+.pr-cont img { max-width:100%; display:block; margin:8px 0; border-radius:var(--v2-radius-sm);
+               border:1px solid var(--v2-border); cursor:zoom-in; }
+
+.pr-adjuntos { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.pr-thumb { width:110px; height:80px; object-fit:cover; border-radius:var(--v2-radius-sm);
+            border:1px solid var(--v2-border); cursor:zoom-in; transition:transform .12s; }
+.pr-thumb:hover { transform:scale(1.04); border-color:var(--v2-accent); }
+.pr-archivo { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; text-decoration:none;
+              background:var(--v2-bg-app); border:1px solid var(--v2-border); border-radius:var(--v2-radius-sm);
+              padding:7px 11px; color:var(--v2-text); }
+.pr-archivo:hover { border-color:var(--v2-accent); }
+.pr-archivo .baja { color:var(--v2-text-mute); font-size:11px; }
+
+#pr-zoom { position:fixed; inset:0; background:rgba(0,0,0,.85); display:none;
+           align-items:center; justify-content:center; z-index:9999; cursor:zoom-out; }
+#pr-zoom img { max-width:92vw; max-height:92vh; border-radius:8px; }
+
 /* ── Editor ── */
 .pr-edit { display:grid; grid-template-columns:290px 1fr; gap:18px; align-items:start; }
 @media (max-width:1000px) { .pr-edit { grid-template-columns:1fr; } }
@@ -135,6 +153,9 @@
             </div>
         </div>
     </div>
+
+    {{-- Lightbox de capturas --}}
+    <div id="pr-zoom" onclick="this.style.display='none'"><img src="" alt=""></div>
 
 </div>
 @endsection
@@ -312,6 +333,7 @@ function renderDetalle(p) {
                           '<div class="pr-wa-txt">' + esc(paso.respuesta_wa) + '</div>' +
                         '</div>';
             }
+            if (paso.adjuntos && paso.adjuntos.length) body += renderAdjuntos(paso.adjuntos);
             return body + '</div></div>';
         }).join('');
     }
@@ -322,6 +344,33 @@ function renderDetalle(p) {
 // El panel se sirve por http://192.168.1.115, que NO es secure context:
 // navigator.clipboard es undefined ahí. Por eso el camino principal es el
 // textarea + execCommand('copy'), que funciona sobre HTTP plano.
+/** Adjuntos en la vista de lectura: miniaturas para imágenes, fila para PDFs. */
+function renderAdjuntos(adjuntos) {
+    const imgs  = adjuntos.filter(a => a.imagen);
+    const otros = adjuntos.filter(a => !a.imagen);
+    let html = '<div class="pr-adjuntos">';
+
+    imgs.forEach(a => {
+        html += '<img src="' + a.url + '" alt="' + esc(a.nombre) + '" class="pr-thumb" ' +
+                'onclick="ampliar(this.src)" title="' + esc(a.nombre) + '">';
+    });
+
+    otros.forEach(a => {
+        html += '<a class="pr-archivo" href="' + a.url + '" target="_blank">' +
+                  '📄 <span>' + esc(a.nombre) + '</span>' +
+                  '<span class="baja">descargar</span>' +
+                '</a>';
+    });
+
+    return html + '</div>';
+}
+
+function ampliar(src) {
+    const zoom = document.getElementById('pr-zoom');
+    zoom.querySelector('img').src = src;
+    zoom.style.display = 'flex';
+}
+
 function copiarWa(btn) {
     const txt = btn.closest('.pr-wa').querySelector('.pr-wa-txt').textContent;
 
@@ -436,6 +485,13 @@ function pintarPaso(paso) {
         '<details><summary>Respuesta lista para enviar por WhatsApp</summary>' +
             '<textarea class="v2-field" rows="4" maxlength="4000" style="margin-top:6px;"' +
             ' placeholder="Texto que la secretaria copia y manda al paciente"></textarea>' +
+        '</details>' +
+        '<details class="pr-adj"><summary>Archivos adjuntos</summary>' +
+            '<div class="pr-adj-lista"></div>' +
+            '<input type="file" class="v2-field" style="margin-top:6px;font-size:12px;"' +
+            ' accept="image/jpeg,image/png,image/gif,image/webp,application/pdf">' +
+            '<div style="font-size:11px;color:var(--v2-text-mute);margin-top:4px;">' +
+            'Imágenes o PDF, hasta 8 MB. Las imágenes también se pueden pegar directo en el texto.</div>' +
         '</details>';
 
     cont.appendChild(card);
@@ -447,13 +503,35 @@ function pintarPaso(paso) {
     inputTitulo.addEventListener('input', marcarSucio);
     textareaWa.addEventListener('input', marcarSucio);
 
+    const ref = { id: paso.id || null, card, inputTitulo, textareaWa, ed: null,
+                  adjuntos: (paso.adjuntos || []).slice() };
+
     const ed = CrecerEditor.crear(card.querySelector('.pr-ed-host'), {
         html: paso.contenido || '',
         onChange: marcarSucio,
+        // Subir una imagen necesita que el paso ya exista en la base para
+        // colgarla de él. Si el paso es nuevo, se guarda primero.
+        onSubirImagen: async (file) => {
+            if (!ref.id) {
+                v2toast('Guardá el procedimiento antes de insertar imágenes', 'err');
+                return null;
+            }
+            return await subirAdjunto(file, ref);
+        },
     });
+    ref.ed = ed;
 
-    const ref = { id: paso.id || null, card, inputTitulo, textareaWa, ed };
     edit.pasos.push(ref);
+    pintarAdjuntos(ref);
+
+    card.querySelector('.pr-adj input[type=file]').addEventListener('change', async ev => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        ev.target.value = '';
+        if (!ref.id) { v2toast('Guardá el procedimiento antes de adjuntar archivos', 'err'); return; }
+        const adj = await subirAdjunto(file, ref);
+        if (adj) { ref.adjuntos.push(adj); pintarAdjuntos(ref); }
+    });
 
     const [btnUp, btnDown, btnDel] = card.querySelectorAll('.pr-edit-paso-head button');
     btnUp.onclick   = () => moverPaso(ref, -1);
@@ -466,6 +544,60 @@ function pintarPaso(paso) {
 function agregarPaso() {
     pintarPaso({});
     marcarSucio();
+}
+
+// ── Adjuntos ─────────────────────────────────────────────────
+
+/** Sube un archivo y lo cuelga del paso. Devuelve el adjunto o null. */
+async function subirAdjunto(file, ref) {
+    const fd = new FormData();
+    fd.append('archivo', file);
+    fd.append('paso_id', ref.id);
+    fd.append('_token', CSRF);   // también en el body, ver el comentario de api()
+
+    let r;
+    try {
+        const resp = await fetch('/procedimientos/' + edit.id + '/adjuntos', {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: fd,
+        });
+        r = await resp.json().catch(() => null);
+        if (!resp.ok) throw new Error((r && (r.error || r.message)) || ('HTTP ' + resp.status));
+    } catch (e) {
+        v2toast(e.message || 'No se pudo subir el archivo', 'err');
+        return null;
+    }
+
+    v2toast('Archivo subido');
+    return r.adjunto;
+}
+
+function pintarAdjuntos(ref) {
+    const cont = ref.card.querySelector('.pr-adj-lista');
+    if (!ref.adjuntos.length) {
+        cont.innerHTML = '<div style="font-size:12px;color:var(--v2-text-mute);">Sin archivos.</div>';
+        return;
+    }
+    cont.innerHTML = ref.adjuntos.map(a =>
+        '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12.5px;">' +
+            '<span>' + (a.imagen ? '🖼' : '📄') + '</span>' +
+            '<a href="' + a.url + '" target="_blank" style="flex:1;color:var(--v2-accent);">' + esc(a.nombre) + '</a>' +
+            '<button class="v2-btn sm danger" onclick="quitarAdjunto(' + a.id + ')">Quitar</button>' +
+        '</div>'
+    ).join('');
+}
+
+async function quitarAdjunto(id) {
+    try { await api('DELETE', '/procedimientos/adjunto/' + id); }
+    catch (e) { v2toast(e.message, 'err'); return; }
+
+    edit.pasos.forEach(p => {
+        const antes = p.adjuntos.length;
+        p.adjuntos = p.adjuntos.filter(a => a.id !== id);
+        if (p.adjuntos.length !== antes) pintarAdjuntos(p);
+    });
+    v2toast('Archivo eliminado');
 }
 
 function borrarPaso(ref) {
