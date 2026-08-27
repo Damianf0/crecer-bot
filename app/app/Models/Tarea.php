@@ -13,6 +13,7 @@ class Tarea extends Model
     protected $fillable = [
         'titulo', 'descripcion', 'asignada_a', 'creada_por',
         'vence_at', 'estado', 'prioridad', 'ref_tipo', 'ref_id',
+        'procedimiento_id',
     ];
 
     protected $casts = [
@@ -32,6 +33,12 @@ class Tarea extends Model
     public function comentarios(): HasMany
     {
         return $this->hasMany(TareaComentario::class)->orderBy('created_at');
+    }
+
+    /** Procedimiento que explica cómo resolver esta tarea (opcional). */
+    public function procedimiento(): BelongsTo
+    {
+        return $this->belongsTo(Procedimiento::class, 'procedimiento_id');
     }
 
     public function conversacionRef(): BelongsTo

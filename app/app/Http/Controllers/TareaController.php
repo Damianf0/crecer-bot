@@ -23,6 +23,7 @@ class TareaController extends Controller
             'asignadaA:id,nombre_completo',
             'creadaPor:id,nombre_completo',
             'comentarios.user:id,nombre_completo',
+            'procedimiento:id,titulo',
         ]);
 
         match ($filtro) {
@@ -57,6 +58,7 @@ class TareaController extends Controller
             'prioridad'   => 'nullable|in:baja,normal,alta',
             'ref_tipo'    => 'nullable|in:wa,bot',
             'ref_id'      => 'nullable|integer',
+            'procedimiento_id' => 'nullable|integer|exists:procedimientos,id',
         ]);
 
         $tarea = Tarea::create([
@@ -66,7 +68,8 @@ class TareaController extends Controller
             'prioridad'  => $data['prioridad'] ?? 'normal',
         ]);
 
-        $tarea->load(['asignadaA:id,nombre_completo', 'creadaPor:id,nombre_completo', 'comentarios']);
+        $tarea->load(['asignadaA:id,nombre_completo', 'creadaPor:id,nombre_completo', 'comentarios',
+                      'procedimiento:id,titulo']);
 
         return response()->json(['ok' => true, 'data' => $this->mapTarea($tarea)]);
     }
@@ -84,6 +87,7 @@ class TareaController extends Controller
             'estado'      => 'nullable|in:pendiente,en_progreso,completada',
             'ref_tipo'    => 'nullable|in:wa,bot',
             'ref_id'      => 'nullable|integer',
+            'procedimiento_id' => 'nullable|integer|exists:procedimientos,id',
         ]);
 
         $tarea->update($data);
@@ -140,6 +144,8 @@ class TareaController extends Controller
             'prioridad'       => $t->prioridad ?? 'normal',
             'ref_tipo'        => $t->ref_tipo,
             'ref_id'          => $t->ref_id,
+            'procedimiento_id'     => $t->procedimiento_id,
+            'procedimiento_titulo' => $t->procedimiento?->titulo,
             'hace'            => $t->created_at->diffForHumans(),
             'comentarios'     => $t->comentarios->map(fn($c) => [
                 'id'        => $c->id,

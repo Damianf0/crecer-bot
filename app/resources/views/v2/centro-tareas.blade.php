@@ -53,6 +53,14 @@
                 <input class="v2-field" id="nt-vence" type="datetime-local">
             </div>
         </div>
+        <label class="v2-label">Procedimiento</label>
+        <select class="v2-field" id="nt-proc">
+            <option value="">— Ninguno —</option>
+        </select>
+        <div style="font-size:11px;color:var(--v2-text-mute);margin:3px 0 8px;">
+            Si esta tarea se resuelve siguiendo un procedimiento, elegilo acá y va a aparecer al abrirla.
+        </div>
+
         <label class="v2-label">Prioridad</label>
         <div class="v2-chips" id="nt-prio">
             <button type="button" class="v2-vista" data-v="baja">Baja</button>
@@ -178,6 +186,9 @@ function abrirTarea(id) {
     } else {
         acciones.push(`<button class="v2-btn" onclick="estadoTarea(${t.id}, 'pendiente')">Reabrir</button>`);
     }
+    if (t.procedimiento_id) {
+        acciones.push(`<a class="v2-btn primary" href="/v2/procedimientos" target="_blank" style="text-decoration:none;" title="${esc(t.procedimiento_titulo || '')}">📘 Ver procedimiento</a>`);
+    }
     acciones.push(`<button class="v2-btn" onclick="abrirEditar(${t.id})" title="Editar título, asignación, vencimiento o prioridad">✏ Editar</button>`);
     acciones.push(`<button class="v2-btn danger" onclick="borrarTarea(${t.id})">Eliminar</button>`);
 
@@ -195,6 +206,7 @@ function abrirTarea(id) {
                 <div class="v2-leg-row"><span class="k">Estado</span><span class="v">${ESTADO_LBL[t.estado] || t.estado}</span></div>
                 <div class="v2-leg-row"><span class="k">Asignada a</span><span class="v">${esc(t.asignado_nombre || 'Sin asignar')}</span></div>
                 ${t.vence_fmt ? `<div class="v2-leg-row"><span class="k">Vence</span><span class="v mono" ${t.vencida ? 'style="color:var(--v2-urg);"' : ''}>${esc(t.vence_fmt)}${t.vencida ? ' · vencida' : ''}</span></div>` : ''}
+                ${t.procedimiento_id ? `<div class="v2-leg-row"><span class="k">Procedimiento</span><span class="v">${esc(t.procedimiento_titulo || '—')}</span></div>` : ''}
             </div>
             ${t.descripcion ? `<div class="v2-bubble" style="max-width:560px;">${esc(t.descripcion)}</div>` : ''}
             <div style="max-width:560px;">
@@ -306,6 +318,7 @@ function abrirNueva() {
     document.getElementById('nt-desc').value = '';
     document.getElementById('nt-asig').value = String(ME_ID);
     document.getElementById('nt-vence').value = '';
+    document.getElementById('nt-proc').value = '';
     setPrioChips('normal');
     document.getElementById('dlg-nueva').showModal();
     document.getElementById('nt-titulo').focus();
@@ -321,6 +334,7 @@ function abrirEditar(id) {
     document.getElementById('nt-desc').value = t.descripcion || '';
     document.getElementById('nt-asig').value = t.asignada_a ? String(t.asignada_a) : String(ME_ID);
     document.getElementById('nt-vence').value = t.vence_at || '';
+    document.getElementById('nt-proc').value = t.procedimiento_id ? String(t.procedimiento_id) : '';
     setPrioChips(t.prioridad || 'normal');
     document.getElementById('dlg-nueva').showModal();
     document.getElementById('nt-titulo').focus();
@@ -335,6 +349,7 @@ async function guardarTarea() {
         asignada_a:  parseInt(document.getElementById('nt-asig').value),
         vence_at:    document.getElementById('nt-vence').value || null,
         prioridad:   document.querySelector('#nt-prio .active')?.dataset.v || 'normal',
+        procedimiento_id: parseInt(document.getElementById('nt-proc').value) || null,
     };
     try {
         if (_editId) {
@@ -355,8 +370,27 @@ async function guardarTarea() {
     } catch (e) { v2toast(_editId ? 'No se pudo actualizar' : 'No se pudo crear', 'err'); }
 }
 
+// ── Procedimientos ────────────────────────────────────────────────
+// Se cargan una sola vez al abrir la pantalla (el endpoint cachea 5 min).
+// Agrupados por área para que el <select> siga siendo legible al crecer.
+async function cargarProcedimientos() {
+    let r;
+    try { r = await get('/procedimientos/opciones'); } catch (e) { return; }
+
+    const sel = document.getElementById('nt-proc');
+    const porArea = {};
+    (r.data || []).forEach(p => { (porArea[p.area_label] ||= []).push(p); });
+
+    sel.innerHTML = '<option value="">— Ninguno —</option>' +
+        Object.entries(porArea).map(([area, items]) =>
+            `<optgroup label="${esc(area)}">` +
+            items.map(p => `<option value="${p.id}">${esc(p.titulo)}</option>`).join('') +
+            '</optgroup>'
+        ).join('');
+}
+
 // ── Init ──────────────────────────────────────────────────────────
-(async () => { await fetchAll(); renderBandeja(); })();
+(async () => { await fetchAll(); renderBandeja(); cargarProcedimientos(); })();
 setInterval(async () => { await fetchAll(); renderBandeja(); }, 15000);
 </script>
 @endpush

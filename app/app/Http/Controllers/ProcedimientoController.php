@@ -10,6 +10,7 @@ use App\Services\HtmlSeguro;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -88,6 +89,28 @@ class ProcedimientoController extends Controller
             'codigos_bot' => Procedimiento::CODIGOS_BOT,
             'puede_editar' => $this->puedeEditar(),
         ]);
+    }
+
+    /**
+     * GET /procedimientos/opciones — lista mínima para poblar un <select>.
+     * La usa el formulario de tareas. Solo publicados: no tiene sentido
+     * vincular una tarea a un borrador que el resto del equipo no puede ver.
+     */
+    public function opciones(): JsonResponse
+    {
+        $data = Cache::remember('procedimientos.opciones', 300, function () {
+            return Procedimiento::publicados()
+                ->orderBy('area')->orderBy('orden')->orderBy('titulo')
+                ->get(['id', 'titulo', 'area'])
+                ->map(fn($p) => [
+                    'id'         => $p->id,
+                    'titulo'     => $p->titulo,
+                    'area'       => $p->area,
+                    'area_label' => Procedimiento::AREAS[$p->area] ?? $p->area,
+                ]);
+        });
+
+        return response()->json(['ok' => true, 'data' => $data]);
     }
 
     /** GET /procedimientos/{id} — detalle con pasos y adjuntos. */
@@ -211,6 +234,10 @@ class ProcedimientoController extends Controller
             }
         });
 
+        // El <select> de tareas cachea la lista 5 min; si cambió el título o el
+        // estado hay que refrescarla.
+        Cache::forget('procedimientos.opciones');
+
         return response()->json(['ok' => true, 'procedimiento' => $this->mapProcedimiento(
             $proc->fresh(['pasos', 'adjuntos', 'codigos', 'actualizadoPor'])
         )]);
@@ -220,6 +247,7 @@ class ProcedimientoController extends Controller
     public function destroy(int $id): JsonResponse
     {
         Procedimiento::findOrFail($id)->delete();
+        Cache::forget('procedimientos.opciones');
 
         return response()->json(['ok' => true]);
     }

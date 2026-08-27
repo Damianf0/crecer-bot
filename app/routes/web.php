@@ -231,6 +231,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // usuario del panel; el ABM vive bajo permiso:admin (ver más abajo).
     Route::get('/v2/procedimientos',        [\App\Http\Controllers\V2Controller::class, 'procedimientos']);
     Route::get('/procedimientos/data',      [ProcedimientoController::class, 'data']);
+    Route::get('/procedimientos/opciones',  [ProcedimientoController::class, 'opciones']);
     Route::get('/procedimientos/{id}',      [ProcedimientoController::class, 'show'])->whereNumber('id');
 
     // Adjuntos: se sirven por controller (con sesión), nunca por public/storage.
