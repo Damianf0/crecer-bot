@@ -2,18 +2,24 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
     /**
-     * A basic test example.
+     * La raíz no sirve contenido: reparte según el rol de quien entra
+     * (routes/web.php:23). Sin sesión, manda al login.
+     *
+     * El test de stock esperaba un 200 acá y venía fallando desde el commit
+     * inicial, dejando la suite siempre en rojo.
      */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_la_raiz_redirige_al_login_sin_sesion(): void
     {
-        $response = $this->get('/');
+        $this->get('/')->assertRedirect('/login');
+    }
 
-        $response->assertStatus(200);
+    public function test_el_login_responde(): void
+    {
+        $this->get('/login')->assertStatus(200);
     }
 }

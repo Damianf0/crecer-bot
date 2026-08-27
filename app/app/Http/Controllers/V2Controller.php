@@ -85,6 +85,15 @@ class V2Controller extends Controller
         ]);
     }
 
+    public function procedimientos()
+    {
+        return view('v2.procedimientos', [
+            'modulo'    => 'Trabajo',
+            'title'     => 'Procedimientos',
+            'navActive' => 'procedimientos',
+        ]);
+    }
+
     public function agenda()
     {
         return view('v2.agenda', [

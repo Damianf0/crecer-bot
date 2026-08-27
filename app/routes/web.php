@@ -12,6 +12,7 @@ use App\Http\Controllers\EstadisticasController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DocumentoController;
 use App\Http\Controllers\WaMediaController;
+use App\Http\Controllers\ProcedimientoController;
 use App\Livewire\Login;
 use App\Livewire\Tablet;
 use App\Http\Middleware\SecretariaAuth;
@@ -224,6 +225,19 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::delete('/contactos/{id}',            [ContactoController::class, 'destroy']);
         Route::post('/contactos/import/preview',    [ContactoController::class, 'importPreview']);
         Route::post('/contactos/import/confirm',    [ContactoController::class, 'importConfirm']);
+    });
+
+    // Procedimientos (base de conocimiento) — la lectura la tiene cualquier
+    // usuario del panel; el ABM vive bajo permiso:admin (ver más abajo).
+    Route::get('/v2/procedimientos',        [\App\Http\Controllers\V2Controller::class, 'procedimientos']);
+    Route::get('/procedimientos/data',      [ProcedimientoController::class, 'data']);
+    Route::get('/procedimientos/{id}',      [ProcedimientoController::class, 'show'])->whereNumber('id');
+
+    // Alta y edición: solo supervisión.
+    Route::middleware('permiso:admin')->group(function () {
+        Route::post('/procedimientos',        [ProcedimientoController::class, 'store']);
+        Route::post('/procedimientos/{id}',   [ProcedimientoController::class, 'save'])->whereNumber('id');
+        Route::delete('/procedimientos/{id}', [ProcedimientoController::class, 'destroy'])->whereNumber('id');
     });
 
     // PoC V2 — admin con shell V2 reusando las vistas de producción.

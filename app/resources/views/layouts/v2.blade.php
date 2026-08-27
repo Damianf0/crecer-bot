@@ -94,6 +94,10 @@
                 <span class="ico">📅</span><span class="lbl">Agenda</span>
             </a>
             @endif
+            {{-- Base de conocimiento: la consulta es para todo el equipo, sin permiso propio --}}
+            <a class="v2-nav-item {{ $navActiva === 'procedimientos' ? 'active' : '' }}" href="/v2/procedimientos">
+                <span class="ico">📘</span><span class="lbl">Procedimientos</span>
+            </a>
 
             @if($u && $u->hasPermiso('secretaria'))
             <div class="v2-nav-sec">Recepción</div>
