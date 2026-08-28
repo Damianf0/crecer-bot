@@ -11,6 +11,10 @@
 
 @push('styles')
 <style>
+/* .v2-main es flex column SIN overflow: cada vista nativa V2 pone su propio
+   scroll (ver v2/contactos.blade.php). Sin este contenedor, todo lo que pasa
+   del alto de la ventana queda cortado y la pantalla no scrollea. */
+.pr-scroll { flex:1; overflow-y:auto; min-height:0; }
 .pr-wrap { max-width:1100px; margin:0 auto; padding:24px; }
 .pr-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
 .pr-head h1 { font-size:20px; font-weight:700; margin:0; flex:1; min-width:180px; }
@@ -83,6 +87,7 @@
 @endpush
 
 @section('content')
+<div class="pr-scroll">
 <div class="pr-wrap">
 
     {{-- ── Listado ────────────────────────────────────────── --}}
@@ -156,9 +161,10 @@
         </div>
     </div>
 
-    {{-- Lightbox de capturas --}}
-    <div id="pr-zoom" onclick="this.style.display='none'"><img src="" alt=""></div>
+</div>
 
+{{-- Lightbox de capturas: fuera del contenedor con scroll, va position:fixed --}}
+<div id="pr-zoom" onclick="this.style.display='none'"><img src="" alt=""></div>
 </div>
 @endsection
 
