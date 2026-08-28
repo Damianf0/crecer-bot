@@ -167,6 +167,7 @@ class ProcedimientoController extends Controller
         $proc = Procedimiento::findOrFail($id);
 
         $datos = $request->validate([
+            'updated_at'            => 'nullable|string',
             'titulo'                => 'required|string|max:160',
             'resumen'               => 'nullable|string|max:300',
             'area'                  => 'required|string|in:' . implode(',', array_keys(Procedimiento::AREAS)),
@@ -180,6 +181,19 @@ class ProcedimientoController extends Controller
             'pasos.*.contenido'     => 'nullable|string',
             'pasos.*.respuesta_wa'  => 'nullable|string|max:4000',
         ]);
+
+        // Chequeo optimista: si el procedimiento cambió desde que el editor lo
+        // cargó, otra persona lo guardó mientras tanto. Sin esto el último en
+        // apretar Guardar pisa el trabajo del otro sin que nadie se entere.
+        $marcaEnviada = $datos['updated_at'] ?? null;
+        if ($marcaEnviada && $proc->updated_at
+            && $proc->updated_at->toIso8601String() !== $marcaEnviada) {
+            return response()->json([
+                'ok'    => false,
+                'error' => 'Alguien más editó este procedimiento mientras lo tenías abierto. '
+                         . 'Recargá la página para ver los cambios; si guardás ahora vas a pisar su trabajo.',
+            ], 409);
+        }
 
         DB::transaction(function () use ($proc, $datos, $request) {
 
@@ -377,6 +391,8 @@ class ProcedimientoController extends Controller
             'resumen'     => $p->resumen,
             'estado'      => $p->estado,
             'actualizado' => $p->updated_at?->format('d/m/Y H:i'),
+            // Marca para el chequeo optimista al guardar (ver save())
+            'updated_at'  => $p->updated_at?->toIso8601String(),
             'actualizado_por' => $p->actualizadoPor?->nombre_completo,
             'revisado'    => $p->revisado_at?->format('d/m/Y'),
             'sin_revisar' => $p->necesitaRevision(),

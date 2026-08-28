@@ -185,7 +185,11 @@ async function api(method, url, body) {
     if (body || method !== 'GET') opts.body = JSON.stringify(Object.assign({ _token: CSRF }, body || {}));
     const r = await fetch(url, opts);
     const data = await r.json().catch(() => null);
-    if (!r.ok) throw new Error((data && (data.error || data.message)) || ('HTTP ' + r.status));
+    if (!r.ok) {
+        const err = new Error((data && (data.error || data.message)) || ('HTTP ' + r.status));
+        err.status = r.status;   // el 409 del chequeo optimista se trata aparte
+        throw err;
+    }
     return data;
 }
 
@@ -469,7 +473,9 @@ async function abrirEditor(id) {
     document.getElementById('vista-detalle').style.display  = 'none';
     document.getElementById('vista-editor').style.display   = '';
 
-    edit  = { id: p.id, pasos: [] };
+    // updatedAt viaja en cada guardado para detectar que otra persona tocó el
+    // procedimiento mientras este editor estaba abierto.
+    edit  = { id: p.id, pasos: [], updatedAt: p.updated_at };
     sucio = false;
     document.getElementById('ed-sucio').style.display = 'none';
 
@@ -670,6 +676,7 @@ function renumerar() {
 
 async function guardar() {
     const payload = {
+        updated_at: edit.updatedAt,
         titulo:  document.getElementById('f-titulo').value.trim(),
         resumen: document.getElementById('f-resumen').value.trim() || null,
         area:    document.getElementById('f-area').value,
@@ -688,7 +695,13 @@ async function guardar() {
 
     let r;
     try { r = await api('POST', '/procedimientos/' + edit.id, payload); }
-    catch (e) { v2toast(e.message, 'err'); return; }
+    catch (e) {
+        // El 409 del chequeo optimista trae un texto largo que no entra en un
+        // toast: se muestra fijo arriba del editor hasta que se recargue.
+        if (e.status === 409) { avisarConflicto(e.message); return; }
+        v2toast(e.message, 'err');
+        return;
+    }
 
     // El server devuelve el HTML YA sanitizado y se recarga en el editor. Sin
     // esto, lo que la persona ve queda divergido de lo guardado (pegó algo con
@@ -701,6 +714,10 @@ async function guardar() {
         }
     });
 
+    // Marca nueva: si no se refresca, el segundo guardado seguido daría 409
+    // contra uno mismo.
+    edit.updatedAt = r.procedimiento.updated_at;
+
     sucio = false;
     document.getElementById('ed-sucio').style.display = 'none';
     document.getElementById('f-revisar').checked = false;
@@ -708,6 +725,25 @@ async function guardar() {
         document.getElementById('f-revisado').textContent = 'Última revisión: ' + r.procedimiento.revisado;
     }
     v2toast('Procedimiento guardado');
+}
+
+/**
+ * Conflicto de edición simultánea. No se pisa lo escrito ni se cierra el
+ * editor: el texto sigue ahí para poder copiarlo antes de recargar.
+ */
+function avisarConflicto(msg) {
+    let caja = document.getElementById('ed-conflicto');
+    if (!caja) {
+        caja = document.createElement('div');
+        caja.id = 'ed-conflicto';
+        caja.style.cssText = 'background:var(--v2-urg-bg);border:1px solid var(--v2-urg);' +
+            'border-radius:var(--v2-radius-sm);padding:11px 14px;margin-bottom:14px;font-size:13px;line-height:1.5;';
+        const cont = document.getElementById('vista-editor');
+        cont.insertBefore(caja, cont.firstChild);
+    }
+    caja.innerHTML = '⚠️ <strong>No se guardó.</strong> ' + esc(msg) +
+        ' <button class="v2-btn sm" style="margin-left:6px;" onclick="location.reload()">Recargar</button>';
+    caja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function eliminarProc() {
