@@ -85,12 +85,19 @@ class V2Controller extends Controller
         ]);
     }
 
-    public function procedimientos()
+    /**
+     * @param int|null $id Si viene, la pantalla abre directo ese procedimiento.
+     *                     Le da URL propia a cada uno: sirve para linkear entre
+     *                     procedimientos, desde una tarea, o para pasarle el
+     *                     link a alguien por chat.
+     */
+    public function procedimientos(?int $id = null)
     {
         return view('v2.procedimientos', [
             'modulo'    => 'Trabajo',
             'title'     => 'Procedimientos',
             'navActive' => 'procedimientos',
+            'procId'    => $id,
         ]);
     }
 

@@ -104,7 +104,9 @@
     <div id="vista-detalle" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
             <button class="v2-btn sm" onclick="volver()">← Volver</button>
-            <button class="v2-btn sm primary" id="btn-editar" style="display:none;margin-left:auto;"
+            <button class="v2-btn sm" style="margin-left:auto;" onclick="copiarLink()"
+                    title="Copiar el link de este procedimiento">🔗 Copiar link</button>
+            <button class="v2-btn sm primary" id="btn-editar" style="display:none;"
                     onclick="editarActual()">Editar</button>
         </div>
         <div id="detalle"></div>
@@ -269,8 +271,27 @@ function renderLista(items) {
 
 let procActual = null;   // id del procedimiento abierto en el detalle
 
-async function abrir(id) {
+/**
+ * Cada procedimiento tiene URL propia (/v2/procedimientos/{id}) aunque la
+ * pantalla sea una sola: así se puede linkear desde una tarea, desde otro
+ * procedimiento, o pasarle el link a alguien. pushState evita recargar.
+ */
+function urlDetalle(id) {
+    const url = id ? '/v2/procedimientos/' + id : '/v2/procedimientos';
+    if (window.location.pathname !== url) history.pushState({ id: id || null }, '', url);
+}
+
+// Botones atrás/adelante del navegador. Se lee el id de la URL y no de
+// ev.state: la primera entrada del historial es la carga inicial de la página,
+// que no tiene state, y ahí el atrás dejaba la URL en /2 mostrando el listado.
+window.addEventListener('popstate', () => {
+    const m = window.location.pathname.match(/^\/v2\/procedimientos\/(\d+)$/);
+    if (m) abrir(parseInt(m[1], 10), true); else volver(true);
+});
+
+async function abrir(id, sinUrl) {
     procActual = id;
+    if (!sinUrl) urlDetalle(id);
     document.getElementById('vista-lista').style.display    = 'none';
     document.getElementById('vista-detalle').style.display  = '';
     document.getElementById('btn-editar').style.display     = state.puedeEditar ? '' : 'none';
@@ -383,6 +404,11 @@ function copiarWa(btn) {
     copiarFallback(txt);
 }
 
+function copiarLink() {
+    if (!procActual) return;
+    copiarFallback(window.location.origin + '/v2/procedimientos/' + procActual);
+}
+
 function copiarFallback(txt) {
     const ta = document.createElement('textarea');
     ta.value = txt;
@@ -396,7 +422,9 @@ function copiarFallback(txt) {
     v2toast(ok ? 'Respuesta copiada' : 'No se pudo copiar', ok ? 'ok' : 'err');
 }
 
-function volver() {
+function volver(sinUrl) {
+    procActual = null;
+    if (!sinUrl) urlDetalle(null);
     document.getElementById('vista-detalle').style.display = 'none';
     document.getElementById('vista-editor').style.display  = 'none';
     document.getElementById('vista-lista').style.display   = '';
@@ -702,6 +730,14 @@ window.addEventListener('beforeunload', ev => {
     if (sucio) { ev.preventDefault(); ev.returnValue = ''; }
 });
 
-cargar();
+// ── Arranque ─────────────────────────────────────────────────
+// Si la URL trae un id (/v2/procedimientos/3) se abre ese detalle directo. El
+// listado se carga igual, porque de ahí salen state.areas y state.puedeEditar.
+const PROC_INICIAL = {{ $procId ?? 'null' }};
+
+(async () => {
+    await cargar();
+    if (PROC_INICIAL) abrir(PROC_INICIAL, true);
+})();
 </script>
 @endpush

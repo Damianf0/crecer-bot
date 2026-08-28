@@ -187,7 +187,7 @@ function abrirTarea(id) {
         acciones.push(`<button class="v2-btn" onclick="estadoTarea(${t.id}, 'pendiente')">Reabrir</button>`);
     }
     if (t.procedimiento_id) {
-        acciones.push(`<a class="v2-btn primary" href="/v2/procedimientos" target="_blank" style="text-decoration:none;" title="${esc(t.procedimiento_titulo || '')}">📘 Ver procedimiento</a>`);
+        acciones.push(`<a class="v2-btn primary" href="/v2/procedimientos/${t.procedimiento_id}" target="_blank" style="text-decoration:none;" title="${esc(t.procedimiento_titulo || '')}">📘 Ver procedimiento</a>`);
     }
     acciones.push(`<button class="v2-btn" onclick="abrirEditar(${t.id})" title="Editar título, asignación, vencimiento o prioridad">✏ Editar</button>`);
     acciones.push(`<button class="v2-btn danger" onclick="borrarTarea(${t.id})">Eliminar</button>`);
@@ -206,7 +206,7 @@ function abrirTarea(id) {
                 <div class="v2-leg-row"><span class="k">Estado</span><span class="v">${ESTADO_LBL[t.estado] || t.estado}</span></div>
                 <div class="v2-leg-row"><span class="k">Asignada a</span><span class="v">${esc(t.asignado_nombre || 'Sin asignar')}</span></div>
                 ${t.vence_fmt ? `<div class="v2-leg-row"><span class="k">Vence</span><span class="v mono" ${t.vencida ? 'style="color:var(--v2-urg);"' : ''}>${esc(t.vence_fmt)}${t.vencida ? ' · vencida' : ''}</span></div>` : ''}
-                ${t.procedimiento_id ? `<div class="v2-leg-row"><span class="k">Procedimiento</span><span class="v">${esc(t.procedimiento_titulo || '—')}</span></div>` : ''}
+                ${t.procedimiento_id ? `<div class="v2-leg-row"><span class="k">Procedimiento</span><span class="v"><a class="v2-leg-link" href="/v2/procedimientos/${t.procedimiento_id}" target="_blank">${esc(t.procedimiento_titulo || '—')}</a></span></div>` : ''}
             </div>
             ${t.descripcion ? `<div class="v2-bubble" style="max-width:560px;">${esc(t.descripcion)}</div>` : ''}
             <div style="max-width:560px;">

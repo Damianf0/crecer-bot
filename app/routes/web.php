@@ -230,6 +230,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     // Procedimientos (base de conocimiento) — la lectura la tiene cualquier
     // usuario del panel; el ABM vive bajo permiso:admin (ver más abajo).
     Route::get('/v2/procedimientos',        [\App\Http\Controllers\V2Controller::class, 'procedimientos']);
+    Route::get('/v2/procedimientos/{id}',   [\App\Http\Controllers\V2Controller::class, 'procedimientos'])->whereNumber('id');
     Route::get('/procedimientos/data',      [ProcedimientoController::class, 'data']);
     Route::get('/procedimientos/opciones',  [ProcedimientoController::class, 'opciones']);
     Route::get('/procedimientos/{id}',      [ProcedimientoController::class, 'show'])->whereNumber('id');
