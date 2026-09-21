@@ -50,6 +50,8 @@ public/hot
 
 # ── Reportes/PDFs/imágenes con datos del cliente ─────────────────
 *.pdf
+# Excepción: los manuales de uso (sin datos de pacientes, se generan desde docs/manuales/fuentes).
+!docs/manuales/*.pdf
 captura.png
 oscuro.png
 audio error.jpg

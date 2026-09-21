@@ -272,9 +272,9 @@ td b{font-weight:650}
   <h1>Manual de uso de la plataforma</h1>
   <p>Todo lo que hace el sistema, opción por opción: qué es, para qué sirve y cómo se usa paso a paso. Escrito para el equipo de Crecer Reproducción — recepción, atención, médicos y administración.</p>
   <div class="meta">
-    <div><b>Versión</b>Agosto 2026 · interfaz V2</div>
+    <div><b>Versión</b>Septiembre 2026 · interfaz V2</div>
     <div><b>Dirigido a</b>Todo el equipo</div>
-    <div><b>Dónde entrar</b>http://localhost — desde cualquier PC de la clínica</div>
+    <div><b>Dónde entrar</b>http://192.168.1.115 — desde cualquier PC de la clínica</div>
   </div>
 </div>
 
@@ -324,7 +324,7 @@ td b{font-weight:650}
         <p>Para que cada acción quede registrada con tu nombre: quién tomó una conversación, quién respondió, quién resolvió. Eso es lo que después permite mirar el historial y saber qué pasó con un paciente.</p></div>
       <div class="block"><div class="lbl">Cómo se usa</div>
         <ol class="steps">
-          <li>Abrí el navegador y entrá a <code>http://localhost</code>.</li>
+          <li>Abrí el navegador y entrá a <code>http://192.168.1.115</code> (en la PC del servidor también funciona <code>http://localhost</code>).</li>
           <li>Escribí tu <b>email</b> y tu <b>contraseña</b>.</li>
           <li>Tocá <span class="btn-ui pri">Ingresar →</span>. El sistema te lleva solo a la pantalla que corresponde a tu rol.</li>
         </ol>
@@ -432,7 +432,7 @@ td b{font-weight:650}
         <ol class="steps">
           <li>Tocá el botón flotante de chat, abajo a la derecha.</li>
           <li>Elegí <b>Equipo</b> para hablarle a todos, o el nombre de una persona para un mensaje directo.</li>
-          <li>Escribí y mandá. Los mensajes nuevos aparecen solos cada pocos segundos.</li>
+          <li>Escribí y mandá. Los mensajes nuevos aparecen solos, al instante.</li>
         </ol>
       </div>
     </div>
@@ -577,7 +577,7 @@ td b{font-weight:650}
   </div>
 
   <div class="note inf"><b>Se actualiza sola</b>
-    <p>La bandeja se refresca cada 8 segundos y la conversación abierta cada 10. No hace falta que recargues la página: si entra un mensaje nuevo, aparece solo.</p></div>
+    <p>La bandeja y la conversación abierta se actualizan <b>al instante</b>: cuando entra un mensaje o alguien del equipo toma, responde o resuelve una conversación, lo ves enseguida sin recargar. Si la conexión en tiempo real se corta, la pantalla sigue actualizándose sola cada pocos segundos.</p></div>
 
   <div class="opt">
     <div class="opt-h"><span class="ico">🔔</span><span class="name">Avisos del navegador</span></div>
@@ -1196,9 +1196,9 @@ td b{font-weight:650}
     <div class="ar">→</div>
     <div class="st"><div class="t">2 · Aparece</div><div class="d">Entra en la cola de recepción con su hora de llegada.</div></div>
     <div class="ar">→</div>
-    <div class="st"><div class="t">3 · Check-in</div><div class="d">Se completa el checklist y se cargan las notas.</div></div>
+    <div class="st"><div class="t">3 · Check-in</div><div class="d">Se verifica el checklist de su obra social y práctica, y se cargan las notas.</div></div>
     <div class="ar">→</div>
-    <div class="st"><div class="t">4 · Liberar</div><div class="d">Pasa a la pantalla del médico, lista para ser llamada.</div></div>
+    <div class="st"><div class="t">4 · Presente</div><div class="d">Se da el presente y pasa a la pantalla del médico, lista para ser llamada.</div></div>
   </div>
 
   <div class="opt">
@@ -1210,7 +1210,7 @@ td b{font-weight:650}
         <p>Para saber quién está, hace cuánto y qué le falta. Cuando alguien espera de más, la tarjeta se pone roja: es la señal para priorizarla o ir a explicarle la demora.</p></div>
       <div class="block"><div class="lbl">Cómo se usa</div>
         <ol class="steps">
-          <li>La lista se actualiza sola cada 6 segundos.</li>
+          <li>La lista se actualiza sola, al instante: la paciente que se anuncia en la tablet aparece enseguida en todas las pantallas de recepción.</li>
           <li>Usá <span class="btn-ui">▲</span> y <span class="btn-ui">▼</span> para cambiar el orden de atención.</li>
           <li>Hacé clic en una paciente para abrir su ficha a la derecha.</li>
         </ol>
@@ -1233,22 +1233,28 @@ td b{font-weight:650}
     <div class="opt-h"><span class="ico">✅</span><span class="name">El checklist de recepción</span></div>
     <div class="opt-b">
       <div class="block"><div class="lbl">Qué es</div>
-        <p>La lista de cosas que hay que verificar antes de que la paciente pase: documentación, obra social, consentimientos. Los que tienen <span style="color:var(--urg);font-weight:700">*</span> son obligatorios.</p></div>
+        <p>La lista de cosas que hay que pedirle o verificarle a la paciente antes de que pase: orden, autorización, credencial, consentimientos. <b>Se arma sola según la obra social, el plan y la práctica de su turno</b>, con las reglas que carga la supervisora (ver sección 19). Los que tienen <span style="color:var(--urg);font-weight:700">*</span> son obligatorios, y cada ítem puede traer una nota o una instrucción de qué revisar.</p></div>
       <div class="block"><div class="lbl">Para qué sirve</div>
         <p>Para que no pase nadie a consultorio sin lo que tiene que tener. Evita que el médico descubra a mitad de la consulta que falta una orden.</p></div>
       <div class="block"><div class="lbl">Cómo se usa</div>
         <ol class="steps">
           <li>Abrí la ficha de la paciente haciendo clic en su tarjeta.</li>
-          <li>Tocá cada ítem para tildarlo a medida que lo verificás.</li>
+          <li>Tocá cada ítem para tildarlo a medida que lo verificás. Leé la nota de cada uno: ahí dice, por ejemplo, si hace falta original y copia.</li>
           <li>Escribí lo que haga falta en <b>Nota interna</b> y tocá <span class="btn-ui">Guardar nota</span>.</li>
-          <li>Cuando estén todos los obligatorios, se habilita <span class="btn-ui pri">Liberar a sala →</span>.</li>
+          <li>Tocá <span class="btn-ui pri">Dar presente y liberar a sala →</span>. Si falta algún obligatorio, el sistema te lo muestra y te pide confirmar.</li>
         </ol>
       </div>
     </div>
   </div>
 
-  <div class="note warn"><b>El botón Liberar aparece deshabilitado</b>
-    <p>Es porque falta tildar algún ítem obligatorio del checklist. Pasá el mouse por encima y te lo aclara. No es una falla del sistema.</p></div>
+  <div class="note warn"><b>Si faltan obligatorios</b>
+    <p>La ficha los muestra en rojo. El botón <b>no se bloquea</b>: podés dar el presente igual si hace falta (por ejemplo, la paciente trae la orden la próxima vez), pero queda registrado qué faltó, quién dio el presente y a qué hora.</p></div>
+
+  <div class="note inf"><b>↻ actualizar</b>
+    <p>El checklist se arma cuando la paciente se anuncia en la tablet. Si la supervisora cambió las reglas después, tocá <b>↻ actualizar</b> al lado del título del checklist: se vuelve a armar sin perder lo que ya tildaste.</p></div>
+
+  <div class="note inf"><b>El presente no se marca en Omnia</b>
+    <p>El presente queda registrado en la plataforma, pero todavía <b>no</b> pasa el turno a "recepcionado" en Omnia: la integración con Omnia no permite cambiar el estado de un turno. Si hace falta que figure allá, se sigue marcando a mano en Omnia.</p></div>
 
   <div class="note inf"><b>Resolver sin liberar</b>
     <p>Se usa cuando la persona vino por algo que se resuelve en el mostrador y no pasa a consultorio: retirar un resultado, entregar una orden, hacer una consulta. Sale de la cola sin ir a la pantalla del médico.</p></div>
@@ -1454,6 +1460,27 @@ td b{font-weight:650}
       <tr><td><b>Acceso remoto</b></td><td>Iniciar o detener el túnel que permite entrar al sistema desde fuera de la clínica, y copiar la dirección.</td></tr>
     </tbody>
   </table>
+
+  <div class="opt">
+    <div class="opt-h"><span class="ico">☑️</span><span class="name">Checklist por obra social</span><span class="where">Recepción → Checklist por obra social</span></div>
+    <div class="opt-b">
+      <div class="block"><div class="lbl">Qué es</div>
+        <p>La pantalla donde se define qué le pide recepción a cada paciente. Tiene <b>requisitos</b> (orden médica, autorización previa, credencial, consentimiento…) y <b>reglas</b> que dicen cuándo se pide cada uno: según obra social, plan y práctica, como <b>obligatorio</b>, <b>opcional</b> o <b>no pedir</b>.</p></div>
+      <div class="block"><div class="lbl">Para qué sirve</div>
+        <p>Para que la recepcionista vea en la ficha exactamente lo que corresponde a esa obra social y esa práctica, en vez de una lista fija igual para todos. Un campo vacío en una regla vale para todos, y si dos reglas hablan del mismo requisito gana la más específica: obra social + práctica, después obra social, después práctica, después la general.</p></div>
+      <div class="block"><div class="lbl">Cómo se usa</div>
+        <ol class="steps">
+          <li>En el panel <b>Requisitos</b>, cargá lo que se puede pedir con <span class="btn-ui">+ Nuevo</span>.</li>
+          <li>Tocá <span class="btn-ui pri">+ Nueva regla</span>, elegí el requisito y, de las listas, la obra social y la práctica (o dejalas vacías para "todas").</li>
+          <li>Elegí el modo y, si sirve, una nota para recepción ("original + 1 copia").</li>
+          <li>Revisá el resultado en <b>Probar un caso</b>: muestra lo mismo que va a ver la recepcionista.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="note warn"><b>Usá los nombres de la lista</b>
+    <p>Las obras sociales y prácticas vienen de Omnia con su nombre exacto ("Osde Binario", no "OSDE"). Una regla con un nombre escrito a mano que no coincide no se aplica nunca; la pantalla avisa cuando pasa. Mientras no haya reglas cargadas, recepción sigue con el checklist fijo de siempre.</p></div>
 
   <div class="opt">
     <div class="opt-h"><span class="ico">👥</span><span class="name">Crear o editar un usuario</span><span class="where">Admin → Usuarios</span></div>
