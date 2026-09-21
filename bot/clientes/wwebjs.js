@@ -484,6 +484,14 @@ function crearClienteWwebjs() {
       if (destruido) return;
       destruido = true;
       console.warn('[whatsapp] Desconectado:', reason);
+      // LOGOUT = el servidor revocó el pareo: la sesión en disco ya no sirve.
+      // Sin esto, el apagado siguiente la copiaba al snapshot y el marker
+      // disparaba restauraciones de una sesión muerta (ovo 14/09).
+      if (reason === 'LOGOUT') {
+        listoEnEstaCorrida = false;
+        try { fs.rmSync(MARKER_FILE, { force: true }); } catch (_) {}
+        console.error('[whatsapp] LOGOUT del servidor: pareo revocado — hay que reescanear el QR (snapshot desactivado)');
+      }
       detenerBootTimer();
       detenerWatchdog();
       emitter.emit('disconnected', reason);
@@ -519,7 +527,9 @@ function crearClienteWwebjs() {
     client.initialize().catch(async (err) => {
       if (destruido) return;
       destruido = true;
-      console.error('[whatsapp] Error en initialize:', err.message);
+      // err.message viene vacío en errores minificados de WA Web ("r"): sin el
+      // stack, 7 días de loop (14-21/09) quedaron sin una sola pista.
+      console.error('[whatsapp] Error en initialize:', err?.stack || err?.message || String(err));
       detenerBootTimer();
       detenerWatchdog();
       emitter.emit('disconnected', `initialize:${err.message}`);
