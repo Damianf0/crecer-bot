@@ -47,4 +47,10 @@ return [
         ],
     ],
 
+    // Avisos operativos por mail (watchdog de los bots): canal fuera de banda,
+    // no depende de WhatsApp. Ver comando alerta:mail en routes/console.php.
+    'alertas' => [
+        'mail_to' => env('ALERTA_MAIL_TO', 'damian.orozco@gmail.com'),
+    ],
+
 ];

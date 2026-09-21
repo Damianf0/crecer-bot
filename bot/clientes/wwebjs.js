@@ -172,6 +172,23 @@ function crearClienteWwebjs() {
     return waId && _recentlySent.has(waId);
   }
 
+  // message_create del propio envío puede llegar ANTES de que sendMessage
+  // resuelva y marque el id (visto 21/09: cada aviso del watchdog quedaba
+  // registrado como "saliente externo (celular)"). Mientras haya envíos en
+  // vuelo, se espera a que terminen antes de decidir si el mensaje es nuestro.
+  let _enVuelo = 0;
+  async function esNuestro(waId) {
+    const limite = Date.now() + 20_000;
+    while (!fueEnviadoPorNosotros(waId) && _enVuelo > 0 && Date.now() < limite) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return fueEnviadoPorNosotros(waId);
+  }
+  async function enviarRegistrando(promesa) {
+    _enVuelo++;
+    try { return await promesa; } finally { _enVuelo--; }
+  }
+
   let client = null;
   let ultimaActividad = Date.now();
   let watchdogTimer  = null;
@@ -518,7 +535,7 @@ function crearClienteWwebjs() {
       if (msg.isGroupMsg) return;
       if (msg.to === 'status@broadcast') return;
       const waId = msg.id?._serialized;
-      if (fueEnviadoPorNosotros(waId)) return; // lo mandó el bot por sendText/sendMedia
+      if (await esNuestro(waId)) return; // lo mandó el bot por sendText/sendMedia
       console.log(`[whatsapp] saliente externo (celular) → ${msg.to}`);
       const m = await envolverMensaje(msg);
       if (m) emitter.emit('message_outgoing', m);
@@ -549,7 +566,7 @@ function crearClienteWwebjs() {
     // adentro la búsqueda en su store de Chromium. Si el original ya no está,
     // descarta silenciosamente el quote (el mensaje igual se envía).
     if (opts.quoted?.wa_id) sendOpts.quotedMessageId = opts.quoted.wa_id;
-    const sent = await conTimeout(client.sendMessage(jid, texto, sendOpts), 45_000, 'sendText');
+    const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, texto, sendOpts), 45_000, 'sendText'));
     const waId = sent?.id?._serialized || '';
     marcarEnviado(waId);
     return { wa_id: waId };
@@ -558,7 +575,7 @@ function crearClienteWwebjs() {
   emitter.sendMedia = async (jid, { mimetype, base64, filename, caption }) => {
     const media = new MessageMedia(mimetype, base64, filename || 'archivo');
     const opts = caption ? { caption } : {};
-    const sent = await conTimeout(client.sendMessage(jid, media, opts), 90_000, 'sendMedia');
+    const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, media, opts), 90_000, 'sendMedia'));
     const waId = sent?.id?._serialized || '';
     marcarEnviado(waId);
     return { wa_id: waId };

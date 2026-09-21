@@ -7,9 +7,10 @@
 # (rate-limited a 1 cada 5 min por bot). EXCEPCION: estado "esperando_qr" -- la
 # sesion se perdio y hace falta escanear QR a mano; reiniciar solo regenera el
 # QR en loop (incidente 01/07). En ese caso NO reinicia, solo alerta.
-# Notifica por WhatsApp a Damian al INICIO del incidente sostenido y al
-# recuperarse, indicando el area. Como el bot caido puede ser justamente el
-# emisor, intenta enviar por atencion -> administracion -> ovodonacion.
+# Notifica a Damian por WhatsApp Y por mail al INICIO del incidente sostenido,
+# con recordatorios cada 4 h en horario de clinica mientras siga, y al
+# recuperarse. Como el bot caido puede ser justamente el emisor, el WhatsApp
+# intenta atencion -> administracion -> ovodonacion; el mail no depende de ellos.
 #
 # Historia: hasta 01/07 solo vigilaba atencion (3001) -- por eso el freeze de
 # administracion de junio duro 10 dias sin que nadie se entere.
@@ -39,6 +40,17 @@ $MaxRestartsPorHora = 2
 # reinicia nada (crear al operar a mano; hoy 11:00 el watchdog piso una recuperacion
 # manual dos veces). Borrarlo al terminar.
 $PauseFile = 'C:\crecer\backups\auto\watchdog-pause'
+# Recordatorios (21/09): hasta aca se avisaba UNA sola vez por incidente. Admin
+# estuvo 18 dias caido (03/09) y ovo 7 (14/09) con un unico WhatsApp cada uno,
+# perdido entre los chats. Ahora se repite cada N horas, solo en horario de
+# clinica, mientras el incidente siga abierto.
+$RecordatorioHoras = 4
+$HorarioDesde      = 8    # hora local, inclusive
+$HorarioHasta      = 20   # hora local, exclusive
+# Mail = canal fuera de banda: sale aunque los 3 WhatsApp esten caidos
+# (incidente 14/08). Usa el comando alerta:mail de Laravel (destino en
+# ALERTA_MAIL_TO del app/.env; default damian.orozco@gmail.com).
+$WebCtr = 'crecer-web-1'
 
 $Bots = @(
     @{ Area = 'atencion';       Port = 3001; Ctr = 'crecer-bot-1' },
@@ -80,6 +92,7 @@ function CargarEstado {
             last_restart_at   = if ($prev) { $prev.last_restart_at }   else { $null }
             last_reason       = if ($prev) { $prev.last_reason }       else { $null }
             incident_notified = if ($prev -and $prev.PSObject.Properties.Name -contains 'incident_notified') { [bool]$prev.incident_notified } else { $false }
+            last_notified_at  = if ($prev -and $prev.PSObject.Properties.Name -contains 'last_notified_at') { $prev.last_notified_at } else { $null }
             restart_times     = if ($prev -and $prev.PSObject.Properties.Name -contains 'restart_times') { @($prev.restart_times) } else { @() }
         }
     }
@@ -108,6 +121,41 @@ function NotificarWA {
     }
     Log '[notif] FALLO al notificar por los 3 bots'
     return $false
+}
+
+function NotificarMail {
+    param([string]$asunto, [string]$texto)
+    # Base64: PowerShell 5.1 -> docker exec rompe comillas y acentos en argumentos.
+    $a = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($asunto))
+    $c = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($texto))
+    $out = & docker exec $WebCtr php artisan alerta:mail $a $c 2>&1
+    $code = $LASTEXITCODE
+    if ($code -eq 0) { Log ('[mail] enviado: ' + $asunto); return $true }
+    if ($code -eq 3) { Log '[mail] NO configurado (MAIL_MAILER=log en app/.env): no sale mail'; return $false }
+    Log ('[mail] FALLO (exit ' + $code + '): ' + (($out | Out-String).Trim()))
+    return $false
+}
+
+# Avisa por los dos canales. Cuenta como avisado si salio por AL MENOS uno.
+function Notificar {
+    param([string]$asunto, [string]$texto)
+    $okWA   = NotificarWA $texto
+    $okMail = NotificarMail $asunto $texto
+    return ($okWA -or $okMail)
+}
+
+function Duracion {
+    param([double]$min)
+    if ($min -lt 60)   { return ([int]$min).ToString() + ' min' }
+    if ($min -lt 1440) { return ([int][Math]::Floor($min / 60)).ToString() + ' h ' + ([int]($min % 60)).ToString() + ' min' }
+    $d = [int][Math]::Floor($min / 1440)
+    $h = [int][Math]::Floor(($min % 1440) / 60)
+    return $d.ToString() + ' dias ' + $h.ToString() + ' h'
+}
+
+function EnHorario {
+    param([DateTime]$t)
+    return ($t.Hour -ge $HorarioDesde -and $t.Hour -lt $HorarioHasta)
 }
 
 function DockerCorriendo {
@@ -191,19 +239,20 @@ foreach ($b in $Bots) {
     if ($null -eq $reason) {
         if ($s.incident_start_at) {
             $start = [DateTime]$s.incident_start_at
-            $durMin = [int][Math]::Round(($now - $start).TotalMinutes)
-            $msg = 'Bot ' + $area + ' recuperado. Estuvo en falla ' + $durMin + ' min. Motivo: ' + $s.last_reason + '.'
+            $durMin = ($now - $start).TotalMinutes
+            $msg = 'Bot ' + $area + ' recuperado. Estuvo en falla ' + (Duracion $durMin) + '. Motivo: ' + $s.last_reason + '.'
             Log ('RECUPERADO [' + $area + ']: ' + $msg)
             # Solo notificar la recuperacion si el incidente habia sido notificado
             # (>=10 min). Los blips cortos (reinicio del watchdog interno, ~13s,
             # cazados por mala suerte del muestreo) quedan solo en el log — eran
             # el grueso de las notificaciones molestas del 07-08/07.
             if ($s.incident_notified) {
-                NotificarWA ('Watchdog Crecer: ' + $msg) | Out-Null
+                Notificar ('Crecer: bot ' + $area + ' recuperado') ('Watchdog Crecer: ' + $msg) | Out-Null
             }
             $s.incident_start_at = $null
             $s.last_reason       = $null
             $s.incident_notified = $false
+            $s.last_notified_at  = $null
         }
         $s.last_listo_at = $now.ToString('o')
     } else {
@@ -218,14 +267,28 @@ foreach ($b in $Bots) {
             Log ('INCIDENTE en curso [' + $area + '] (' + $durStr + ' min): ' + $reason)
 
             if ($durMin -ge $IncidenteMin) {
-                # Avisar UNA vez al cruzar el umbral. Solo marcar notificado si el
-                # envio salio de verdad: sin internet los 3 emisores fallan, y asi
-                # el aviso se reintenta cada corrida hasta que vuelva la conectividad.
-                if (-not $s.incident_notified) {
-                    $msg = 'Watchdog Crecer: bot ' + $area + ' en falla hace ' + $durStr + ' min. Motivo: ' + $reason + '.'
+                # Primer aviso al cruzar el umbral. Solo marcar notificado si salio
+                # de verdad por algun canal: sin internet fallan WhatsApp y mail, y
+                # asi el aviso se reintenta cada corrida hasta que vuelva la conectividad.
+                # Despues, recordatorio cada $RecordatorioHoras en horario de clinica
+                # mientras siga abierto (un incidente de 3 AM avisa igual al toque;
+                # los recordatorios esperan a la manana).
+                $esRecordatorio = $false
+                if ($s.incident_notified) {
+                    $ultimo = if ($s.last_notified_at) { [DateTime]$s.last_notified_at } else { [DateTime]::MinValue }
+                    $esRecordatorio = (($now - $ultimo).TotalHours -ge $RecordatorioHoras) -and (EnHorario $now)
+                }
+                if ((-not $s.incident_notified) -or $esRecordatorio) {
+                    $pref = if ($esRecordatorio) { 'RECORDATORIO - ' } else { '' }
+                    $msg = 'Watchdog Crecer: ' + $pref + 'bot ' + $area + ' en falla hace ' + (Duracion $durMin) + '. Motivo: ' + $reason + '.'
                     if ($status -eq 'esperando_qr') { $msg += ' Sesion perdida: hay que escanear QR desde /admin con el celular del area.' }
                     if (-not $internetOk) { $msg += ' Host sin salida a internet: no se reinicia, se espera reconexion.' }
-                    if (NotificarWA $msg) { $s.incident_notified = $true }
+                    if ($esRecordatorio) { $msg += ' (Se repite cada ' + $RecordatorioHoras + ' h, de ' + $HorarioDesde + ' a ' + $HorarioHasta + ', hasta que se resuelva.)' }
+                    $asunto = 'Crecer: ' + $pref + 'bot ' + $area + ' caido hace ' + (Duracion $durMin)
+                    if (Notificar $asunto $msg) {
+                        $s.incident_notified = $true
+                        $s.last_notified_at  = $now.ToString('o')
+                    }
                 }
 
                 # esperando_qr: reiniciar no sirve (regenera el QR en loop) -- solo esperar el escaneo.

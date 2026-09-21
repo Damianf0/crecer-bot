@@ -167,6 +167,7 @@ function crearClienteBaileys() {
 
   // Salientes propios: message_outgoing no debe disparar sobre ellos.
   const enviados = new Map(); // id pelado → ts
+  let enVuelo = 0;            // sendMessage en curso (ver procesar)
   function marcarEnviado(id) {
     const ahora = Date.now();
     enviados.set(id, ahora);
@@ -331,7 +332,15 @@ function crearClienteBaileys() {
     const remoteJid = key.remoteJid;
     if (!remoteJid || !key.id) return;
     if (remoteJid.endsWith('@broadcast') || remoteJid.endsWith('@g.us') || remoteJid.endsWith('@newsletter')) return;
-    if (key.fromMe && enviados.has(key.id)) return;
+    // Baileys emite el upsert del mensaje propio antes de que sendMessage
+    // devuelva el id: mientras haya envíos en vuelo, esperar antes de decidir.
+    if (key.fromMe) {
+      const limite = Date.now() + 20_000;
+      while (!enviados.has(key.id) && enVuelo > 0 && Date.now() < limite) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      if (enviados.has(key.id)) return;
+    }
     if (yaVisto(key.id)) return;
 
     const { tipo, body } = tipoYBody(raw.message);
@@ -377,7 +386,9 @@ function crearClienteBaileys() {
   async function enviar(jid, contenido, opts = {}) {
     exigirConexion();
     const dest = aInterno(jid);
-    const sent = await sock.sendMessage(dest, contenido, opts);
+    enVuelo++;
+    let sent;
+    try { sent = await sock.sendMessage(dest, contenido, opts); } finally { enVuelo--; }
     if (!sent?.key?.id) throw new Error('sendMessage no devolvió key');
     marcarEnviado(sent.key.id);
     guardar(sent.key, sent.message);

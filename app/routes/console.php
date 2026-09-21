@@ -963,3 +963,35 @@ Artisan::command('omnia:catalogo {--dias=120}', function () {
     }
     return 0;
 })->purpose('Actualiza el catálogo de financiadores y prácticas de Omnia para las reglas del checklist de recepción');
+
+/**
+ * Manda un aviso operativo por mail (lo usa el watchdog de los bots). Es el
+ * canal fuera de banda: si los tres WhatsApp están caídos, el aviso por
+ * WhatsApp no tiene por dónde salir, el mail sí.
+ *
+ * El texto viaja en base64 para que PowerShell → docker exec no rompa acentos
+ * ni comillas. Exit: 0 enviado · 1 error de envío · 3 mail sin configurar
+ * (MAIL_MAILER=log/array: "sale" a un archivo, no le llega a nadie).
+ *
+ * Uso: docker exec crecer-web-1 php artisan alerta:mail <asunto_b64> <cuerpo_b64>
+ */
+Artisan::command('alerta:mail {asunto_b64} {cuerpo_b64}', function () {
+    $asunto = base64_decode($this->argument('asunto_b64'), true);
+    $cuerpo = base64_decode($this->argument('cuerpo_b64'), true);
+    if ($asunto === false || $cuerpo === false) { $this->error('asunto/cuerpo no son base64 válidos'); return 1; }
+
+    $para    = config('services.alertas.mail_to');
+    $mailer  = config('mail.default');
+    try {
+        \Illuminate\Support\Facades\Mail::raw($cuerpo, fn ($m) => $m->to($para)->subject($asunto));
+    } catch (\Throwable $e) {
+        $this->error("No se pudo enviar a {$para}: " . $e->getMessage());
+        return 1;
+    }
+    if (in_array($mailer, ['log', 'array'], true)) {
+        $this->warn("Mail sin configurar (MAIL_MAILER={$mailer}): quedó en el log, no le llegó a {$para}.");
+        return 3;
+    }
+    $this->info("Enviado a {$para}");
+    return 0;
+})->purpose('Aviso operativo por mail (watchdog); textos en base64');
