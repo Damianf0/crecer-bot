@@ -8,6 +8,13 @@ class Derivacion extends Model
 {
     protected $table = 'derivaciones';
 
+    // Tiempo real de /v2/recepcion (solapa "Mensajes del bot").
+    protected static function booted(): void
+    {
+        static::saved(fn () => \App\Support\AvisoRecepcion::marcar('bot'));
+        static::deleted(fn () => \App\Support\AvisoRecepcion::marcar('bot'));
+    }
+
     protected $fillable = [
         'contacto',
         'texto',

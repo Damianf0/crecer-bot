@@ -189,6 +189,8 @@ class RecepcionController extends Controller
         foreach (array_values($data['ids']) as $i => $id) {
             ColaAtencion::where('id', (int) $id)->update(['orden' => $i + 1]);
         }
+        // Update por query: no pasa por el hook del modelo, hay que avisar a mano.
+        \App\Support\AvisoRecepcion::marcar('sala');
         return response()->json(['ok' => true]);
     }
 

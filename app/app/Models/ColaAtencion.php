@@ -35,6 +35,15 @@ class ColaAtencion extends Model
         'atendido_at'   => 'datetime',
     ];
 
+    // Tiempo real de /v2/recepcion (solapa sala). Los updates masivos por query
+    // (la alerta de espera que marca RecepcionController::cola) no disparan
+    // esto a propósito: corren en cada polling y generarían un aviso por ciclo.
+    protected static function booted(): void
+    {
+        static::saved(fn () => \App\Support\AvisoRecepcion::marcar('sala'));
+        static::deleted(fn () => \App\Support\AvisoRecepcion::marcar('sala'));
+    }
+
     // ── Helpers ────────────────────────────────────────────
 
     public function getNombreCompletoAttribute(): string

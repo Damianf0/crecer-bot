@@ -92,7 +92,7 @@
     <div class="rec-pane active" id="pane-sala">
         <div class="rec-cols no-ficha" id="cols-sala">
             <div class="rec-list">
-                <div class="rec-list-head">Cola de recepción <span class="cnt" id="cnt-sala">0</span> <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--v2-text-mute);">actualiza cada 6s</span></div>
+                <div class="rec-list-head">Cola de recepción <span class="cnt" id="cnt-sala">0</span> <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--v2-text-mute);">en tiempo real</span></div>
                 <div id="lista-sala"><div class="rec-empty">Cargando…</div></div>
             </div>
             <div class="rec-ficha" id="ficha-sala" style="display:none;"></div>
@@ -203,6 +203,12 @@ async function abrirPac(id) {
 function renderFichaSala(p) {
     $('cols-sala').classList.remove('no-ficha');
     const f = $('ficha-sala'); f.style.display = 'block';
+    // El refresco re-dibuja la ficha entera: sin esto, la nota que se está
+    // escribiendo volvía al valor guardado en cada actualización de la lista.
+    const taPrev = $('nota-pac');
+    const guard = taPrev && f.dataset.pac == p.id
+        ? { v: taPrev.value, focus: document.activeElement === taPrev, s: taPrev.selectionStart } : null;
+    f.dataset.pac = p.id;
     const checklist = p.checklist || [];
     const faltan = checklist.filter(i => i.obligatorio && !i.done).map(i => i.label);
     f.innerHTML = `
@@ -240,6 +246,11 @@ function renderFichaSala(p) {
             <button class="v2-btn primary" onclick="liberar(${p.id})">Dar presente y liberar a sala →</button>
             <button class="v2-btn" onclick="resolverPac(${p.id})">Resolver sin liberar</button>
         </div>`;
+    if (guard) {
+        const ta = $('nota-pac');
+        ta.value = guard.v;
+        if (guard.focus) { ta.focus(); ta.setSelectionRange(guard.s, guard.s); }
+    }
 }
 
 function cerrarFichaSala() {
@@ -401,9 +412,20 @@ async function resolverDeriv(id) {
     cargarBot();
 }
 
-// ── Arranque + polling del tab activo ────────────────────────────────
+// ── Arranque + tiempo real ───────────────────────────────────────────
+// Cada aviso de Reverb dice qué solapa cambió y se re-pide esa (las dos
+// badges quedan al día aunque no sea la activa). El polling queda de
+// respaldo: cada 6 s si el socket no está, cada 60 s si está.
 cargarSala();
 cargarBot();
-setInterval(() => { if (TAB === 'sala') cargarSala(); else cargarBot(); }, 6000);
+const _ult = { sala: Date.now(), bot: Date.now() };
+const recargar = (t) => { _ult[t] = Date.now(); return t === 'sala' ? cargarSala() : cargarBot(); };
+V2Tiempo.canales([['recepcion', 'RecepcionActualizada']], ev => ev.tipo, tipos => {
+    if (tipos.has('sala') || tipos.has(null)) recargar('sala');
+    if (tipos.has('bot')  || tipos.has(null)) recargar('bot');
+});
+setInterval(() => {
+    if (!V2Tiempo.vivo() || Date.now() - _ult[TAB] > 60000) recargar(TAB);
+}, 6000);
 </script>
 @endpush

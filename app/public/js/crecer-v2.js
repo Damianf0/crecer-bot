@@ -1062,39 +1062,44 @@ window.V2Conv = (function () {
     };
 })();
 
-// ── Tiempo real de las colas WA (Reverb) ─────────────────────────────
+// ── Tiempo real por Reverb (colas WA, recepción) ─────────────────────
 // window.Echo lo registra el bundle del chat interno (chat/_widget, incluido en
-// el layout V2) y carga como módulo diferido: hay que esperarlo. Cada aviso
-// trae solo { id, area }; la página decide qué re-pedir. Los avisos seguidos
-// se agrupan (un entrante toca mensaje + conversación, un lote dispara varios).
+// el layout V2) y carga como módulo diferido: hay que esperarlo. Los avisos
+// traen solo una clave (id de conversación, solapa de recepción); la página
+// decide qué re-pedir. Los que llegan seguidos se agrupan en 300 ms, y al
+// reconectar se dispara con la clave null = "resincronizá todo".
 //
-//   V2Tiempo.escuchar(['atencion'], ids => { ... })   // ids: Set de conv ids
+//   V2Tiempo.canales([['wa.area.atencion', 'ConversacionWAActualizada']], ev => ev.id, claves => { ... })
+//   V2Tiempo.escuchar(['atencion'], ids => { ... })   // atajo para las colas WA
 //   V2Tiempo.vivo()   // true si el socket está conectado → polling lento
 window.V2Tiempo = (function () {
     const conn = () => window.Echo?.connector?.pusher?.connection;
+
+    function canales(lista, clave, onCambio) {
+        let pendientes = new Set(), timer = null;
+        const disparar = () => { const c = pendientes; pendientes = new Set(); timer = null; onCambio(c); };
+        const anotar = (k) => { pendientes.add(k); if (!timer) timer = setTimeout(disparar, 300); };
+        let intentos = 0;
+        const suscribir = () => {
+            if (!window.Echo) {
+                if (++intentos < 40) setTimeout(suscribir, 250);   // hasta 10 s
+                else console.warn('[V2Tiempo] Echo no cargó — queda solo el polling');
+                return;
+            }
+            for (const [canal, evento] of lista) {
+                window.Echo.private(canal).listen('.' + evento, ev => anotar(clave(ev)));
+            }
+            // Al reconectar pudimos perder avisos: resincronizar todo.
+            conn()?.bind('connected', () => anotar(null));
+        };
+        suscribir();
+    }
+
     return {
         vivo() { return conn()?.state === 'connected'; },
-
+        canales,
         escuchar(areas, onCambio) {
-            let pendientes = new Set(), timer = null;
-            const disparar = () => { const ids = pendientes; pendientes = new Set(); timer = null; onCambio(ids); };
-            let intentos = 0;
-            const suscribir = () => {
-                if (!window.Echo) {
-                    if (++intentos < 40) setTimeout(suscribir, 250);   // hasta 10 s
-                    else console.warn('[V2Tiempo] Echo no cargó — queda solo el polling');
-                    return;
-                }
-                for (const a of areas) {
-                    window.Echo.private(`wa.area.${a}`).listen('.ConversacionWAActualizada', ev => {
-                        pendientes.add(ev.id);
-                        if (!timer) timer = setTimeout(disparar, 300);
-                    });
-                }
-                // Al reconectar pudimos perder avisos: resincronizar todo.
-                conn()?.bind('connected', () => { pendientes.add(null); if (!timer) timer = setTimeout(disparar, 300); });
-            };
-            suscribir();
+            canales(areas.map(a => [`wa.area.${a}`, 'ConversacionWAActualizada']), ev => ev.id, onCambio);
         },
     };
 })();
