@@ -201,7 +201,18 @@ function sonarPing() {
 state.items = normalizar(@json($itemsData));
 detectarNotifs(state.items);
 renderBandeja();
-setInterval(pollItems, 8000);
-setInterval(() => V2Conv.refrescar(), 10000);
+// Tiempo real: cada aviso de Reverb re-pide la cola y, si la conversación
+// abierta es una de las que cambiaron, también el panel. El polling queda de
+// respaldo: cada 8-10 s si el socket no está, cada 60 s si está.
+const _ult = { cola: Date.now(), panel: Date.now() };
+const colaAhora  = () => { _ult.cola = Date.now(); pollItems(); };
+const panelAhora = () => { _ult.panel = Date.now(); V2Conv.refrescar(); };
+V2Tiempo.escuchar([AREA], ids => {
+    colaAhora();
+    if (V2Conv.panelId && (ids.has(V2Conv.panelId) || ids.has(null))) panelAhora();
+});
+const toca = (k) => !V2Tiempo.vivo() || Date.now() - _ult[k] > 60000;
+setInterval(() => { if (toca('cola'))  colaAhora();  }, 8000);
+setInterval(() => { if (toca('panel')) panelAhora(); }, 10000);
 </script>
 @endpush

@@ -30,6 +30,26 @@ class ConversacionWA extends Model
         'ovodonacion'    => 'Ovodonación',
     ];
 
+    /**
+     * Campos que se ven en la cola: si cambia alguno, se avisa por Reverb.
+     * historial_llm y resumen_intento_at quedan afuera — el bot los reescribe
+     * en cada mensaje y no cambian nada de lo que muestra el panel.
+     */
+    private const CAMPOS_COLA = ['estado', 'no_leidos', 'ultima_actividad', 'urgente',
+                                 'asignada_a', 'area', 'nombre', 'resumen_llm'];
+
+    protected static function booted(): void
+    {
+        static::saved(function (self $c) {
+            if (!$c->wasRecentlyCreated && !$c->wasChanged(self::CAMPOS_COLA)) return;
+            \App\Support\AvisoColaWA::marcar($c->id, $c->area);
+            // Derivada a otra área: también tiene que desaparecer de la cola vieja.
+            if ($c->wasChanged('area') && $c->getOriginal('area')) {
+                \App\Support\AvisoColaWA::marcar($c->id, $c->getOriginal('area'));
+            }
+        });
+    }
+
     /** URL interna del bot que corresponde al área de esta conversación. */
     public function botUrl(): string
     {

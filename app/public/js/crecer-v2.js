@@ -1061,3 +1061,40 @@ window.V2Conv = (function () {
         },
     };
 })();
+
+// ── Tiempo real de las colas WA (Reverb) ─────────────────────────────
+// window.Echo lo registra el bundle del chat interno (chat/_widget, incluido en
+// el layout V2) y carga como módulo diferido: hay que esperarlo. Cada aviso
+// trae solo { id, area }; la página decide qué re-pedir. Los avisos seguidos
+// se agrupan (un entrante toca mensaje + conversación, un lote dispara varios).
+//
+//   V2Tiempo.escuchar(['atencion'], ids => { ... })   // ids: Set de conv ids
+//   V2Tiempo.vivo()   // true si el socket está conectado → polling lento
+window.V2Tiempo = (function () {
+    const conn = () => window.Echo?.connector?.pusher?.connection;
+    return {
+        vivo() { return conn()?.state === 'connected'; },
+
+        escuchar(areas, onCambio) {
+            let pendientes = new Set(), timer = null;
+            const disparar = () => { const ids = pendientes; pendientes = new Set(); timer = null; onCambio(ids); };
+            let intentos = 0;
+            const suscribir = () => {
+                if (!window.Echo) {
+                    if (++intentos < 40) setTimeout(suscribir, 250);   // hasta 10 s
+                    else console.warn('[V2Tiempo] Echo no cargó — queda solo el polling');
+                    return;
+                }
+                for (const a of areas) {
+                    window.Echo.private(`wa.area.${a}`).listen('.ConversacionWAActualizada', ev => {
+                        pendientes.add(ev.id);
+                        if (!timer) timer = setTimeout(disparar, 300);
+                    });
+                }
+                // Al reconectar pudimos perder avisos: resincronizar todo.
+                conn()?.bind('connected', () => { pendientes.add(null); if (!timer) timer = setTimeout(disparar, 300); });
+            };
+            suscribir();
+        },
+    };
+})();

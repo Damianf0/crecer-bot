@@ -13,7 +13,13 @@ import Pusher from 'pusher-js';
 // Las env vars vienen de Vite. .env de Crecer tiene VITE_REVERB_* mapeadas
 // a REVERB_*. Si alguna falta, el constructor de Echo tira en runtime.
 const KEY  = import.meta.env.VITE_REVERB_APP_KEY  as string;
-const HOST = import.meta.env.VITE_REVERB_HOST     as string;
+// Host: el mismo con el que se abrió el panel. VITE_REVERB_HOST=localhost
+// quedaba compilado en el bundle y desde cualquier PC que no fuera el server
+// el socket apuntaba a la propia PC — el tiempo real del chat interno solo
+// andaba en el server (19/05 → 21/09). Un valor explícito distinto de
+// localhost en .env sigue mandando.
+const HOST_ENV = (import.meta.env.VITE_REVERB_HOST as string) || '';
+const HOST = HOST_ENV && HOST_ENV !== 'localhost' ? HOST_ENV : window.location.hostname;
 const PORT = Number(import.meta.env.VITE_REVERB_PORT) || 8080;
 const TLS  = import.meta.env.VITE_REVERB_SCHEME === 'https';
 

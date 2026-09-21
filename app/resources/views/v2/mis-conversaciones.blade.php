@@ -113,7 +113,18 @@ async function fetchItems() {
 }
 
 renderBandeja();
-setInterval(async () => { await fetchItems(); renderBandeja(); }, 8000);
-setInterval(() => V2Conv.refrescar(), 10000);
+// Tiempo real (mismo esquema que /v2/atencion): mis conversaciones pueden ser
+// de cualquier área, así que escucha las tres. Polling de respaldo: 8-10 s sin
+// socket, 60 s con socket.
+const _ult = { cola: Date.now(), panel: Date.now() };
+const colaAhora  = async () => { _ult.cola = Date.now(); await fetchItems(); renderBandeja(); };
+const panelAhora = () => { _ult.panel = Date.now(); V2Conv.refrescar(); };
+V2Tiempo.escuchar(@json(array_keys(\App\Models\ConversacionWA::AREAS)), ids => {
+    colaAhora();
+    if (V2Conv.panelId && (ids.has(V2Conv.panelId) || ids.has(null))) panelAhora();
+});
+const toca = (k) => !V2Tiempo.vivo() || Date.now() - _ult[k] > 60000;
+setInterval(() => { if (toca('cola'))  colaAhora();  }, 8000);
+setInterval(() => { if (toca('panel')) panelAhora(); }, 10000);
 </script>
 @endpush

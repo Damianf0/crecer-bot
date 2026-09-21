@@ -19,6 +19,16 @@ class MensajeWA extends Model
         'leido' => 'boolean',
     ];
 
+    // Mensaje nuevo (entrante, respuesta del panel o saliente del celular):
+    // aviso por Reverb a la cola del área. Ver App\Support\AvisoColaWA.
+    protected static function booted(): void
+    {
+        static::created(function (self $m) {
+            $area = ConversacionWA::whereKey($m->conversacion_id)->value('area');
+            \App\Support\AvisoColaWA::marcar($m->conversacion_id, $area);
+        });
+    }
+
     public function conversacion(): BelongsTo
     {
         return $this->belongsTo(ConversacionWA::class, 'conversacion_id');

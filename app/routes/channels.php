@@ -8,6 +8,12 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });
 
+// Colas de WhatsApp: aviso de "cambió la conversación {id}" por área (evento
+// ConversacionWAActualizada). Mismo permiso que las rutas /atencion/*.
+Broadcast::channel('wa.area.{area}', function ($user, $area) {
+    return isset(\App\Models\ConversacionWA::AREAS[$area]) && $user->hasPermiso('atencion');
+});
+
 // Canal privado del chat interno: solo los miembros del canal pueden subscribir.
 // Usado por React+Echo para escuchar ChatMensajeEnviado y ChatMensajeEliminado.
 // La auth corre en cada conexión nueva; devolver array no-vacío = autorizado.
