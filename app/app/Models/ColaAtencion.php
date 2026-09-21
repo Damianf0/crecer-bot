@@ -10,15 +10,19 @@ class ColaAtencion extends Model
     protected $table = 'cola_atencion';
 
     protected $fillable = [
-        'dni', 'nombre', 'apellido', 'obra_social', 'plan',
-        'omnia_turno_id', 'profesional', 'practica', 'turno_hora',
+        'dni', 'nombre', 'apellido', 'obra_social', 'plan', 'financiador',
+        'omnia_turno_id', 'profesional', 'practica', 'practicas', 'turno_hora',
         'planta', 'consultorio', 'motivo', 'primera_vez', 'sin_turno', 'derivado_bot',
         'estado', 'orden', 'alerta_espera', 'checklist', 'nota',
         'hora_llegada', 'hora_llamado', 'hora_liberado',
         'llamado_consultorio_at', 'atendido_at',
+        'presente_at', 'presente_por', 'presente_faltantes',
     ];
 
     protected $casts = [
+        'practicas'          => 'array',
+        'presente_at'        => 'datetime',
+        'presente_faltantes' => 'array',
         'primera_vez'   => 'boolean',
         'sin_turno'     => 'boolean',
         'derivado_bot'  => 'boolean',

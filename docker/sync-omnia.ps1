@@ -63,6 +63,14 @@ if ($syncExit -ne 0) {
     Log "AVISO: hubo días que Omnia rechazó — ver 'Días que Omnia rechazó' arriba."
 }
 
+# Catálogo de financiadores y prácticas para las reglas del checklist de
+# recepción (/v2/recepcion/reglas). Últimos 30 días alcanza para sumar lo nuevo:
+# el comando nunca borra lo que ya estaba.
+$cat = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan omnia:catalogo --dias=30 2>&1"
+$catExit = $LASTEXITCODE
+$cat | ForEach-Object { Log "  catálogo: $_" }
+if ($catExit -ne 0) { Log "AVISO: el catálogo quedó incompleto (Omnia rechazó algún tramo); se completa mañana." }
+
 # Rotación de log si pasa de 1 MB
 if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -gt 1MB) {
     Move-Item $LogFile "$LogFile.old" -Force

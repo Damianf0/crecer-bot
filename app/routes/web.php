@@ -108,6 +108,19 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/no-leidos',                     [ChatController::class, 'noLeidos']);
     });
 
+    // Checklist de recepción: requisitos y reglas por obra social / práctica.
+    // Lo gestionan supervisora y admin (permiso 'admin').
+    Route::middleware('permiso:admin')->group(function () {
+        $rr = \App\Http\Controllers\RecepcionReglasController::class;
+        Route::get('/v2/recepcion/reglas',                         [$rr, 'index']);
+        Route::get('/v2/recepcion/reglas/data',                    [$rr, 'data']);
+        Route::get('/v2/recepcion/reglas/probar',                  [$rr, 'probar']);
+        Route::post('/v2/recepcion/reglas/requisito',              [$rr, 'guardarRequisito']);
+        Route::post('/v2/recepcion/reglas/requisito/{id}/borrar',  [$rr, 'borrarRequisito'])->whereNumber('id');
+        Route::post('/v2/recepcion/reglas/regla',                  [$rr, 'guardarRegla']);
+        Route::post('/v2/recepcion/reglas/regla/{id}/borrar',      [$rr, 'borrarRegla'])->whereNumber('id');
+    });
+
     // Cola de recepción
     Route::middleware('permiso:secretaria')->group(function () {
         // Fase 4: páginas Livewire V1 retiradas — redirects para bookmarks viejos.
@@ -126,6 +139,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/v2/recepcion/cola/{id}/checklist',  [$rc, 'toggleChecklist'])->whereNumber('id');
         Route::post('/v2/recepcion/cola/{id}/nota',       [$rc, 'notaPaciente'])->whereNumber('id');
         Route::post('/v2/recepcion/cola/{id}/liberar',    [$rc, 'liberar'])->whereNumber('id');
+        Route::post('/v2/recepcion/cola/{id}/recalcular', [$rc, 'recalcularChecklist'])->whereNumber('id');
         Route::post('/v2/recepcion/cola/{id}/resolver',   [$rc, 'resolverPaciente'])->whereNumber('id');
         // Cola del bot (ColaBot / derivaciones)
         Route::get('/v2/recepcion/bot',                   [$rc, 'bot']);

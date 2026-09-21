@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Models\ColaAtencion;
 use App\Models\Contacto;
+use App\Services\ChecklistRecepcion;
 use App\Services\OmniaService;
 use Livewire\Component;
 
@@ -88,21 +89,33 @@ class Tablet extends Component
         $turno = $this->turnoSeleccionado ?? ($this->turnos[0] ?? null);
         $this->planta = $turno['planta'] ?? 'baja';
 
+        // El checklist va con el financiador DEL TURNO (puede ser Particular aunque
+        // el paciente tenga obra social). Si Omnia no responde, el de la ficha.
+        $delTurno = !empty($turno['id']) ? app(OmniaService::class)->financiadorDelTurno($turno['id']) : null;
+        $financiador = $delTurno['financiador'] ?? $this->paciente['financiador'] ?? $this->paciente['obra_social'] ?? null;
+        $plan        = $delTurno['plan'] ?? $this->paciente['plan'] ?? null;
+
         ColaAtencion::create([
             'dni'          => $this->dni,
             'nombre'       => $this->paciente['nombre'],
             'apellido'     => $this->paciente['apellido'],
             'obra_social'  => $this->paciente['obra_social'] ?? null,
-            'plan'         => $this->paciente['plan'] ?? null,
+            'plan'         => $plan,
+            'financiador'  => $financiador,
             'omnia_turno_id' => $turno['id'] ?? null,
             'profesional'  => $turno['profesional'] ?? null,
             'practica'     => $turno['practica'] ?? null,
+            'practicas'    => $turno['practicas'] ?? array_filter([$turno['practica'] ?? null]),
             'turno_hora'   => $turno['hora'] ?? null,
             'planta'       => $this->planta,
             'motivo'       => 'turno',
             'primera_vez'  => $this->paciente['primera_vez'] ?? false,
             'sin_turno'    => false,
-            'checklist'    => ColaAtencion::checklistDefault(),
+            'checklist'    => ChecklistRecepcion::para(
+                $financiador,
+                $plan,
+                $turno['practicas'] ?? array_filter([$turno['practica'] ?? null]),
+            ),
             'hora_llegada' => now(),
             'orden'        => ColaAtencion::max('orden') + 1,
         ]);
@@ -123,11 +136,16 @@ class Tablet extends Component
             'apellido'    => $this->paciente['apellido'],
             'obra_social' => $this->paciente['obra_social'] ?? null,
             'plan'        => $this->paciente['plan'] ?? null,
+            'financiador' => $this->paciente['financiador'] ?? null,
             'planta'      => null,
             'motivo'      => $this->motivo,
             'primera_vez' => $this->paciente['primera_vez'] ?? false,
             'sin_turno'   => true,
-            'checklist'   => ColaAtencion::checklistDefault(),
+            // Sin turno no hay práctica: aplican las reglas generales y las de su obra social.
+            'checklist'   => ChecklistRecepcion::para(
+                $this->paciente['financiador'] ?? $this->paciente['obra_social'] ?? null,
+                $this->paciente['plan'] ?? null,
+            ),
             'nota'        => $this->motivoDescripcion ?: null,
             'hora_llegada' => now(),
             'orden'       => ColaAtencion::max('orden') + 1,

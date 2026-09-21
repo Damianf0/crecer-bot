@@ -911,3 +911,55 @@ Artisan::command('conversaciones:archivar-inactivas {--dias=7} {--area=} {--appl
     $this->line("Rollback: php artisan conversaciones:archivar-inactivas --revertir={$path}");
     return 0;
 })->purpose('Archiva conversaciones activas sin actividad hace N dias (default 7) en todas las areas; dry-run sin --apply');
+
+/**
+ * Catálogo de financiadores y prácticas tal como los nombra Omnia, para que las
+ * reglas del checklist de recepción se carguen eligiendo de una lista y
+ * matcheen letra por letra contra lo que trae el tablet.
+ *
+ * Fuente: reporte ambulatorio en tramos de 7 días (los rangos largos dan 502 al
+ * azar; un tramo que falla se saltea y se informa). Idempotente: suma el
+ * conteo de turnos de la ventana y actualiza visto_at; nunca borra.
+ *
+ * Uso: docker exec crecer-web-1 php artisan omnia:catalogo            (últimos 120 días)
+ *      docker exec crecer-web-1 php artisan omnia:catalogo --dias=30
+ */
+Artisan::command('omnia:catalogo {--dias=120}', function () {
+    $svc   = app(\App\Services\OmniaService::class);
+    $dias  = max(1, (int) $this->option('dias'));
+    $cuentas = ['financiador' => [], 'practica' => []];
+    $fallidos = [];
+
+    for ($ini = now()->subDays($dias)->startOfDay(); $ini->lte(now()); $ini->addDays(7)) {
+        $fin = $ini->copy()->addDays(6)->endOfDay();
+        $turnos = $svc->reporteAmbulatorio($ini->timestamp, min($fin->timestamp, now()->endOfDay()->timestamp));
+        if (!is_array($turnos)) { $fallidos[] = $ini->format('d/m'); continue; }
+        foreach ($turnos as $t) {
+            if (($t['Estado'] ?? '') === 'cancelado') continue;
+            if ($f = trim($t['FinanciadorDelTurno'] ?? '')) $cuentas['financiador'][$f] = ($cuentas['financiador'][$f] ?? 0) + 1;
+            // "Prácticas" junta las del turno con ", " (el endpoint del tablet las da como lista).
+            foreach (preg_split('/,\s+/', (string) ($t['Prácticas'] ?? '')) as $p) {
+                if ($p = trim($p)) $cuentas['practica'][$p] = ($cuentas['practica'][$p] ?? 0) + 1;
+            }
+        }
+    }
+
+    $nuevos = 0;
+    foreach ($cuentas as $tipo => $nombres) {
+        foreach ($nombres as $nombre => $n) {
+            $c = \App\Models\OmniaCatalogo::firstOrNew(['tipo' => $tipo, 'nombre' => mb_substr($nombre, 0, 191)]);
+            if (!$c->exists) $nuevos++;
+            $c->turnos = $n;
+            $c->visto_at = now();
+            $c->save();
+        }
+    }
+
+    $this->info(sprintf('Financiadores: %d · prácticas: %d · nuevos en el catálogo: %d',
+        count($cuentas['financiador']), count($cuentas['practica']), $nuevos));
+    if ($fallidos) {
+        $this->warn('Tramos que Omnia rechazó (se reintentan en la próxima corrida): ' . implode(', ', $fallidos));
+        return 1;
+    }
+    return 0;
+})->purpose('Actualiza el catálogo de financiadores y prácticas de Omnia para las reglas del checklist de recepción');

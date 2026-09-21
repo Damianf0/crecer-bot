@@ -104,6 +104,11 @@
             <a class="v2-nav-item {{ $navActiva === 'recepcion' ? 'active' : '' }}" href="/v2/recepcion">
                 <span class="ico">🪑</span><span class="lbl">Recepción</span>
             </a>
+            @if($u->hasPermiso('admin'))
+            <a class="v2-nav-item {{ $navActiva === 'recepcion-reglas' ? 'active' : '' }}" href="/v2/recepcion/reglas">
+                <span class="ico">☑️</span><span class="lbl">Checklist por obra social</span>
+            </a>
+            @endif
             @endif
 
             @if($u && $u->hasPermiso('medico'))

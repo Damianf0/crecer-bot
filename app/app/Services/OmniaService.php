@@ -261,6 +261,45 @@ class OmniaService
         return is_array($data) ? $data : null;
     }
 
+    /**
+     * Financiador y plan con los que se dio ESTE turno. Puede no ser la obra
+     * social de la ficha del paciente (ej: paciente con OSFATLYF que vino como
+     * Particular), y es lo que manda para el checklist de recepción.
+     *
+     * appointments/pending no lo trae; el reporte ambulatorio sí. Se pide el del
+     * día una vez cada 10 min (cache) con timeout corto: es el camino del
+     * tablet y no puede colgarlo. Un turno que no está en el cache (se dio
+     * después) fuerza un refresco, uno solo. null = no se pudo saber.
+     *
+     * @return array{financiador:?string, plan:?string}|null
+     */
+    public function financiadorDelTurno(int|string $turnoId): ?array
+    {
+        $clave = 'omnia.financiador_turnos.' . now('America/Argentina/Buenos_Aires')->format('Ymd');
+        $armar = function () {
+            $tz = 'America/Argentina/Buenos_Aires';
+            $r = $this->reporteAmbulatorio(now($tz)->startOfDay()->timestamp, now($tz)->endOfDay()->timestamp, 8);
+            if (!is_array($r)) return null;
+            $mapa = [];
+            foreach ($r as $t) {
+                if (!isset($t['Id'])) continue;
+                $mapa[(string) $t['Id']] = [
+                    'financiador' => trim($t['FinanciadorDelTurno'] ?? '') ?: null,
+                    'plan'        => trim($t['PlanDelFinanciador'] ?? '') ?: null,
+                ];
+            }
+            return $mapa;
+        };
+
+        $mapa = Cache::get($clave);
+        if (!is_array($mapa) || !isset($mapa[(string) $turnoId])) {
+            $mapa = $armar();
+            if (!is_array($mapa)) return null;   // Omnia no respondió: no cachear el fallo
+            Cache::put($clave, $mapa, 600);
+        }
+        return $mapa[(string) $turnoId] ?? null;
+    }
+
     // ── API pública ───────────────────────────────────────────
 
     /**
@@ -290,6 +329,9 @@ class OmniaService
                           ?? $data['healthcareProviderName']
                           ?? null,
             'plan'        => $data['healthcareProviderPlan'] ?? null,
+            // Nombre completo, igual que FinanciadorDelTurno del reporte: es contra
+            // lo que matchean las reglas del checklist ("OSDE" no matchea "Osde Binario").
+            'financiador' => $data['healthcareProviderName'] ?? null,
             'primera_vez' => false,   // Omnia no expone este flag
         ];
     }
@@ -427,6 +469,8 @@ class OmniaService
                 'id'          => $t['id'],
                 'hora'        => $hora,
                 'practica'    => $practica,
+                // Todas: un turno puede traer varias y el checklist se arma con cualquiera.
+                'practicas'   => array_values(array_map('strval', (array) ($t['practices'] ?? []))),
                 'profesional' => $profesional,
                 'estado'      => $t['state'] ?? 'pendiente',
                 'planta'      => $planta,

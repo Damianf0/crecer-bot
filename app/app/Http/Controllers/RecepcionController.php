@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ColaAtencion;
+use App\Services\ChecklistRecepcion;
 use App\Models\Derivacion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,6 +43,7 @@ class RecepcionController extends Controller
             'dni'            => $p->dni,
             'obra_social'    => $p->obra_social,
             'plan'           => $p->plan,
+            'financiador'    => $p->financiador,
             'practica'       => $p->practica,
             'profesional'    => $p->profesional,
             'turno_hora'     => $p->turno_hora ? substr($p->turno_hora, 0, 5) : null,
@@ -59,6 +61,7 @@ class RecepcionController extends Controller
             'nota'           => $p->nota,
             'hora_llegada'   => $p->hora_llegada?->format('H:i'),
             'hora_llamado'   => $p->hora_llamado?->format('H:i'),
+            'presente_at'    => $p->presente_at?->format('H:i'),
         ];
     }
 
@@ -99,7 +102,7 @@ class RecepcionController extends Controller
             $cambios['hora_llamado'] = now();
         }
         if (empty($p->checklist)) {
-            $cambios['checklist'] = ColaAtencion::checklistDefault();
+            $cambios['checklist'] = ChecklistRecepcion::paraPaciente($p);
         }
         if ($cambios) $p->update($cambios);
 
@@ -112,7 +115,7 @@ class RecepcionController extends Controller
         $data = $r->validate(['item_id' => 'required|string|max:50']);
         $p = ColaAtencion::findOrFail($id);
 
-        $checklist = $p->checklist ?: ColaAtencion::checklistDefault();
+        $checklist = $p->checklist ?: ChecklistRecepcion::paraPaciente($p);
         foreach ($checklist as &$item) {
             if ($item['id'] === $data['item_id']) {
                 $item['done'] = !$item['done'];
@@ -132,15 +135,44 @@ class RecepcionController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    /** Libera a sala: valida checklist obligatorio → estado liberado + hora_liberado. */
+    /**
+     * Da el presente y libera a sala. Los obligatorios sin tildar NO frenan
+     * (decisión 21/09: solo se avisa): el front pide confirmación y acá quedan
+     * registrados en presente_faltantes, con quién y cuándo dio el presente.
+     * El presente es solo local: la API de Omnia no permite pasar el turno a
+     * "recepcionado" (única escritura disponible: cancelar).
+     */
     public function liberar(int $id): JsonResponse
     {
         $p = ColaAtencion::findOrFail($id);
-        if (!$p->checklistCompleto()) {
-            return response()->json(['ok' => false, 'error' => 'Completá los ítems obligatorios primero'], 422);
-        }
-        $p->update(['estado' => 'liberado', 'hora_liberado' => now()]);
-        return response()->json(['ok' => true]);
+        $faltantes = collect($p->checklist ?? [])
+            ->filter(fn ($i) => !empty($i['obligatorio']) && empty($i['done']))
+            ->pluck('label')->values()->all();
+
+        $p->update([
+            'estado'             => 'liberado',
+            'hora_liberado'      => now(),
+            'presente_at'        => $p->presente_at ?? now(),
+            'presente_por'       => $p->presente_por ?? auth()->id(),
+            'presente_faltantes' => $faltantes ?: null,
+        ]);
+        return response()->json(['ok' => true, 'faltantes' => $faltantes]);
+    }
+
+    /**
+     * Vuelve a armar el checklist con las reglas vigentes (por si se cargaron
+     * o cambiaron después de que el paciente llegó). Conserva lo ya tildado.
+     */
+    public function recalcularChecklist(int $id): JsonResponse
+    {
+        $p = ColaAtencion::findOrFail($id);
+        $hechos = collect($p->checklist ?? [])->filter(fn ($i) => !empty($i['done']))->pluck('id')->all();
+        $nuevo = array_map(function ($i) use ($hechos) {
+            $i['done'] = in_array($i['id'], $hechos, true);
+            return $i;
+        }, ChecklistRecepcion::paraPaciente($p));
+        $p->update(['checklist' => $nuevo]);
+        return response()->json(['ok' => true, 'paciente' => $this->mapPaciente($p->fresh())]);
     }
 
     /** Resuelve sin liberar (gestión pura, no pasa a sala). */

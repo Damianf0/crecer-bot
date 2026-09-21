@@ -66,6 +66,11 @@
 .rec-check.done .box { background: var(--v2-ok); border-color: var(--v2-ok); }
 .rec-check.done .lbl { text-decoration: line-through; color: var(--v2-text-mute); }
 .rec-check .oblig { color: var(--v2-urg); font-weight: 700; }
+.rec-check-nota { display: block; font-size: 11px; color: var(--v2-text-2); margin-top: 2px; text-decoration: none; }
+.rec-check-nota.mute { color: var(--v2-text-mute); }
+.rec-faltan { font-size: 12px; color: var(--v2-urg); background: var(--v2-urg-bg); border-radius: var(--v2-radius-sm); padding: 7px 10px; margin-top: 4px; }
+.rec-recalc { margin-left: auto; background: none; border: none; color: var(--v2-text-mute); font-size: 11px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.rec-recalc:hover { color: var(--v2-accent); }
 .rec-msg { background: var(--v2-bg-app); border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); padding: 10px 12px; font-size: 13px; max-height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
 .rec-ta { width: 100%; padding: 9px 11px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-bg-app); color: var(--v2-text); font-size: 13px; font-family: inherit; min-height: 70px; resize: vertical; }
 .rec-ta:focus { outline: none; border-color: var(--v2-accent); }
@@ -199,14 +204,14 @@ function renderFichaSala(p) {
     $('cols-sala').classList.remove('no-ficha');
     const f = $('ficha-sala'); f.style.display = 'block';
     const checklist = p.checklist || [];
-    const completo = checklist.filter(i => i.obligatorio).every(i => i.done);
+    const faltan = checklist.filter(i => i.obligatorio && !i.done).map(i => i.label);
     f.innerHTML = `
         <div class="rec-ficha-head">
             <div class="rec-ficha-title"><div class="n">${esc(p.nombre)}</div><div class="s">DNI ${esc(p.dni || '—')}</div></div>
             <button class="rec-ficha-close" onclick="cerrarFichaSala()">✕</button>
         </div>
         <div class="rec-grid">
-            <div><div class="k">Obra social</div><div class="v">${esc(p.obra_social || '—')}</div></div>
+            <div><div class="k">Obra social</div><div class="v">${esc(p.financiador || p.obra_social || '—')}</div></div>
             <div><div class="k">Plan</div><div class="v">${esc(p.plan || '—')}</div></div>
             <div><div class="k">Práctica</div><div class="v">${esc(p.practica || '—')}</div></div>
             <div><div class="k">Profesional</div><div class="v">${esc(p.profesional || '—')}</div></div>
@@ -215,12 +220,16 @@ function renderFichaSala(p) {
         </div>
         ${p.flags.length ? `<div class="rec-flags">${p.flags.map(fl=>`<span class="rec-flag ${fl.color}">${fl.icon} ${esc(fl.label)}</span>`).join('')}</div>` : ''}
 
-        <div class="rec-sub">Checklist de recepción</div>
+        <div class="rec-sub" style="display:flex;align-items:center;">Checklist de recepción
+            <button class="rec-recalc" onclick="recalcularCheck(${p.id})" title="Volver a armarlo con las reglas vigentes (conserva lo tildado)">↻ actualizar</button></div>
         ${checklist.length ? checklist.map(it => `
             <div class="rec-check ${it.done?'done':''}" onclick="toggleCheck(${p.id}, '${esc(it.id)}')">
                 <div class="box">${it.done?'✓':''}</div>
-                <span class="lbl">${esc(it.label)}${it.obligatorio?' <span class="oblig">*</span>':''}</span>
-            </div>`).join('') : '<div class="rec-empty" style="padding:10px;">Sin checklist.</div>'}
+                <div><span class="lbl">${esc(it.label)}${it.obligatorio?' <span class="oblig">*</span>':''}</span>
+                    ${it.nota ? `<span class="rec-check-nota">${esc(it.nota)}</span>` : ''}
+                    ${it.instruccion ? `<span class="rec-check-nota mute">${esc(it.instruccion)}</span>` : ''}</div>
+            </div>`).join('') : '<div class="rec-empty" style="padding:10px;">No hay nada que pedirle para esta obra social y práctica.</div>'}
+        ${faltan.length ? `<div class="rec-faltan">Faltan ${faltan.length} obligatorio${faltan.length>1?'s':''}: ${faltan.map(esc).join(', ')}</div>` : ''}
 
         <div class="rec-sub">Nota interna</div>
         <textarea class="rec-ta" id="nota-pac" placeholder="Observaciones de recepción…">${esc(p.nota || '')}</textarea>
@@ -228,7 +237,7 @@ function renderFichaSala(p) {
             <button class="v2-btn" onclick="guardarNotaPac(${p.id})">Guardar nota</button>
         </div>
         <div class="rec-actions">
-            <button class="v2-btn primary" onclick="liberar(${p.id})" ${completo?'':'disabled title="Faltan ítems obligatorios"'}>Liberar a sala →</button>
+            <button class="v2-btn primary" onclick="liberar(${p.id})">Dar presente y liberar a sala →</button>
             <button class="v2-btn" onclick="resolverPac(${p.id})">Resolver sin liberar</button>
         </div>`;
 }
@@ -260,6 +269,15 @@ async function toggleCheck(id, itemId) {
     if (p) { p.checklist = j.checklist; renderFichaSala(p); }
 }
 
+async function recalcularCheck(id) {
+    const j = await postJSON(`/v2/recepcion/cola/${id}/recalcular`);
+    if (!j.ok) { v2toast(j._err || 'Error', 'err'); return; }
+    const i = SALA.findIndex(x => x.id === id);
+    if (i >= 0) SALA[i] = j.paciente;
+    renderFichaSala(j.paciente);
+    v2toast('Checklist actualizado', 'ok');
+}
+
 async function guardarNotaPac(id) {
     const nota = $('nota-pac').value;
     const j = await postJSON(`/v2/recepcion/cola/${id}/nota`, { nota });
@@ -268,10 +286,15 @@ async function guardarNotaPac(id) {
     v2toast('Nota guardada', 'ok');
 }
 
+// Los obligatorios sin tildar no bloquean (decisión 21/09): se avisa y, si
+// confirma, quedan registrados en el presente.
 async function liberar(id) {
+    const p = SALA.find(x => x.id === id);
+    const faltan = (p?.checklist || []).filter(i => i.obligatorio && !i.done).map(i => '• ' + i.label);
+    if (faltan.length && !confirm(`Faltan requisitos obligatorios:\n\n${faltan.join('\n')}\n\n¿Dar el presente igual? Queda registrado lo que faltó.`)) return;
     const j = await postJSON(`/v2/recepcion/cola/${id}/liberar`);
     if (!j.ok) { v2toast(j._err || 'No se pudo liberar', 'err'); return; }
-    v2toast('Paciente liberada a sala', 'ok');
+    v2toast(j.faltantes?.length ? 'Presente dado (con faltantes registrados)' : 'Presente dado — paciente liberada a sala', 'ok');
     cerrarFichaSala();
     cargarSala();
 }
