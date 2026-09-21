@@ -1,7 +1,7 @@
 // Interfaz unificada del cliente de WhatsApp. Aísla al resto del bot del
-// wrapper concreto (hoy: solo whatsapp-web.js — Baileys se abandonó el
-// 2026-06-16 y su wrapper se eliminó el 2026-07-06; historia en git y en
-// project_migracion_baileys.md).
+// wrapper concreto, elegido por BOT_WA_CLIENT en el compose: 'wwebjs'
+// (default, los 3 bots productivos) o 'baileys' (v7, en prueba como shadow
+// desde 21/09 — el wrapper 6.7 se abandonó el 16/06, ver clientes/baileys.js).
 //
 // Contrato que cumple el wrapper:
 //
@@ -56,8 +56,13 @@ function asegurarShape(msg) {
 
 function crearCliente() {
   const tipo = (process.env.BOT_WA_CLIENT || 'wwebjs').trim().toLowerCase();
+  if (tipo === 'baileys') {
+    const { crearClienteBaileys } = require('./clientes/baileys');
+    console.log('[cliente-wa] Backend: baileys v7');
+    return crearClienteBaileys();
+  }
   if (tipo !== 'wwebjs') {
-    console.warn(`[cliente-wa] BOT_WA_CLIENT="${tipo}" ya no está soportado (Baileys eliminado 2026-07-06) — usando 'wwebjs'`);
+    console.warn(`[cliente-wa] BOT_WA_CLIENT="${tipo}" no reconocido — usando 'wwebjs'`);
   }
   const { crearClienteWwebjs } = require('./clientes/wwebjs');
   console.log('[cliente-wa] Backend: wwebjs');

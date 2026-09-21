@@ -227,8 +227,34 @@ services:
     networks:
       - clinica-net
 
-  # (bot-test, el shadow de Baileys, se eliminó el 2026-07-06 junto con el
-  #  wrapper bot/clientes/baileys.js — Baileys quedó abandonado el 2026-06-16.)
+  # Shadow de Baileys v7 (21/09): se vincula como un dispositivo MÁS del número
+  # de administración, sin desvincular wwebjs. BOT_AREA=test → no escribe en la
+  # BD ni deriva ni llama a Ollama; /enviar sí manda de verdad (es la prueba).
+  # Fuera del `up -d` normal: docker compose --profile baileys up -d bot-baileys-test
+  # QR: http://127.0.0.1:3009/qr?token=<BOT_INGRESS_TOKEN>
+  bot-baileys-test:
+    build: ./docker/node
+    restart: unless-stopped
+    profiles: ["baileys"]
+    volumes:
+      - ./bot:/app
+      - wa-baileys-test:/app/.baileys_auth
+    ports:
+      - "3009:3009"
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+      - BOT_AREA=test
+      - BOT_WA_CLIENT=baileys
+      - PORT=3009
+      - BOT_PUBLIC_URL=http://192.168.1.115:3009
+    healthcheck:
+      test: ["CMD-SHELL", "sh /app/healthcheck.sh"]
+      interval: 30s
+      timeout: 12s
+      retries: 4
+      start_period: 60s
+    networks:
+      - clinica-net
 
   # Watchdog EXTERNO de containers. El watchdog interno de cada bot vive en el
   # mismo proceso Node: si el event loop se congela (cuelgue CDP/Chromium), se
@@ -301,6 +327,7 @@ volumes:
   wa-session:                  # sesión WhatsApp del bot de ATENCIÓN (wwebjs)
   wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
   wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs)
+  wa-baileys-test:             # sesión Baileys v7 del shadow (bot-baileys-test)
 
 networks:
   clinica-net:

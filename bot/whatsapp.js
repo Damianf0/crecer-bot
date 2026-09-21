@@ -9,6 +9,7 @@ const { setStatus, setQR, setPhone } = require('./estado-bot');
 const { recibirMensaje } = require('./mensajes');
 const { guardarMensajeEntrante, guardarMensajeSalienteExterno } = require('./mensajesApi');
 const { registrarCliente } = require('./server');
+const { BOT_AREA } = require('./area');
 
 let _cliente = null; // para el apagado limpio desde index.js (SIGTERM)
 
@@ -37,6 +38,12 @@ async function iniciarWhatsApp() {
   });
 
   cliente.on('message', async (msg) => {
+    // Shadow sobre un número productivo: el bot real ya clasifica y deriva
+    // estos mensajes; acá solo interesa ver que entran.
+    if (BOT_AREA === 'test') {
+      console.log(`[shadow] entrante ${msg.from}${msg.numero ? ` (${msg.numero})` : ''} ${msg.type} ${msg.wa_id}: ${(msg.body || '').slice(0, 60)}`);
+      return;
+    }
     try {
       // Guardar en inbox primero (no bloqueante)
       guardarMensajeEntrante(msg).catch(e => console.error('[mensajesApi] Error guardando:', e.message));
