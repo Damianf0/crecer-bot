@@ -346,6 +346,39 @@ foreach ($b in $Bots) {
 
 GuardarEstado $state
 
+# 4) Version de WhatsApp Web pineada (una vez por dia, en horario). El 22/09 la
+#    version del 29/06 ya habia vencido: el QR aparecia pero no vinculaba, y
+#    atencion solo seguia andando porque no se habia reiniciado. wppconnect
+#    saca de su lista las versiones que WhatsApp deja de aceptar: si una de las
+#    nuestras no esta, avisar antes de que un reinicio deje un bot sin sesion.
+$VersionStateFile = 'C:\crecer\backups\auto\watchdog-version.json'
+$ultimoChequeo = $null
+if (Test-Path $VersionStateFile) {
+    try { $ultimoChequeo = [DateTime]((Get-Content $VersionStateFile -Raw | ConvertFrom-Json).checked_at) } catch { }
+}
+if ((EnHorario $now) -and ((-not $ultimoChequeo) -or (($now - $ultimoChequeo).TotalHours -ge 24))) {
+    try {
+        $lista = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/versions.json' -TimeoutSec 20
+        $vigentes = @($lista.versions | ForEach-Object { $_.version })
+        $usadas = @()
+        $def = Select-String -Path 'C:\crecer\bot\clientes\wwebjs.js' -Pattern "WA_WEB_VERSION \|\| '([^']+)'" | Select-Object -First 1
+        if ($def) { $usadas += $def.Matches[0].Groups[1].Value }
+        Select-String -Path 'C:\crecer\docker-compose.yml' -Pattern '^\s*-\s*WA_WEB_VERSION=(\S+)' | ForEach-Object { $usadas += $_.Matches[0].Groups[1].Value }
+        $usadas = @($usadas | Select-Object -Unique)
+        $vencidas = @($usadas | Where-Object { $vigentes -notcontains $_ })
+        if ($vigentes.Count -gt 50 -and $vencidas.Count -gt 0) {
+            $msg = 'Watchdog Crecer: la version de WhatsApp Web ' + ($vencidas -join ', ') + ' ya no esta vigente (actual: ' + $lista.currentVersion + '). Los bots conectados siguen andando, pero al reiniciarse o re-escanear el QR pueden quedar sin sesion. Actualizar WA_WEB_VERSION (bajar el HTML a bot/.wwebjs_cache) y reiniciar en un momento controlado.'
+            Log ('VERSION VENCIDA: ' + ($vencidas -join ', ') + ' (vigente: ' + $lista.currentVersion + ')')
+            Notificar ('Crecer: version de WhatsApp Web vencida') $msg | Out-Null
+        } else {
+            Log ('Version WhatsApp Web OK: ' + ($usadas -join ', ') + ' vigente(s)')
+        }
+        @{ checked_at = $now.ToString('o') } | ConvertTo-Json | Out-File -FilePath $VersionStateFile -Encoding utf8 -Force
+    } catch {
+        Log ('Chequeo de version de WhatsApp Web fallo (se reintenta en la proxima corrida): ' + $_.Exception.Message)
+    }
+}
+
 # Rotar log si pasa 1 MB
 if ((Test-Path $LogFile) -and (Get-Item $LogFile).Length -gt 1MB) {
     Move-Item $LogFile ($LogFile + '.old') -Force

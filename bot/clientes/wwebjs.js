@@ -425,7 +425,11 @@ function crearClienteWwebjs() {
       // Para cambiar de versión: bajar el HTML primero →
       //   curl -sL -o bot/.wwebjs_cache/<VER>.html https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/<VER>.html
       // y después setear WA_WEB_VERSION=<VER> (o cambiar el default acá).
-      webVersion: process.env.WA_WEB_VERSION || '2.3000.1042292006-alpha',
+      // 22/09: la del 29/06 (2.3000.1042292006-alpha) venció — WhatsApp dejó de
+      // aceptar vinculaciones nuevas con ella (QR que no vincula / LOGOUT al
+      // escanear). Las versiones duran ~3 meses: el watchdog avisa cuando la
+      // pineada sale de la lista vigente de wa-version.
+      webVersion: process.env.WA_WEB_VERSION || '2.3000.1048136787-alpha',
       webVersionCache: {
         type: 'local',
         path: path.join(__dirname, '..', '.wwebjs_cache'),
@@ -513,6 +517,20 @@ function crearClienteWwebjs() {
       detenerWatchdog();
       emitter.emit('disconnected', reason);
       try { await client.destroy(); } catch (_) {}
+      // Con la sesión revocada en disco, el próximo initialize no llega nunca a
+      // QR: se queda en "auth timeout" para siempre (ovo 14/09 y 22/09). Con
+      // Chromium ya cerrado, se borra la sesión (y el snapshot, que es la misma
+      // sesión muerta) para que el reinicio muestre un QR limpio.
+      if (reason === 'LOGOUT') {
+        try {
+          fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+          fs.rmSync(SNAP_DIR, { recursive: true, force: true });
+          console.warn('[whatsapp] LOGOUT: sesión revocada borrada — el próximo arranque muestra QR nuevo');
+        } catch (e) {
+          console.error('[whatsapp] LOGOUT: no se pudo borrar la sesión revocada:', e.message);
+        }
+        reintentosSeguidos = 0; // QR nuevo cuanto antes, sin backoff
+      }
       const espera = delayReintento();
       console.log(`[whatsapp] Reiniciando en ${Math.round(espera / 1000)} segundos...`);
       programarReinicio(espera);
