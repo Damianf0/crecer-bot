@@ -74,15 +74,16 @@ class EstadisticasController extends Controller
             // la conv no amerita resumen (charla corta) — antes eso se contaba
             // como "sin resumen/falló" e inflaba el número (365 de 743 eran
             // saltos deliberados). Acá se separa re-evaluando ameritaResumen()
-            // en SQL sobre las no-resueltas.
+            // en SQL sobre las no-resueltas — tiene que ser LA MISMA regla que
+            // ConversacionWA::ameritaResumen() (desde el 23/09 sin el atajo de
+            // asignada/no_leidos, que la volvía verdadera para todas).
             $split = \DB::selectOne("
                 SELECT
                   SUM(CASE WHEN amerita THEN 1 ELSE 0 END) AS fallaron,
                   SUM(CASE WHEN amerita THEN 0 ELSE 1 END) AS no_ameritan
                 FROM (
                   SELECT c.id,
-                    (c.asignada_a IS NOT NULL OR c.no_leidos > 0
-                     OR (SELECT COUNT(*) FROM mensajes_wa m WHERE m.conversacion_id = c.id AND m.direccion = 'entrante') >= 3
+                    ((SELECT COUNT(*) FROM mensajes_wa m WHERE m.conversacion_id = c.id AND m.direccion = 'entrante') >= 3
                      OR EXISTS (SELECT 1 FROM mensajes_wa m WHERE m.conversacion_id = c.id AND m.direccion = 'entrante' AND CHAR_LENGTH(m.contenido) > 80)
                      OR EXISTS (SELECT 1 FROM mensajes_wa m WHERE m.conversacion_id = c.id AND m.direccion = 'entrante' AND m.tipo IN ('audio','imagen','documento','video'))
                     ) AS amerita

@@ -88,23 +88,29 @@ class ConversacionWA extends Model
      * Filtramos "ruido" (saludos sueltos, "ok/gracias") para no desperdiciar Ollama:
      *   - Tiene ≥3 mensajes entrantes del paciente, O
      *   - Tiene un mensaje entrante con >80 caracteres (sustancioso), O
-     *   - Está derivada a humano (asignada_a o no_leidos > 0), O
      *   - Tiene un mensaje entrante con audio/imagen/documento (siempre necesita contexto).
+     *
+     * Hasta el 23/09 también alcanzaba con estar en la cola (asignada_a o
+     * no_leidos > 0), pero mensajeEntrante suma no_leidos justo antes de
+     * preguntar: el filtro no filtraba nada. El 96% de los "fallos" eran chats de
+     * 1-2 mensajes cortos ("¿Me enviarían más detalles?") donde el modelo
+     * devuelve {} porque no hay qué resumir; la cola ya muestra ese mensaje tal cual.
      *
      * 1 query barata. Devuelve false rápido si ya hay resumen.
      */
     public function ameritaResumen(): bool
     {
         if (!empty($this->resumen_llm)) return false;
-        if ($this->asignada_a || $this->no_leidos > 0) return true;
 
+        // CHAR_LENGTH cuenta caracteres en MySQL (LENGTH, bytes); SQLite (tests) solo tiene LENGTH, que ahí cuenta caracteres.
+        $largo = $this->getConnection()->getDriverName() === 'sqlite' ? 'LENGTH' : 'CHAR_LENGTH';
         $stats = MensajeWA::where('conversacion_id', $this->id)
             ->where('direccion', 'entrante')
-            ->selectRaw('
+            ->selectRaw("
                 COUNT(*) as total,
-                SUM(CASE WHEN CHAR_LENGTH(contenido) > 80 THEN 1 ELSE 0 END) as largos,
-                SUM(CASE WHEN tipo IN ("audio","imagen","documento","video") THEN 1 ELSE 0 END) as media
-            ')
+                SUM(CASE WHEN {$largo}(contenido) > 80 THEN 1 ELSE 0 END) as largos,
+                SUM(CASE WHEN tipo IN ('audio','imagen','documento','video') THEN 1 ELSE 0 END) as media
+            ")
             ->first();
 
         return ($stats->total ?? 0) >= 3
