@@ -38,7 +38,10 @@ return new class extends Migration
                 ]);
             });
 
+        // El índice primero: MySQL lo arrastra solo al borrar la columna, SQLite
+        // (tests) no y rechaza el drop.
         Schema::table('procedimientos', function (Blueprint $table) {
+            $table->dropIndex(['codigo_bot']);
             $table->dropColumn('codigo_bot');
         });
     }

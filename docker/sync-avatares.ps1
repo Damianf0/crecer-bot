@@ -1,4 +1,4 @@
-# Sincronización semanal de fotos de perfil de WhatsApp — Crecer
+﻿# Sincronización semanal de fotos de perfil de WhatsApp — Crecer
 # Refresca avatares de contactos con wa_id resuelto que tengan TTL vencido (7 días por default).
 #
 # Programado en Windows (correr como admin):
@@ -20,7 +20,9 @@ $tmpErr = [System.IO.Path]::GetTempFileName()
 # --limit=500: tope duro por corrida (delta workbench 16/07: getProfilePicUrl es un
 # evaluate en la pagina de Chromium; sin tope, un backlog grande martilla el bot
 # durante horas — la misma leccion que MapearWA post-bombardeo CDP).
-$out = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan contactos:sync-avatares --limit=500 2>$tmpErr"
+# -u www-data: corriendo como root, los avatares y el log del día quedaban con
+# dueño root y la web no podía reescribirlos (23/09: 6.254 avatares de root).
+$out = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan contactos:sync-avatares --limit=500 2>$tmpErr"
 $out | ForEach-Object { Log $_ }
 
 $err = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue

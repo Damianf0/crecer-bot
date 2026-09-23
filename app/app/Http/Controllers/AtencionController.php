@@ -1292,31 +1292,37 @@ class AtencionController extends Controller
             'tipo'            => $tipo,
             'contenido'       => $caption ?: $nombre,
             'archivo_url'     => $archivoUrl,
+            // Como en los textos: sin wa_id el archivo no se puede citar.
+            'wa_id'           => $resp->json('wa_id'),
             'usuario_id'      => Auth::id(),
             'leido'           => true,
         ]);
         $conv->update(['ultima_actividad' => now()]);
 
-        // Auto-indexar al legajo del paciente. Storage::path resuelve al disk
-        // default (storage/app/private/...) — el path hardcodeado anterior
-        // (app/public/...) no existía y el indexado de salientes nunca corría.
-        try {
-            $contacto = \App\Models\Contacto::buscarPorContacto($conv->contacto);
-            $srcAbs   = \Illuminate\Support\Facades\Storage::path('public/wa-media/' . $localName);
-            if (file_exists($srcAbs)) {
-                \App\Services\LegajoStorage::indexar($srcAbs, [
-                    'contacto_id'     => $contacto?->id,
-                    'conversacion_id' => $conv->id,
-                    'mensaje_id'      => $msg->id,
-                    'direccion'       => 'saliente',
-                    'usuario_id'      => Auth::id(),
-                    'mime'            => $mime,
-                    'nombre_original' => $nombre,
-                ]);
+        // Auto-indexar al legajo del paciente, después de responder: el OCR de
+        // un PDF escaneado (hasta 10 páginas de tesseract) dejaba a la secretaria
+        // esperando la confirmación del envío. Storage::path resuelve al disk
+        // default (storage/app/private/...).
+        $userId = Auth::id();
+        \Illuminate\Support\defer(function () use ($conv, $msg, $localName, $mime, $nombre, $userId) {
+            try {
+                $contacto = \App\Models\Contacto::buscarPorContacto($conv->contacto);
+                $srcAbs   = \Illuminate\Support\Facades\Storage::path('public/wa-media/' . $localName);
+                if (file_exists($srcAbs)) {
+                    \App\Services\LegajoStorage::indexar($srcAbs, [
+                        'contacto_id'     => $contacto?->id,
+                        'conversacion_id' => $conv->id,
+                        'mensaje_id'      => $msg->id,
+                        'direccion'       => 'saliente',
+                        'usuario_id'      => $userId,
+                        'mime'            => $mime,
+                        'nombre_original' => $nombre,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('Legajo indexar saliente fallo', ['msg' => $msg->id, 'err' => $e->getMessage()]);
             }
-        } catch (\Exception $e) {
-            \Log::warning('Legajo indexar saliente fallo', ['msg' => $msg->id, 'err' => $e->getMessage()]);
-        }
+        });
 
         return response()->json(['ok' => true]);
     }

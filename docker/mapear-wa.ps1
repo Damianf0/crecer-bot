@@ -1,4 +1,4 @@
-# Sincronización diaria del wa_id de contactos sin resolver — Crecer
+﻿# Sincronización diaria del wa_id de contactos sin resolver — Crecer
 # Resuelve el JID real (@c.us o @lid) llamando al bot por cada teléfono
 # normalizado. Se corre antes que sync-avatares para que esa tarea pueda
 # tomar los avatares de los recién resueltos.
@@ -23,7 +23,9 @@ $tmpErr = [System.IO.Path]::GetTempFileName()
 # si hay backlog grande, y abortar si el bot atención está colgado (evita el
 # círculo vicioso del 19/05 donde el mapeo bombardeaba el bot y lo colgaba).
 # Si quedan pendientes, los toma la corrida del día siguiente.
-$out = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan contactos:mapear-wa --limit=300 --max-errors=10 2>$tmpErr"
+# -u www-data: como root, los archivos que cree artisan (log del día, etc.)
+# quedan inescribibles para la web (incidente 23/09).
+$out = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan contactos:mapear-wa --limit=300 --max-errors=10 2>$tmpErr"
 $out | ForEach-Object { Log $_ }
 
 $err = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue

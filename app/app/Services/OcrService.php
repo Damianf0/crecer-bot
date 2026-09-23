@@ -38,14 +38,11 @@ class OcrService
     private static function desdePdf(string $pdf): ?string
     {
         // 1) pdftotext — extrae texto embebido. Si es PDF nativo, sale al toque.
-        $tmpTxt = tempnam(sys_get_temp_dir(), 'pdftxt_') . '.txt';
-        $cmd = sprintf('pdftotext -layout %s %s 2>&1', escapeshellarg($pdf), escapeshellarg($tmpTxt));
+        // Salida "-" = stdout: sin archivo temporal (el tempnam() de antes dejaba
+        // un huérfano en /tmp por cada PDF).
+        $cmd = sprintf('pdftotext -layout %s - 2>/dev/null', escapeshellarg($pdf));
         @exec($cmd, $out, $rc);
-        $texto = '';
-        if ($rc === 0 && file_exists($tmpTxt)) {
-            $texto = (string) @file_get_contents($tmpTxt);
-            @unlink($tmpTxt);
-        }
+        $texto = $rc === 0 ? implode("\n", $out) : '';
         if (mb_strlen(trim($texto)) >= 50) {
             return self::truncar($texto);
         }

@@ -58,10 +58,16 @@ return [
             'ignore_exceptions' => false,
         ],
 
+        // permission 0666: el log del día lo crea el primero que escribe. Si es
+        // un `docker exec ... artisan` (corre como root), sin esto el archivo
+        // queda root 0644 y web + queue-worker (www-data) ya no pueden escribir:
+        // cada Log::warning tira excepción. Pasó 13/07→23/09: 111 resúmenes
+        // fallidos y 84 mensajes entrantes perdidos (el 500 caía antes de guardar).
         'single' => [
             'driver' => 'single',
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
+            'permission' => 0666,
             'replace_placeholders' => true,
         ],
 
@@ -70,6 +76,7 @@ return [
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
+            'permission' => 0666,
             'replace_placeholders' => true,
         ],
 

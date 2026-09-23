@@ -202,16 +202,19 @@ class Contacto extends Model
      * Marca avatar_actualizado_at incluso si NO obtiene foto (privacidad / sin foto)
      * para evitar reintentar antes del TTL.
      *
+     * $botUrl: el bot a consultar. Conviene el del área que recibió el mensaje
+     * (es la cuenta que tiene el chat); sin él, el de atención.
+     *
      * Devuelve true si descargó imagen nueva, false si no.
      */
-    public static function sincronizarAvatar(self $contacto): bool
+    public static function sincronizarAvatar(self $contacto, ?string $botUrl = null): bool
     {
         if (!$contacto->wa_id) return false;
 
         try {
             $r = Http::timeout(15)
                 ->withToken(config('app.bot_ingress_token'))
-                ->post(config('app.bot_url') . '/profile-pic', ['jid' => $contacto->wa_id]);
+                ->post(rtrim($botUrl ?: config('app.bot_url'), '/') . '/profile-pic', ['jid' => $contacto->wa_id]);
 
             if (!$r->ok() || !$r->json('ok')) {
                 // Bot caído u otro error — no actualizamos timestamp para reintentar pronto.

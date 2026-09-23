@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
  * mostrar, así que acá se concentra todo el riesgo de XSS de la feature.
  *
  * Unitario puro: sin base de datos ni bootstrap de Laravel.
- * Correr con: docker exec crecer-web-1 php artisan test --filter=HtmlSeguro
+ * Correr con: docker exec -u www-data crecer-web-1 php artisan test --filter=HtmlSeguro
  */
 class HtmlSeguroTest extends TestCase
 {

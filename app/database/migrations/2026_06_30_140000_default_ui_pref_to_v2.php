@@ -18,12 +18,17 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement("ALTER TABLE users ALTER COLUMN ui_pref SET DEFAULT 'v2'");
+        // SQLite (tests) no tiene ALTER COLUMN; ahí el default da igual.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE users ALTER COLUMN ui_pref SET DEFAULT 'v2'");
+        }
         DB::table('users')->where('ui_pref', 'v1')->update(['ui_pref' => 'v2']);
     }
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE users ALTER COLUMN ui_pref SET DEFAULT 'v1'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE users ALTER COLUMN ui_pref SET DEFAULT 'v1'");
+        }
     }
 };

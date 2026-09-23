@@ -29,9 +29,12 @@ function Log($msg) {
 
 Log "=== Inicio sync-omnia ==="
 
+# -u www-data en TODOS los artisan: como root, el primer warning del día crea
+# el log de Laravel con dueño root y la web ya no puede escribirlo (23/09).
+#
 # Sonda previa: si Omnia no responde no tiene sentido seguir, y queremos que el
 # motivo quede escrito (credenciales vencidas, ambiente caído, red).
-$status = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan omnia:status 2>&1"
+$status = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan omnia:status 2>&1"
 $statusOk = ($LASTEXITCODE -eq 0)
 $status | ForEach-Object { Log "  $_" }
 
@@ -49,7 +52,7 @@ $hasta = (Get-Date).AddDays(60).ToString('yyyy-MM-dd')
 Log "Ventana: $desde → $hasta"
 
 $tmpErr = [System.IO.Path]::GetTempFileName()
-$out = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan contactos:sync-omnia --desde=$desde --hasta=$hasta --apply --muestra=0 2>$tmpErr"
+$out = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan contactos:sync-omnia --desde=$desde --hasta=$hasta --apply --muestra=0 2>$tmpErr"
 $syncExit = $LASTEXITCODE
 $out | ForEach-Object { Log $_ }
 
@@ -66,7 +69,7 @@ if ($syncExit -ne 0) {
 # Catálogo de financiadores y prácticas para las reglas del checklist de
 # recepción (/v2/recepcion/reglas). Últimos 30 días alcanza para sumar lo nuevo:
 # el comando nunca borra lo que ya estaba.
-$cat = cmd /c "docker exec crecer-web-1 php //var/www/html/artisan omnia:catalogo --dias=30 2>&1"
+$cat = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan omnia:catalogo --dias=30 2>&1"
 $catExit = $LASTEXITCODE
 $cat | ForEach-Object { Log "  catálogo: $_" }
 if ($catExit -ne 0) { Log "AVISO: el catálogo quedó incompleto (Omnia rechazó algún tramo); se completa mañana." }

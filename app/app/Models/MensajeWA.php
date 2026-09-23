@@ -40,6 +40,16 @@ class MensajeWA extends Model
     }
 
     /**
+     * Sin id de WhatsApp = NULL, nunca ''. El bot devuelve '' cuando sendMessage
+     * no trae id, y 12 salientes quedaron con wa_id vacío: para el dedup y para
+     * responder citando, '' parecía un id compartido por mensajes distintos.
+     */
+    public function setWaIdAttribute(?string $value): void
+    {
+        $this->attributes['wa_id'] = ($value === null || trim($value) === '') ? null : $value;
+    }
+
+    /**
      * Reescribe archivo_url al leer: las URLs históricas apuntan al /media
      * público del bot (http://IP:300X/media/...) o al storage público de
      * Laravel (asset('storage/wa-media/...')). Ambas pasan a servirse con auth

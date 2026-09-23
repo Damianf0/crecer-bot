@@ -41,13 +41,18 @@ return new class extends Migration {
             $table->index(['direccion']);
         });
 
-        // Índice FULLTEXT para búsqueda en texto OCR (MySQL/InnoDB)
-        DB::statement('ALTER TABLE documentos_paciente ADD FULLTEXT idx_ocr_search (texto_ocr, nombre_original, notas)');
+        // Índice FULLTEXT para búsqueda en texto OCR (MySQL/InnoDB). Solo MySQL:
+        // los tests levantan el esquema en SQLite.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE documentos_paciente ADD FULLTEXT idx_ocr_search (texto_ocr, nombre_original, notas)');
+        }
     }
 
     public function down(): void
     {
-        DB::statement('ALTER TABLE documentos_paciente DROP INDEX idx_ocr_search');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE documentos_paciente DROP INDEX idx_ocr_search');
+        }
         Schema::dropIfExists('documentos_paciente');
     }
 };

@@ -15,6 +15,13 @@ use Illuminate\Support\Facades\Log;
  *
  * Regla para todo el que lo use: si el broadcast falla se loguea y listo. La
  * escritura ya está en la BD y los paneles tienen polling de respaldo.
+ *
+ * Se registra dos veces a propósito. Como defer(): corre apenas sale la
+ * respuesta y ANTES del trabajo diferido lento que se haya anotado después
+ * (OCR y avatar de un entrante, Omnia del tablet), así el panel se entera del
+ * mensaje en el acto. Como terminating(): Laravel lo corre después de todos
+ * los defer(), y levanta lo que se haya encolado durante esa fase (un defer
+ * anotado ahí ya no se ejecuta).
  */
 class AvisoDiferido
 {
@@ -31,6 +38,7 @@ class AvisoDiferido
         self::$pendientes[$clave] = $avisar;
         if (!self::$registrado) {
             self::$registrado = true;
+            \Illuminate\Support\defer(fn () => self::vaciar())->always();
             app()->terminating(fn () => self::vaciar());
         }
     }

@@ -8,7 +8,10 @@ use App\Models\Derivacion;
 use App\Models\MensajeWA;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+
+use function Illuminate\Support\defer;
 
 class BotController extends Controller
 {
@@ -237,16 +240,9 @@ class BotController extends Controller
         // diario `contactos:mapear-wa` (con --limit). El primer mensaje queda
         // con contacto_id=null hasta que el cron lo resuelva (24h máximo).
         $contacto = Contacto::buscarPorContacto($data['contacto']);
-        if ($contacto) {
-            // Si la conv todavía no tiene nombre, poblarlo desde el directorio.
-            if (!$conv->nombre) {
-                $conv->update(['nombre' => $contacto->nombre]);
-            }
-            // Si el contacto matcheó pero no tiene avatar (o expiró), agendar sync.
-            // No bloqueante: lo intentamos inline pero con timeout corto via el helper.
-            if (!$esBackfill && $contacto->avatarNecesitaSync()) {
-                Contacto::sincronizarAvatar($contacto);
-            }
+        // Si la conv todavía no tiene nombre, poblarlo desde el directorio.
+        if ($contacto && !$conv->nombre) {
+            $conv->update(['nombre' => $contacto->nombre]);
         }
 
         $msg = new MensajeWA([
@@ -268,27 +264,6 @@ class BotController extends Controller
         }
         $msg->save();
 
-        // Auto-indexar al legajo si trae archivo. Las URLs del bot tienen forma
-        // http://.../media/<filename>; el archivo está en /bot-media (bind mount RO).
-        if (!empty($data['archivo_url']) && in_array($data['tipo'], ['imagen', 'documento', 'audio', 'video'], true)) {
-            $filename = basename(parse_url($data['archivo_url'], PHP_URL_PATH) ?? '');
-            $srcAbs   = '/bot-media/' . $filename;
-            if ($filename && file_exists($srcAbs)) {
-                try {
-                    \App\Services\LegajoStorage::indexar($srcAbs, [
-                        'contacto_id'     => $contacto?->id,
-                        'conversacion_id' => $conv->id,
-                        'mensaje_id'      => $msg->id,
-                        'direccion'       => 'entrante',
-                        'mime'            => mime_content_type($srcAbs) ?: 'application/octet-stream',
-                        'nombre_original' => $filename,
-                    ]);
-                } catch (\Exception $e) {
-                    \Log::warning('Legajo indexar entrante fallo', ['msg' => $msg->id, 'err' => $e->getMessage()]);
-                }
-            }
-        }
-
         $conv->update([
             'ultima_actividad' => now(),
             'no_leidos'        => $conv->no_leidos + 1,
@@ -301,7 +276,63 @@ class BotController extends Controller
         // no bloquea esta request. ameritaResumen filtra saludos sueltos y "ok/gracias".
         $conv->refresh()->despacharResumenSiAmerita();
 
+        $this->despuesDeResponder($data, $area, $esBackfill, $contacto, $conv->id, $msg->id);
+
         return response()->json(['ok' => true], 201);
+    }
+
+    /**
+     * Lo lento de un entrante corre después de contestarle al bot (defer():
+     * PHP-FPM ya mandó el 201): indexar el adjunto al legajo (con OCR de imagen
+     * o PDF, hasta 10 páginas de tesseract) y refrescar la foto de perfil.
+     *
+     * Antes era inline y el avatar iba ANTES de guardar el mensaje: /profile-pic
+     * (15 s) + descarga (20 s) contra un bot lento pasaban los 8 s del bot, que
+     * reintentaba y terminaba dándolo por PERDIDO (84 entre 13/07 y 13/08; el
+     * log de root convertía el warning del timeout en un 500).
+     */
+    private function despuesDeResponder(array $data, string $area, bool $esBackfill, ?Contacto $contacto, int $convId, int $msgId): void
+    {
+        $adjunto = null;
+        if (!empty($data['archivo_url']) && in_array($data['tipo'], ['imagen', 'documento', 'audio', 'video'], true)) {
+            // Las URLs del bot tienen forma http://.../media/<filename>; el archivo
+            // está en /bot-media (bind mount RO).
+            $filename = basename(parse_url($data['archivo_url'], PHP_URL_PATH) ?? '');
+            if ($filename && file_exists('/bot-media/' . $filename)) $adjunto = $filename;
+        }
+
+        // Backfill: N mensajes seguidos = N calls CDP al bot (incidente 19/05).
+        // Cache::add deduplica la ráfaga de un mismo contacto (cada mensaje veía
+        // el avatar todavía vencido y pedía la foto otra vez).
+        $avatar = $contacto && !$esBackfill && $contacto->avatarNecesitaSync()
+            && Cache::add("avatar-sync:{$contacto->id}", 1, 600);
+
+        if (!$adjunto && !$avatar) return;
+
+        defer(function () use ($adjunto, $avatar, $area, $contacto, $convId, $msgId) {
+            if ($adjunto) {
+                $srcAbs = '/bot-media/' . $adjunto;
+                try {
+                    \App\Services\LegajoStorage::indexar($srcAbs, [
+                        'contacto_id'     => $contacto?->id,
+                        'conversacion_id' => $convId,
+                        'mensaje_id'      => $msgId,
+                        'direccion'       => 'entrante',
+                        'mime'            => mime_content_type($srcAbs) ?: 'application/octet-stream',
+                        'nombre_original' => $adjunto,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning('Legajo indexar entrante fallo', ['msg' => $msgId, 'err' => $e->getMessage()]);
+                }
+            }
+            if ($avatar) {
+                try {
+                    Contacto::sincronizarAvatar($contacto, ConversacionWA::botUrlPara($area));
+                } catch (\Throwable) {
+                    // sincronizarAvatar ya loguea; el próximo mensaje vuelve a intentar.
+                }
+            }
+        });
     }
 
     /**
