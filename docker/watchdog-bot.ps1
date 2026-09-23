@@ -3,6 +3,9 @@
 #   1. Que Docker Desktop este corriendo (si no, lo levanta).
 #   2. Que CADA bot (atencion 3001, administracion 3002, ovodonacion 3003)
 #      responda HTTP en /status y este "listo".
+#   3. Una vez por dia, que la version pineada de WhatsApp Web siga vigente.
+#   4. Una vez por hora en horario, que los mensajes entren a la base y enteros
+#      (artisan salud:ingesta): un bot "listo" puede estar sordo.
 # Si un bot esta caido sostenido (>10 min), hace docker restart de SU container
 # (rate-limited a 1 cada 5 min por bot). EXCEPCION: estado "esperando_qr" -- la
 # sesion se perdio y hace falta escanear QR a mano; reiniciar solo regenera el
@@ -65,7 +68,8 @@ New-Item -ItemType Directory -Path (Split-Path $LogFile) -Force | Out-Null
 function Log {
     param([string]$msg)
     $line = '[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '] ' + $msg
-    Add-Content -Path $LogFile -Value $line
+    # UTF8: las alertas de ingesta traen acentos (sin esto quedan en ANSI).
+    Add-Content -Path $LogFile -Value $line -Encoding UTF8
 }
 
 # Estado por area: { last_listo_at, incident_start_at, last_restart_at, last_reason, incident_notified }
@@ -108,11 +112,13 @@ function NotificarWA {
     param([string]$texto)
     # El bot caido puede ser el mismo por el que notificamos: probar los 3 en orden.
     $emisores = @('http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003')
-    $body = @{ contacto = $NotifyToJid; texto = $texto } | ConvertTo-Json
-    $headers = @{ 'Authorization' = 'Bearer ' + $BotIngressToken; 'Content-Type' = 'application/json' }
+    # Bytes UTF-8: con un string, PowerShell 5.1 manda el cuerpo en Latin-1 y los
+    # acentos llegaban al WhatsApp como "Atenci?n" (visto 23/09).
+    $body = [System.Text.Encoding]::UTF8.GetBytes((@{ contacto = $NotifyToJid; texto = $texto } | ConvertTo-Json))
+    $headers = @{ 'Authorization' = 'Bearer ' + $BotIngressToken }
     foreach ($base in $emisores) {
         try {
-            $r = Invoke-RestMethod -Uri ($base + '/enviar') -Method POST -Headers $headers -Body $body -TimeoutSec 10
+            $r = Invoke-RestMethod -Uri ($base + '/enviar') -Method POST -Headers $headers -ContentType 'application/json; charset=utf-8' -Body $body -TimeoutSec 10
             Log ('[notif] enviado via ' + $base + ': ' + $texto)
             return $true
         } catch {
@@ -128,7 +134,8 @@ function NotificarMail {
     # Base64: PowerShell 5.1 -> docker exec rompe comillas y acentos en argumentos.
     $a = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($asunto))
     $c = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($texto))
-    $out = & docker exec $WebCtr php artisan alerta:mail $a $c 2>&1
+    # -u www-data: como root, si el mailer escribiera al log lo dejaria con dueno root.
+    $out = & docker exec -u www-data $WebCtr php artisan alerta:mail $a $c 2>&1
     $code = $LASTEXITCODE
     if ($code -eq 0) { Log ('[mail] enviado: ' + $asunto); return $true }
     if ($code -eq 3) { Log '[mail] NO configurado (MAIL_MAILER=log en app/.env): no sale mail'; return $false }
@@ -377,6 +384,61 @@ if ((EnHorario $now) -and ((-not $ultimoChequeo) -or (($now - $ultimoChequeo).To
     } catch {
         Log ('Chequeo de version de WhatsApp Web fallo (se reintenta en la proxima corrida): ' + $_.Exception.Message)
     }
+}
+
+# 5) Salud de la ingesta (una vez por hora, en horario): que los mensajes ENTREN
+#    a la base, no solo que el bot figure "listo". Atencion estuvo sordo del 15
+#    al 20/09 con este watchdog dando OK cada 5 min, y del 17/07 al 23/09 no se
+#    guardo ningun adjunto de pacientes. Mismas alertas: se repiten cada
+#    $RecordatorioHoras; alertas nuevas: aviso inmediato.
+$IngestaStateFile = 'C:\crecer\backups\auto\watchdog-ingesta.json'
+$ingPrev = $null
+if (Test-Path $IngestaStateFile) {
+    try { $ingPrev = Get-Content $IngestaStateFile -Raw | ConvertFrom-Json } catch { }
+}
+$ingUltimo = if ($ingPrev -and $ingPrev.checked_at) { [DateTime]$ingPrev.checked_at } else { [DateTime]::MinValue }
+if ((EnHorario $now) -and (($now - $ingUltimo).TotalMinutes -ge 55)) {
+    # La salida trae acentos (UTF-8): sin esto llegan rotos al WhatsApp.
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $out  = & docker exec -u www-data $WebCtr php artisan salud:ingesta 2>&1
+    $code = $LASTEXITCODE
+    $firma = ''
+    $avisadoEn = if ($ingPrev -and $ingPrev.notified_at) { $ingPrev.notified_at } else { $null }
+    # Lo que salio en el ultimo aviso (estados viejos solo tienen 'firma').
+    $notificadas = if ($ingPrev -and $ingPrev.PSObject.Properties.Name -contains 'notificadas') { $ingPrev.notificadas }
+                   elseif ($avisadoEn -and $ingPrev.firma) { $ingPrev.firma } else { $null }
+    if ($code -eq 1) {
+        $alertas = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match '^- ' } | ForEach-Object { $_.Substring(2) })
+        # Firma sin numeros: "167 de 167" pasa a "170 de 170" y no es una alerta nueva.
+        $firmas = @($alertas | ForEach-Object { $_ -replace '\d+', '#' })
+        $firma  = ($firmas -join ' | ')
+        # Aviso inmediato solo si aparece una alerta que no estaba en el ULTIMO
+        # AVISO. Contra el ultimo chequeo no sirve: con la ventana deslizante una
+        # alerta cerca del umbral aparece y desaparece, y re-avisaba (23/09).
+        $previas = if ($notificadas) { @(([string]$notificadas) -split ' \| ') } else { @() }
+        $nuevas  = @($firmas | Where-Object { $previas -notcontains $_ })
+        $horasDesdeAviso = if ($avisadoEn) { ($now - [DateTime]$avisadoEn).TotalHours } else { 999 }
+        if (($nuevas.Count -gt 0) -or ($horasDesdeAviso -ge $RecordatorioHoras)) {
+            Log ('INGESTA con alertas: ' + $firma)
+            $msg = 'Watchdog Crecer - entrada de mensajes: ' + ($alertas -join ' ')
+            if (Notificar 'Crecer: problema en la entrada de mensajes de WhatsApp' $msg) {
+                $avisadoEn   = $now.ToString('o')
+                $notificadas = $firma
+            }
+        } else {
+            Log ('INGESTA con alertas (ya avisadas): ' + $firma)
+        }
+    } elseif ($code -eq 0) {
+        Log 'Ingesta OK'
+        if ($avisadoEn) {
+            Notificar 'Crecer: entrada de mensajes normalizada' 'Watchdog Crecer: la entrada de mensajes de WhatsApp se normalizo (volumen y adjuntos OK).' | Out-Null
+        }
+        $avisadoEn   = $null
+        $notificadas = $null
+    } else {
+        Log ('Chequeo de ingesta fallo (exit ' + $code + '): ' + (($out | Out-String).Trim()))
+    }
+    @{ checked_at = $now.ToString('o'); firma = $firma; notified_at = $avisadoEn; notificadas = $notificadas } | ConvertTo-Json | Out-File -FilePath $IngestaStateFile -Encoding utf8 -Force
 }
 
 # Rotar log si pasa 1 MB

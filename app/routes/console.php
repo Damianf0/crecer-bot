@@ -2,12 +2,8 @@
 
 use App\Models\Contacto;
 use App\Models\ConversacionWA;
-use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
-
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+use Illuminate\Support\Facades\DB;
 
 /**
  * Importa contactos desde un archivo .vcf (vCard 3.0).
@@ -18,8 +14,8 @@ Artisan::command('inspire', function () {
  * Skipea con motivo: sin_nombre, sin_tel, tel_invalido, tel_duplicado_db,
  * tel_duplicado_archivo.
  *
- * Uso: docker exec crecer-web-1 php artisan contactos:importar-vcf /var/www/html/storage/app/import/admin.vcf
- *      docker exec crecer-web-1 php artisan contactos:importar-vcf /var/www/html/storage/app/import/admin.vcf --apply
+ * Uso: docker exec -u www-data crecer-web-1 php artisan contactos:importar-vcf /var/www/html/storage/app/import/admin.vcf
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:importar-vcf /var/www/html/storage/app/import/admin.vcf --apply
  */
 Artisan::command('contactos:importar-vcf {archivo} {--apply} {--muestra=20}', function () {
     $archivo = $this->argument('archivo');
@@ -146,8 +142,8 @@ Artisan::command('contactos:importar-vcf {archivo} {--apply} {--muestra=20}', fu
  *   formato_invalido → digitos no normalizables (fijo, número corto, internacional raro)
  *   no_es_whatsapp   → bot dice que el número NO está registrado en WA
  *
- * Uso: docker exec crecer-web-1 php artisan contactos:auditar-telefonos
- *      docker exec crecer-web-1 php artisan contactos:auditar-telefonos --csv=/var/www/html/storage/logs/audit.csv
+ * Uso: docker exec -u www-data crecer-web-1 php artisan contactos:auditar-telefonos
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:auditar-telefonos --csv=/var/www/html/storage/logs/audit.csv
  */
 Artisan::command('contactos:auditar-telefonos {--csv=}', function () {
     $csvPath = $this->option('csv');
@@ -223,9 +219,9 @@ Artisan::command('contactos:auditar-telefonos {--csv=}', function () {
  * Por default: solo los que no tienen avatar o cuyo cache expiró (TTL 7 días).
  * Con --force: re-sync de todos.
  *
- * Uso: docker exec crecer-web-1 php artisan contactos:sync-avatares
- *      docker exec crecer-web-1 php artisan contactos:sync-avatares --force
- *      docker exec crecer-web-1 php artisan contactos:sync-avatares --limit=50
+ * Uso: docker exec -u www-data crecer-web-1 php artisan contactos:sync-avatares
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:sync-avatares --force
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:sync-avatares --limit=50
  */
 Artisan::command('contactos:sync-avatares {--force} {--limit=}', function () {
     $force = $this->option('force');
@@ -263,8 +259,8 @@ Artisan::command('contactos:sync-avatares {--force} {--limit=}', function () {
 /**
  * Indexa al legajo todos los mensajes_wa con archivo que aún no estén en documentos_paciente.
  *
- * Uso: docker exec crecer-web-1 php artisan documentos:sync
- *      docker exec crecer-web-1 php artisan documentos:sync --limit=500
+ * Uso: docker exec -u www-data crecer-web-1 php artisan documentos:sync
+ *      docker exec -u www-data crecer-web-1 php artisan documentos:sync --limit=500
  */
 Artisan::command('documentos:sync {--limit=}', function () {
     $limit = (int) $this->option('limit') ?: 0;
@@ -361,10 +357,10 @@ Artisan::command('documentos:ocr-rescan {--force} {--limit=}', function () {
  * Mapea contactos existentes con su wa_id real (consulta al bot) y vincula
  * conversaciones huérfanas (@lid sin nombre) con el contacto correspondiente.
  *
- * Uso: docker exec crecer-web-1 php artisan contactos:mapear-wa
- *      docker exec crecer-web-1 php artisan contactos:mapear-wa --solo-contactos
- *      docker exec crecer-web-1 php artisan contactos:mapear-wa --solo-conversaciones
- *      docker exec crecer-web-1 php artisan contactos:mapear-wa --limit=200
+ * Uso: docker exec -u www-data crecer-web-1 php artisan contactos:mapear-wa
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:mapear-wa --solo-contactos
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:mapear-wa --solo-conversaciones
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:mapear-wa --limit=200
  *
  * --limit=N: procesa como mucho N items por sección. Diseñado para corridas
  *   diarias automáticas que NO deben pisar horario laboral aunque haya cola
@@ -486,8 +482,8 @@ Artisan::command('contactos:mapear-wa {--solo-contactos} {--solo-conversaciones}
  * Backfill de resúmenes LLM para conversaciones históricas que ameritan y no tienen.
  * Despacha jobs a la queue 'resumen' (no procesa inline). El worker dedicado los toma.
  *
- * Uso: docker exec crecer-web-1 php artisan conversaciones:regenerar-resumenes --dry-run
- *      docker exec crecer-web-1 php artisan conversaciones:regenerar-resumenes --limit=50
+ * Uso: docker exec -u www-data crecer-web-1 php artisan conversaciones:regenerar-resumenes --dry-run
+ *      docker exec -u www-data crecer-web-1 php artisan conversaciones:regenerar-resumenes --limit=50
  */
 Artisan::command('conversaciones:regenerar-resumenes {--dry-run} {--limit=}', function () {
     $dry   = $this->option('dry-run');
@@ -534,7 +530,7 @@ Artisan::command('conversaciones:regenerar-resumenes {--dry-run} {--limit=}', fu
  *
  * Omnia no expone "listar pacientes"; la fuente es el reporte de turnos del
  * centro, que trae los datos de contacto del paciente en cada turno. Se pide
- * por mes (rangos largos tardan ~110s los 6 meses) y se deduplica por DNI.
+ * en tramos de 7 días (el máximo que acepta Omnia) y se deduplica por DNI.
  *
  * Política de merge (conservadora):
  *   - Matchea contacto existente por dni, si no por teléfono normalizado.
@@ -544,8 +540,8 @@ Artisan::command('conversaciones:regenerar-resumenes {--dry-run} {--limit=}', fu
  *     es el directorio WA; un paciente sin celular no sirve acá).
  *   - Skipea placeholders ("No Dar") y turnos sin DNI.
  *
- * Uso: docker exec crecer-web-1 php artisan contactos:sync-omnia                      (dry-run, últimos 12 meses + 2 futuros)
- *      docker exec crecer-web-1 php artisan contactos:sync-omnia --desde=2025-01-01 --apply
+ * Uso: docker exec -u www-data crecer-web-1 php artisan contactos:sync-omnia                      (dry-run, últimos 12 meses + 2 futuros)
+ *      docker exec -u www-data crecer-web-1 php artisan contactos:sync-omnia --desde=2025-01-01 --apply
  */
 Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestra=15}', function () {
     $tz      = 'America/Argentina/Buenos_Aires';
@@ -561,7 +557,7 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
 
     $svc = app(\App\Services\OmniaService::class);
 
-    // ── 1. Bajar el reporte por meses y consolidar pacientes por DNI ──
+    // ── 1. Bajar el reporte por tramos y consolidar pacientes por DNI ──
     $pacientes = [];   // dni => [nombre, celular, email, fnac]
     $stats = ['turnos' => 0, 'sin_dni' => 0, 'placeholder' => 0, 'dias_perdidos' => []];
 
@@ -621,11 +617,14 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
         $bajarTramo($medio->copy()->addSecond(), $fin);
     };
 
-    $cursor = $desde->copy();
+    // Tramos de 7 días: Omnia rechaza ventanas más largas (400
+    // report_window_too_wide). Con tramos mensuales cada noche se iban 12
+    // pedidos rechazados + 12 warnings antes de que la subdivisión llegara a 7.
+    $cursor = $desde->copy()->startOfDay();
     while ($cursor < $hasta) {
-        $finTramo = min($cursor->copy()->addMonth(), $hasta->copy());
+        $finTramo = min($cursor->copy()->addDays(6)->endOfDay(), $hasta->copy());
         $bajarTramo($cursor->copy(), $finTramo->copy());
-        $cursor = $finTramo;
+        $cursor = $finTramo->copy()->addSecond();
     }
 
     $this->newLine();
@@ -754,8 +753,8 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
  *
  * Exit 0 = OK, 1 = caído, para que la tarea programada pueda alertar.
  *
- * Uso: docker exec crecer-web-1 php artisan omnia:status
- *      docker exec crecer-web-1 php artisan omnia:status --json
+ * Uso: docker exec -u www-data crecer-web-1 php artisan omnia:status
+ *      docker exec -u www-data crecer-web-1 php artisan omnia:status --json
  */
 Artisan::command('omnia:status {--json}', function () {
     $svc = app(\App\Services\OmniaService::class);
@@ -785,130 +784,90 @@ Artisan::command('omnia:status {--json}', function () {
  * Archiva conversaciones activas sin actividad hace N días (default 7), en las
  * tres áreas/bots o en una sola con --area.
  *
- * Misma semántica que el botón "Resolver" del panel: estado=archivada,
- * asignada_a=null, urgente=false + evento en el historial (tipo archivada_auto,
- * sin usuario porque lo hace el sistema). NO toca no_leidos ni borra mensajes:
- * todas las colas y badges filtran por estado='activa', así que archivar ya las
- * saca de la vista, y si se reabre la conversación vuelve como estaba.
+ * Misma lógica que el panel /admin/archivar (App\Services\ArchivadoConversaciones):
+ * semántica del botón "Resolver" (estado=archivada, asignada_a=null,
+ * urgente=false + evento archivada_auto), sin tocar no_leidos ni borrar mensajes,
+ * y el corte por COALESCE(ultima_actividad, created_at). Hasta el 23/09 era una
+ * copia aparte que no dejaba lote: sus corridas no aparecían en el historial del
+ * panel ni se podían deshacer desde ahí.
  *
- * El corte usa COALESCE(ultima_actividad, created_at): una conversación sin
- * ultima_actividad (import viejo) no se archiva por un NULL, se juzga por su fecha
- * de creación.
+ * Cada --apply deja un lote (origen "consola") que se ve en /admin/archivar y se
+ * deshace desde ahí o con --revertir=<id del lote>. A diferencia del panel, por
+ * default INCLUYE las asignadas a alguien (así fue siempre este comando);
+ * --excluir-asignadas las deja afuera.
  *
- * Cada corrida con --apply deja un JSON de rollback en storage/logs/ con el estado
- * previo de cada conversación; --revertir=<archivo> lo deshace.
- *
- * Uso: docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas
- *      docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas --apply
- *      docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas --dias=30 --area=ovodonacion --apply
- *      docker exec crecer-web-1 php artisan conversaciones:archivar-inactivas --revertir=/var/www/html/storage/logs/archivadas-20260820-1530.json
+ * Uso: docker exec -u www-data crecer-web-1 php artisan conversaciones:archivar-inactivas
+ *      docker exec -u www-data crecer-web-1 php artisan conversaciones:archivar-inactivas --apply
+ *      docker exec -u www-data crecer-web-1 php artisan conversaciones:archivar-inactivas --dias=30 --area=ovodonacion --apply
+ *      docker exec -u www-data crecer-web-1 php artisan conversaciones:archivar-inactivas --revertir=12
+ *      (corridas anteriores al 23/09: --revertir=/var/www/html/storage/logs/archivadas-20260820-1609.json)
  */
-Artisan::command('conversaciones:archivar-inactivas {--dias=7} {--area=} {--apply} {--muestra=15} {--revertir=}', function () {
-    // ── Rollback ──────────────────────────────────────────────────────────
-    if ($archivo = $this->option('revertir')) {
-        if (!file_exists($archivo)) { $this->error("No existe: $archivo"); return 1; }
-        $prev = json_decode(file_get_contents($archivo), true);
-        if (!is_array($prev) || empty($prev)) { $this->error('Archivo de rollback vacío o ilegible.'); return 1; }
+Artisan::command('conversaciones:archivar-inactivas {--dias=7} {--area=} {--excluir-asignadas} {--apply} {--muestra=15} {--revertir=}', function () {
+    $svc = \App\Services\ArchivadoConversaciones::class;
 
-        $revertidas = 0;
-        foreach (array_chunk($prev, 200) as $chunk) {
-            foreach ($chunk as $r) {
-                ConversacionWA::whereKey($r['id'])->where('estado', 'archivada')->update([
-                    'estado'     => $r['estado'],
-                    'asignada_a' => $r['asignada_a'],
-                    'urgente'    => $r['urgente'],
-                ]);
-                $revertidas++;
-            }
+    // ── Rollback ──────────────────────────────────────────────────────────
+    if ($rev = $this->option('revertir')) {
+        if (ctype_digit($rev)) {
+            $lote = \App\Models\ArchivadoLote::find((int) $rev);
+            if (!$lote) { $this->error("No existe el lote {$rev}."); return 1; }
+            if ($lote->revertido_at) { $this->error("El lote {$rev} ya se revirtió el {$lote->revertido_at->format('d/m/Y H:i')}."); return 1; }
+        } else {
+            // JSON de rollback de las corridas previas a los lotes. Lote sin
+            // guardar: revertir() deshace igual y no intenta marcarlo.
+            if (!file_exists($rev)) { $this->error("No existe: $rev"); return 1; }
+            $prev = json_decode(file_get_contents($rev), true);
+            if (!is_array($prev) || empty($prev)) { $this->error('Archivo de rollback vacío o ilegible.'); return 1; }
+            $lote = new \App\Models\ArchivadoLote(['snapshot' => $prev]);
         }
-        ConversacionWA::invalidarColaCache();
+        $revertidas = $svc::revertir($lote, null);
         $this->info("Revertidas: {$revertidas} (solo las que seguían archivadas).");
         return 0;
     }
 
     // ── Selección ─────────────────────────────────────────────────────────
-    $dias    = max(1, (int) $this->option('dias') ?: 7);
-    $area    = $this->option('area');
-    $apply   = (bool) $this->option('apply');
-    $muestra = $this->option('muestra') !== null ? (int) $this->option('muestra') : 15;
-
+    $area = $this->option('area');
     if ($area && !isset(ConversacionWA::AREAS[$area])) {
         $this->error("Área inválida: {$area}. Válidas: " . implode(', ', array_keys(ConversacionWA::AREAS)));
         return 1;
     }
-
-    $corte = now()->subDays($dias);
-
-    $base = fn() => ConversacionWA::where('estado', 'activa')
-        ->whereRaw('COALESCE(ultima_actividad, created_at) < ?', [$corte])
-        ->when($area, fn($q) => $q->where('area', $area));
-
-    $total = $base()->count();
+    $criterio = [
+        'modo'              => 'dias',
+        'dias'              => (int) $this->option('dias') ?: 7,
+        'area'              => $area,
+        'excluir_asignadas' => (bool) $this->option('excluir-asignadas'),
+    ];
+    $muestra = (int) $this->option('muestra');
+    $p = $svc::previsualizar($criterio, $muestra);
 
     $this->newLine();
-    $this->info(sprintf('Corte: sin actividad desde %s (más de %d días)%s',
-        $corte->format('d/m/Y H:i'), $dias, $area ? " · área={$area}" : ' · las 3 áreas'));
-
-    if ($total === 0) { $this->info('No hay conversaciones para archivar.'); return 0; }
+    $this->info('Corte: ' . $p['corte']);
+    if ($p['total'] === 0) { $this->info('No hay conversaciones para archivar.'); return 0; }
 
     // Desglose por área para que se vea qué bot aporta qué
-    $porArea = $base()->selectRaw('area, COUNT(*) c, SUM(no_leidos > 0) nl, SUM(asignada_a IS NOT NULL) asig')
-        ->groupBy('area')->get();
-
     $this->newLine();
-    $this->table(['Área', 'A archivar', 'Con no leídos', 'Asignadas a alguien'], $porArea->map(fn($r) => [
-        ConversacionWA::AREAS[$r->area] ?? $r->area, $r->c, $r->nl, $r->asig,
-    ])->all());
-    $this->info("TOTAL: {$total}");
+    $this->table(['Área', 'A archivar', 'Con no leídos', 'Asignadas a alguien'],
+        array_map(fn($r) => [$r['area_label'], $r['total'], $r['con_no_leidos'], $r['asignadas']], $p['por_area']));
+    $this->info("TOTAL: {$p['total']}");
 
-    if ($muestra > 0) {
+    if ($p['muestra']) {
         $this->newLine();
         $this->line("Más recientes de la selección (primeras {$muestra}):");
-        $this->table(['ID', 'Área', 'Contacto', 'Última actividad'], $base()
-            ->orderByDesc('ultima_actividad')->limit($muestra)->get()
-            ->map(fn($c) => [$c->id, $c->area, $c->nombre ?: $c->telefono,
-                optional($c->ultima_actividad)->format('d/m/Y H:i') ?: '—'])->all());
+        $this->table(['ID', 'Área', 'Contacto', 'Última actividad'],
+            array_map(fn($c) => [$c['id'], $c['area'], $c['nombre'], $c['ultima_actividad'] ?: '—'], $p['muestra']));
     }
 
-    if (!$apply) {
+    if (!$this->option('apply')) {
         $this->newLine();
         $this->warn('DRY-RUN — nada se archivó. Pasá --apply para ejecutar.');
         return 0;
     }
 
     // ── Aplicar ───────────────────────────────────────────────────────────
-    $rollback = [];
-    $ahora    = now();
-    $archivadas = 0;
-
-    $base()->select(['id', 'estado', 'asignada_a', 'urgente'])->orderBy('id')
-        ->chunkById(200, function ($chunk) use (&$rollback, &$archivadas, $ahora) {
-            $ids = [];
-            foreach ($chunk as $c) {
-                $ids[] = $c->id;
-                $rollback[] = ['id' => $c->id, 'estado' => $c->estado,
-                    'asignada_a' => $c->asignada_a, 'urgente' => (int) $c->urgente];
-            }
-
-            ConversacionWA::whereIn('id', $ids)->update([
-                'estado' => 'archivada', 'asignada_a' => null, 'urgente' => false,
-            ]);
-
-            \App\Models\ConversacionEvento::insert(array_map(fn($id) => [
-                'conversacion_id' => $id, 'tipo' => 'archivada_auto', 'usuario_id' => null,
-                'usuario_destino_id' => null, 'created_at' => $ahora, 'updated_at' => $ahora,
-            ], $ids));
-
-            $archivadas += count($ids);
-        });
-
-    $path = storage_path('logs/archivadas-' . $ahora->format('Ymd-Hi') . '.json');
-    file_put_contents($path, json_encode($rollback, JSON_PRETTY_PRINT));
-    ConversacionWA::invalidarColaCache();
+    $lote = $svc::aplicar($criterio, null, 'consola');
 
     $this->newLine();
-    $this->info("Archivadas: {$archivadas}");
-    $this->line("Rollback: php artisan conversaciones:archivar-inactivas --revertir={$path}");
+    $this->info("Archivadas: {$lote->total} (lote {$lote->id}, visible en /admin/archivar)");
+    $this->line("Deshacer: php artisan conversaciones:archivar-inactivas --revertir={$lote->id}");
     return 0;
 })->purpose('Archiva conversaciones activas sin actividad hace N dias (default 7) en todas las areas; dry-run sin --apply');
 
@@ -921,8 +880,8 @@ Artisan::command('conversaciones:archivar-inactivas {--dias=7} {--area=} {--appl
  * azar; un tramo que falla se saltea y se informa). Idempotente: suma el
  * conteo de turnos de la ventana y actualiza visto_at; nunca borra.
  *
- * Uso: docker exec crecer-web-1 php artisan omnia:catalogo            (últimos 120 días)
- *      docker exec crecer-web-1 php artisan omnia:catalogo --dias=30
+ * Uso: docker exec -u www-data crecer-web-1 php artisan omnia:catalogo            (últimos 120 días)
+ *      docker exec -u www-data crecer-web-1 php artisan omnia:catalogo --dias=30
  */
 Artisan::command('omnia:catalogo {--dias=120}', function () {
     $svc   = app(\App\Services\OmniaService::class);
@@ -973,7 +932,7 @@ Artisan::command('omnia:catalogo {--dias=120}', function () {
  * ni comillas. Exit: 0 enviado · 1 error de envío · 3 mail sin configurar
  * (MAIL_MAILER=log/array: "sale" a un archivo, no le llega a nadie).
  *
- * Uso: docker exec crecer-web-1 php artisan alerta:mail <asunto_b64> <cuerpo_b64>
+ * Uso: docker exec -u www-data crecer-web-1 php artisan alerta:mail <asunto_b64> <cuerpo_b64>
  */
 Artisan::command('alerta:mail {asunto_b64} {cuerpo_b64}', function () {
     $asunto = base64_decode($this->argument('asunto_b64'), true);
@@ -995,3 +954,97 @@ Artisan::command('alerta:mail {asunto_b64} {cuerpo_b64}', function () {
     $this->info("Enviado a {$para}");
     return 0;
 })->purpose('Aviso operativo por mail (watchdog); textos en base64');
+
+/**
+ * Salud de la ingesta de WhatsApp: ¿los mensajes están entrando a la base, y
+ * enteros? El watchdog mira que cada bot esté vivo; esto mira el resultado.
+ *
+ * Las peores fallas de 2026 fueron silenciosas con el bot "listo": atención
+ * sordo del 15/09 21:51 al 20/09 (cero entrantes, página respondiendo) y, del
+ * 17/07 al 23/09, entrantes sin wa_id y adjuntos sin archivo (downloadMedia
+ * fallando callado). Ninguna la vio nadie durante días.
+ *
+ * Por área:
+ *   - silencio: 0 entrantes en las últimas --horas, con el tramo entero dentro
+ *     de lunes a viernes 08:30-18:30, cuando la mediana del mismo tramo en los
+ *     días hábiles de las últimas 4 semanas (sin contar días en cero, que son
+ *     caídas o feriados) es de al menos --minimo.
+ *   - calidad: en las últimas --horas-calidad, más de la mitad de los
+ *     entrantes sin wa_id o más de la mitad de los adjuntos sin archivo.
+ *
+ * Exit 0 = bien · 1 = hay alertas (líneas que empiezan con "- "). Lo corre el
+ * watchdog una vez por hora en horario de clínica y avisa por WhatsApp y mail.
+ *
+ * Uso: docker exec -u www-data crecer-web-1 php artisan salud:ingesta
+ */
+Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', function () {
+    $ahora   = now();
+    $horas   = max(1, (int) $this->option('horas'));
+    $hCal    = max(1, (int) $this->option('horas-calidad'));
+    $minimo  = max(1, (int) $this->option('minimo'));
+    $desde   = $ahora->copy()->subHours($horas);
+    $tipos   = "'imagen','audio','video','documento','sticker'";
+    $entrantes = fn () => DB::table('mensajes_wa as m')
+        ->join('conversaciones_wa as c', 'c.id', '=', 'm.conversacion_id')
+        ->where('m.direccion', 'entrante');
+
+    $enHorario = $ahora->isWeekday() && $desde->isSameDay($ahora)
+        && $desde->format('H:i') >= '08:30' && $ahora->format('H:i') <= '18:30';
+
+    $recientes = $entrantes()->where('m.created_at', '>=', $desde)
+        ->groupBy('c.area')->selectRaw('c.area, COUNT(*) n')->pluck('n', 'area');
+
+    // Línea de base: el mismo tramo horario en los días hábiles previos.
+    $base = [];
+    if ($enHorario) {
+        $filas = $entrantes()
+            ->where('m.created_at', '>=', $ahora->copy()->subDays(28)->startOfDay())
+            ->where('m.created_at', '<', $ahora->copy()->startOfDay())
+            ->selectRaw('c.area, DATE(m.created_at) dia, COUNT(*) total, SUM(TIME(m.created_at) BETWEEN ? AND ?) tramo',
+                [$desde->format('H:i:s'), $ahora->format('H:i:s')])
+            ->groupBy('c.area', 'dia')->get();
+        foreach ($filas as $f) {
+            if ($f->total > 0 && \Carbon\Carbon::parse($f->dia)->isWeekday()) $base[$f->area][] = (int) $f->tramo;
+        }
+    }
+
+    $calidad = $entrantes()->where('m.created_at', '>=', $ahora->copy()->subHours($hCal))
+        ->selectRaw("c.area, COUNT(*) total, SUM(m.wa_id IS NULL) sin_id,
+            SUM(m.tipo IN ($tipos)) media, SUM(m.tipo IN ($tipos) AND m.archivo_url IS NULL) media_sin_archivo")
+        ->groupBy('c.area')->get()->keyBy('area');
+
+    $alertas = [];
+    foreach (ConversacionWA::AREAS as $area => $nombre) {
+        $n   = (int) ($recientes[$area] ?? 0);
+        $dias = $base[$area] ?? [];
+        sort($dias);
+        $esperado = count($dias) >= 5 ? $dias[intdiv(count($dias), 2)] : null;   // mediana
+        $q = $calidad[$area] ?? null;
+
+        $this->line(sprintf('%s: %d entrantes en %d h%s · últimas %d h: %d entrantes, %d sin wa_id, %d/%d adjuntos sin archivo',
+            $nombre, $n, $horas, $esperado !== null ? " (lo normal: {$esperado})" : '',
+            $hCal, $q->total ?? 0, $q->sin_id ?? 0, $q->media_sin_archivo ?? 0, $q->media ?? 0));
+
+        if ($enHorario && $esperado !== null && $esperado >= $minimo && $n === 0) {
+            $alertas[] = "{$nombre}: ningún mensaje entrante en las últimas {$horas} h (lo normal a esta hora: {$esperado}). "
+                . 'Si el bot figura "listo", está sordo: reiniciarlo, con el celular del área a mano por si pide QR.';
+        }
+        if ($q && $q->total >= 10 && $q->sin_id * 2 > $q->total) {
+            $alertas[] = "{$nombre}: {$q->sin_id} de {$q->total} entrantes de las últimas {$hCal} h sin wa_id "
+                . '(el bot no lee el id de los mensajes: sin él no se deduplican reintentos ni se puede citar).';
+        }
+        if ($q && $q->media >= 4 && $q->media_sin_archivo * 2 > $q->media) {
+            $alertas[] = "{$nombre}: {$q->media_sin_archivo} de {$q->media} adjuntos de las últimas {$hCal} h sin archivo "
+                . '(no se están guardando imágenes, audios ni documentos de pacientes).';
+        }
+    }
+
+    if (!$alertas) {
+        $this->info('Ingesta OK' . ($enHorario ? '' : ' (fuera de horario: solo se mide la calidad)'));
+        return 0;
+    }
+    $this->newLine();
+    $this->error('ALERTAS:');
+    foreach ($alertas as $a) $this->line("- {$a}");
+    return 1;
+})->purpose('Chequea que los mensajes de WhatsApp entren a la base y enteros; exit 1 si hay alertas');
