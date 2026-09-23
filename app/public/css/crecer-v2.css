@@ -262,16 +262,27 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
 }
 
 /* Detalle */
-.v2-detalle { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--v2-bg-app); }
+/* container-type: el encabezado se adapta al ancho de ESTA columna (cambia con
+   el legajo abierto o cerrado), no al de la ventana. */
+.v2-detalle { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--v2-bg-app); container-type: inline-size; }
 .v2-det-head {
     display: flex; align-items: center; gap: 10px;
     padding: 11px 16px; flex-shrink: 0;
     background: var(--v2-bg-card); border-bottom: 1px solid var(--v2-border);
 }
 .v2-det-head .info { min-width: 0; flex: 1; }
-.v2-det-head .nombre { font-weight: 650; font-size: 14.5px; }
-.v2-det-head .sub { font-size: 11.5px; color: var(--v2-text-mute); font-family: 'JetBrains Mono', monospace; }
+/* Sin el recorte, un nombre largo se desbordaba del hueco que le quedaba (45px
+   con la barra llena) y se montaba sobre la píldora y los botones (23/09). */
+.v2-det-head .nombre { font-weight: 650; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-det-head .sub { font-size: 11.5px; color: var(--v2-text-mute); font-family: 'JetBrains Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-det-head .acciones { display: flex; gap: 7px; align-items: center; flex-shrink: 0; }
+.v2-det-head .acciones .v2-btn.urg { color: var(--v2-urg); border-color: var(--v2-urg); }
+/* Pantallas angostas: los botones bajan a una segunda línea en vez de aplastar
+   el nombre. El contenedor mide el ancho de la columna, no el de la ventana. */
+@container (max-width: 560px) {
+    .v2-det-head { flex-wrap: wrap; }
+    .v2-det-head .acciones { width: 100%; justify-content: flex-end; }
+}
 
 /* Banner resumen IA */
 .v2-resumen {

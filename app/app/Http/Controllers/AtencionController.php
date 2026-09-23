@@ -302,6 +302,7 @@ class AtencionController extends Controller
                 'asig_id'           => $conv->asignada_a,
                 'asig_name'         => $conv->asignadaA?->nombre_completo,
                 'resumen'           => $conv->resumen_llm,
+                'urgente'           => (bool) $conv->urgente,
                 'es_huerfana'       => $esHuerfana,
                 'jid'               => $conv->contacto,
                 'telefono_sugerido' => $telefonoSugerido,

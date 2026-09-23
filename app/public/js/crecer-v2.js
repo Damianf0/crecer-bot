@@ -185,10 +185,10 @@ window.V2Conv = (function () {
             if (!c.asig_id) acciones.push(`<button class="v2-btn primary" onclick="V2Conv.accion('tomar')">Tomar</button>`);
             else if (!esMia) acciones.push(`<button class="v2-btn" onclick="V2Conv.accion('tomar')" title="Asignada a ${esc(c.asig_name || '')}">Tomarla yo</button>`);
             acciones.push(`<button class="v2-btn" onclick="V2Conv.menuDelegar(event)">Delegar ▾</button>`);
-            acciones.push(`<button class="v2-btn" onclick="V2Conv.accion('urgente')" title="Marcar / desmarcar urgente">⚑</button>`);
-            acciones.push(`<button class="v2-btn" onclick="V2Conv.modalTarea()" title="Crear una tarea o agendar una llamada para este contacto">🗓 Agendar</button>`);
-            acciones.push(`<button class="v2-btn" onclick="V2Conv.modalDerivarArea()" title="Pasar la conversación a la cola de otra área">↪ Área</button>`);
-            acciones.push(`<button class="v2-btn" onclick="V2Conv.modalReenvio()" title="Reenviar el hilo a otro contacto y archivar">📤</button>`);
+            // Las secundarias van a un menú: los 7 botones sueltos ocupaban 507px
+            // de un encabezado de 716 y le dejaban 45 al nombre, que se desbordaba
+            // por encima de los botones (reporte 23/09).
+            acciones.push(`<button class="v2-btn${c.urgente ? ' urg' : ''}" onclick="V2Conv.menuMas(event)" title="Más acciones">${c.urgente ? '⚑ ' : ''}⋯</button>`);
             acciones.push(`<button class="v2-btn accent" onclick="V2Conv.accion('resolver')">Resolver</button>`);
         }
 
@@ -1024,6 +1024,38 @@ window.V2Conv = (function () {
                     await V2Conv.refrescar();
                     if (cfg.onChanged) cfg.onChanged('delegar');
                 } catch { v2toast('No se pudo delegar', 'err'); }
+            };
+            setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
+        },
+
+        // Acciones secundarias de la conversación (urgente, agendar, derivar,
+        // reenviar). Mismo dropdown que Delegar.
+        menuMas(ev) {
+            ev.stopPropagation();
+            document.querySelectorAll('.v2-menu').forEach(m => m.remove());
+            const urg = !!(state.conv && state.conv.conv && state.conv.conv.urgente);
+            const opciones = [
+                { k: 'urgente',  t: urg ? '⚑ Quitar urgente' : '⚑ Marcar urgente' },
+                { k: 'agendar',  t: '🗓 Crear tarea o agendar llamada' },
+                { k: 'area',     t: '↪ Pasar a otra área' },
+                { k: 'reenviar', t: '📤 Reenviar a otro contacto y archivar' },
+            ];
+            const menu = document.createElement('div');
+            menu.className = 'v2-menu';
+            menu.innerHTML = opciones.map(o => `<div class="opt" data-k="${o.k}">${o.t}</div>`).join('');
+            document.body.appendChild(menu);
+            const r = ev.currentTarget.getBoundingClientRect();
+            const ancho = menu.offsetWidth || 260;
+            menu.style.top  = (r.bottom + 4) + 'px';
+            menu.style.left = Math.max(8, Math.min(r.left, innerWidth - ancho - 8)) + 'px';
+            menu.onclick = e => {
+                const k = e.target.dataset.k;
+                if (!k) return;
+                menu.remove();
+                if (k === 'urgente')  return V2Conv.accion('urgente');
+                if (k === 'agendar')  return V2Conv.modalTarea();
+                if (k === 'area')     return V2Conv.modalDerivarArea();
+                if (k === 'reenviar') return V2Conv.modalReenvio();
             };
             setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
         },
