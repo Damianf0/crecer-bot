@@ -1,399 +1,135 @@
 # Plataforma Operativa Crecer — Guía operativa
 
-> ⚠ **Este documento tiene secciones desactualizadas** (consolidado 2026-04-29, última
-> actualización mayor 2026-05-19; describe Baileys como backend WA y el container `bot-test`,
-> ambos eliminados — Baileys se abandonó el 2026-06-16 y se borró del código el 2026-07-06;
-> los 3 bots corren whatsapp-web.js). **La referencia vigente y completa es
-> [`docs/DOCUMENTACION-GENERAL.md`](docs/DOCUMENTACION-GENERAL.md)** (2026-07-11: visión,
-> funcionalidad, arquitectura, operación, histórico y roadmap). Los comandos de
-> troubleshooting de acá siguen siendo mayormente válidos.
-> Para contexto histórico y propósito del proyecto: `CLAUDE-clinica.md`.
+Chuleta para operar el sistema y para atender un incidente. Revisada el 23/09/2026.
+La referencia completa (funcionalidad, arquitectura, backups, historia, roadmap) es
+[`docs/DOCUMENTACION-GENERAL.md`](docs/DOCUMENTACION-GENERAL.md); el restore paso a paso,
+[`docker/README-RESTAURAR.md`](docker/README-RESTAURAR.md).
+
+> Esta guía reemplaza a la versión de mayo, que describía Baileys como backend de
+> WhatsApp y la interfaz V1. Baileys se abandonó el 16/06 (hoy solo queda un experimento
+> apagado por default) y la V1 se retiró el 03/08.
 
 ---
 
-## 1. Stack y arquitectura
+## 1. Qué corre
 
-### Containers Docker (`docker-compose.yml`)
-
-| Servicio | Imagen | Puerto host | Función |
-|---|---|---|---|
-| `nginx` | nginx:alpine | 80 | Reverse proxy a PHP-FPM |
-| `web` | php:8.2-fpm + OPcache + JIT | — | Laravel 11, app principal |
-| `mysql` | mysql:8.0 | (cerrado) | DB `clinica`, accesible solo dentro de la red Docker |
-| `bot`, `bot-administracion`, `bot-ovodonacion` | node:20-alpine + Chromium + git + tzdata | 3001/3002/3003 | Bot WhatsApp (Baileys WebSocket por default; whatsapp-web.js + Chromium queda como fallback). Selección por env `BOT_WA_CLIENT=baileys\|wwebjs` |
-| `whisper` | onerahmet/openai-whisper-asr-webservice | — | Transcripción de audios WA (modelo `small`, faster_whisper, español) |
-| `ollama` | ollama/ollama (GPU NVIDIA) | 11434 | LLM local para clasificación (qwen3:4b) |
-
-Todos con `restart: unless-stopped` y healthchecks reales (wget/curl al endpoint de cada servicio).
-
-### Volúmenes persistentes
-
-- `crecer_mysql-data` — datos MySQL.
-- `crecer_wa-baileys-atencion` / `wa-baileys-administracion` / `wa-baileys-ovodonacion` — sesiones Baileys activas de los 3 bots. **Crítico**: si se borran hay que escanear QR de nuevo desde el cel del área.
-- `crecer_wa-session` / `wa-session-administracion` / `wa-session-ovodonacion` — sesiones whatsapp-web.js legacy. Preservadas como fallback. Si querés hacer rollback de un bot a wwebjs, comentás `BOT_WA_CLIENT=baileys` en su servicio y la sesión sigue viva. Cuando la estabilización con Baileys quede confirmada, estos volúmenes se borran (Fase 10 del plan migración).
-- `crecer_wa-baileys-test` — sesión del container `bot-test` (shadow para testing con número personal). Sólo se levanta on-demand con `docker compose up -d bot-test`.
-- `crecer_ollama-data` — modelos LLM descargados.
-- Bind mounts: `./app` → `/var/www/html`, `./bot` → `/app`, `./docker/nginx/default.conf` → nginx config.
-
-### Performance
-
-- **OPcache validate_timestamps=0 + JIT tracing + preload** (~2500 archivos al arrancar).
-- **Cualquier cambio PHP/Blade requiere `docker restart crecer-web-1`** para que OPcache lo tome. `view:clear` solo no alcanza.
-- **`CACHE_STORE=database`** (no `file`). Razón: bind mount NTFS + Docker Desktop Windows ignoran `chown`, los directorios creados por root quedaban inalcanzables para www-data.
-
-### Timezone
-
-`America/Argentina/Buenos_Aires` aplicado en `web`, `mysql` y `bot` (este último necesita `tzdata` instalado en su Dockerfile, no alcanza con `TZ=` env).
-
----
-
-## 2. Mapa de URLs
-
-### Para todas las secretarias
-
-| Ruta | Función |
-|---|---|
-| `/login` | Login |
-| `/declarar-colas` | Selección de colas activas al iniciar turno |
-| `/secretaria` | Cola de recepción (pacientes en sala) |
-| `/atencion` | **Gestión unificada WhatsApp**: nuevas, en proceso, panel conv, filtros (Todas/Urgentes/Mías) |
-| `/mis-tareas` | Mis conversaciones asignadas + tareas |
-| `/contactos` | Directorio: búsqueda paginada, alta/edición, importación CSV Omnia, "Chatear" en cada fila |
-| `/historial` | Conversaciones archivadas con paginación |
-| `/tablet` | Pantalla de check-in (pública, sin auth) |
-
-### Solo con `permiso:admin` (rol `tecnico` y `supervisora` por default)
-
-| Ruta | Función |
-|---|---|
-| `/admin` | Estado del bot WA en vivo (status, QR, uptime, número) |
-| `/admin/textos` | Editor de respuestas automáticas (`textos.json`). Aplica al instante. |
-| `/admin/pruebas` | Toggle modo prueba + stream SSE de clasificaciones |
-| `/admin/logs` | Logs en vivo del bot (SSE proxied) |
-| `/admin/usuarios` | CRUD de usuarios + permisos efectivos |
-
-### Endpoints internos (no UI)
-
-- `GET /bot-pulso` — estado del bot para badge del navbar (cualquier usuario).
-- `POST /atencion/iniciar` — inicia conversación nueva con un contacto o número.
-- `POST /atencion/conversacion/{id}/agregar-contacto` — alta de contacto desde una conv huérfana.
-- `GET /chat/*` — chat interno entre usuarios (Equipo + DMs).
-
-### Bot (puerto 3001, requiere Bearer)
-
-| Endpoint | Función |
-|---|---|
-| `GET  /status` | Estado (público, lo usa healthcheck y badge navbar) |
-| `POST /enviar` | Mandar texto a un contacto WA |
-| `POST /enviar-archivo` | Mandar archivo (mimetype whitelisteado) |
-| `POST /check-numero` | Verificar si un número está en WA + obtener JID real |
-| `POST /resolve-jid` | Dado un `@lid`, resolver al número telefónico real |
-| `GET  /logs` (SSE) | Stream de logs |
-| `GET  /pruebas/stream` (SSE) | Clasificaciones en vivo |
-| `POST /textos` | Reescribir `textos.json` |
-
-Endpoints administrativos (config, textos, usuarios, modo prueba) requieren `BOT_INGRESS_TOKEN` en el header.
-
----
-
-## 3. Roles y permisos
-
-| Rol | Permisos por default |
-|---|---|
-| `secretaria` | secretaria, atencion, contactos |
-| `supervisora` | secretaria, atencion, contactos, agenda, historial, **admin** |
-| `admin` (rol) | secretaria, atencion, contactos, agenda, historial, admin |
-| `tecnico` | todos los anteriores + admin |
-
-Los permisos se sobrescriben individualmente desde `/admin/usuarios` (campo `permisos` JSON en `users`). Si está NULL, aplica el default del rol.
-
----
-
-## 4. Operaciones rutinarias
-
-### Aplicar cambios de código
-
-```bash
-# Cambios PHP/Blade
-docker exec crecer-web-1 php /var/www/html/artisan config:clear
-docker exec crecer-web-1 php /var/www/html/artisan view:clear
-docker restart crecer-web-1
-# Esperar ~10s — puede dar 502 transitorio mientras FPM hace preload
-
-# Cambios bot/server.js o whatsapp.js
-docker restart crecer-bot-1
-# Espera ~30s, reconecta sesión WA sin pedir QR
-```
-
-**Antes de hacer restart**, validar sintaxis si tocaste código:
-```bash
-docker exec crecer-web-1 php -l /var/www/html/app/...
-docker exec crecer-bot-1 node -c /app/server.js
-```
-Un parse error en un controller con OPcache preload tumba el container — queda en `Exited`.
-
-### Backups
-
-#### Automático (programado)
-- **Tarea Windows `Crecer\BackupMySQL`** — diaria 03:00 AM. Script `C:\crecer\docker\backup-mysql.ps1`.
-- Output: `C:\crecer\backups\auto\{daily,weekly,monthly}\` con retención 7/4/12.
-
-#### Manual (antes de un cambio grande)
-```powershell
-$ts = Get-Date -Format "yyyyMMdd-HHmmss"
-$bk = "C:\crecer\backups\$ts"
-mkdir "$bk\db", "$bk\volumes" -Force
-
-# DB
-docker exec crecer-mysql-1 sh -c 'mysqldump --single-transaction -uroot -p${DB_ROOT_PASSWORD} clinica' > "$bk\db\clinica.sql"
-
-# Volumen sesión WA (si vas a tocar el bot a fondo)
-docker run --rm -v crecer_wa-session:/data -v "$bk\volumes:/backup" alpine tar czf /backup/wa-session.tar.gz -C /data .
-```
-
-### Limpieza automática de cache del bot (whatsapp-web.js solamente)
-
-- **Tarea Windows `Crecer\CleanBotCache`** — diaria 04:00 AM. Script `C:\crecer\docker\clean-bot-cache.ps1`.
-- **Aplica solo a bots con `BOT_WA_CLIENT=wwebjs`.** Baileys no usa Chromium así que el script no hace nada útil sobre volúmenes Baileys.
-- Borra Cache, Code Cache, GPUCache, Service Worker/CacheStorage del Chromium del bot **sin tocar IndexedDB ni Cookies** (mantiene la sesión WA).
-- Cuando los 3 bots queden estables en Baileys (Fase 10 del plan migración), eliminar esta tarea programada y el script.
-
-### Stack WhatsApp: Baileys vs whatsapp-web.js
-
-Desde 2026-05-19 los 3 bots de prod corren con **Baileys** (WebSocket directo al protocolo Multi-Device de WhatsApp), seleccionado por env `BOT_WA_CLIENT=baileys` en `docker-compose.yml`. La implementación wwebjs queda como fallback.
-
-| Backend | RAM/bot | Chromium | Reconexión | Cuelgues |
-|---|---|---|---|---|
-| wwebjs (legacy) | 400-1300 MB | Sí, requiere `apk add chromium` | Vía watchdog + matar Chromium | Frecuentes en sesión grande |
-| **Baileys (activo)** | **40-80 MB** | **No** | **Automática (515 Stream Errored se resuelve solo)** | **Raros** |
-
-**Rollback de un bot a wwebjs** (si Baileys falla con algún destinatario o feature):
-1. Editar `docker-compose.yml`, comentar `BOT_WA_CLIENT=baileys` del servicio del bot
-2. `docker compose up -d <servicio>` — el bot arranca con wwebjs usando el volumen `wa-session-*` que se preservó intacto
-3. La sesión wwebjs sigue viva en su volumen — no requiere QR de nuevo (salvo que haya sido invalidada por la operadora desde el cel)
-
-**Reactivar Baileys** después de rollback: descomentar el env y `docker compose up -d <servicio>`. El volumen `wa-baileys-*` sigue ahí.
-
-### Container shadow `bot-test`
-
-Servicio definido pero **detenido por default** en `docker-compose.yml`. Sirve para validar el adapter Baileys con un número personal antes de tocar prod (puerto 3009, `BOT_AREA=test`, `MODO_SHADOW` activo → no escribe en Laravel/BD).
-
-- Levantar: `docker compose up -d bot-test`
-- Ver QR para escanear: `powershell -File C:\crecer\scripts\show-qr-test.ps1` (abre/refresca `C:\crecer\qr-shadow.png`)
-- Detener: `docker compose stop bot-test`
-- Volumen `wa-baileys-test` persiste entre arranques.
-
-### Mapeo de contactos / WhatsApp
-
-- **`contactos:mapear-wa`** — para cada contacto sin `wa_id`, consulta al bot y guarda el JID real (`@c.us` o `@lid`). Después vincula conversaciones huérfanas (las que llegaron como `@lid` y no se vincularon con un contacto).
-  - `--solo-contactos` o `--solo-conversaciones` para correr una sola fase.
-  - **`--limit=N`** acota la cantidad procesada por corrida. **`--max-errors=N`** (default 10) aborta si hay N timeouts seguidos = bot caído.
-  - El cron diario (Crecer\MapearWA, 4:30 AM) pasa `--limit=300 --max-errors=10` desde 2026-05-19 para evitar correr +6 hs y bombardear el bot durante horario laboral (incidente del 19/05).
-  - Throttle 150ms entre llamadas al bot.
-- **`contactos:auditar-telefonos`** — clasifica los contactos sin `wa_id` en `sin_telefono`, `formato_invalido`, `no_es_whatsapp`. Reintenta resolver mientras audita.
-  - `--csv=/var/www/html/storage/logs/audit.csv` exporta lista detallada.
-
-```bash
-docker exec -d crecer-web-1 php /var/www/html/artisan contactos:mapear-wa > /var/www/html/storage/logs/mapear-wa.log 2>&1
-docker exec    crecer-web-1 php /var/www/html/artisan contactos:auditar-telefonos --csv=/var/www/html/storage/logs/audit.csv
-```
-
-### Acceso a MySQL
-
-El puerto 3306 está cerrado al host por seguridad. Acceso administrativo:
-```bash
-docker exec -it crecer-mysql-1 mysql -ucrecer -p${DB_PASSWORD} clinica
-```
-
----
-
-## 5. Troubleshooting
-
-### "500 Server Error" / `Permission denied` en cache
-**Síntoma:** logs de Laravel muestran `file_put_contents(.../cache/data/...): Permission denied`.
-**Causa:** `CACHE_STORE=file` con bind mount NTFS. Docker Desktop Windows ignora `chown`.
-**Fix:** confirmar `CACHE_STORE=database` en `app/.env`. `php artisan config:clear` + restart.
-
-### Bot conectado pero `sendMessage` timeoutea (whatsapp-web.js solamente)
-**Aplica a:** bots corriendo con `BOT_WA_CLIENT=wwebjs`. Baileys no usa CDP así que este síntoma no existe.
-**Síntoma:** logs `Runtime.callFunctionOn timed out`. `/status` devuelve `listo` pero los envíos fallan.
-**Causa:** cache de Chromium acumulado satura las operaciones CDP de Puppeteer.
-**Fix:** correr el script de limpieza manualmente:
-```powershell
-docker stop crecer-bot-1
-docker run --rm -v crecer_wa-session:/data alpine sh -c 'cd /data/session/Default && rm -rf Cache "Code Cache" GPUCache DawnGraphiteCache DawnWebGPUCache "Service Worker/CacheStorage" "Service Worker/ScriptCache"'
-docker start crecer-bot-1
-```
-Si ya está la tarea programada `Crecer\CleanBotCache` activa, esto pasa solo cada noche.
-
-### Watchdog del bot reinicia el cliente (whatsapp-web.js solamente)
-**Aplica a:** bots con `BOT_WA_CLIENT=wwebjs`. Baileys maneja reconexión a nivel WebSocket, sin watchdog.
-**Síntoma:** logs `[watchdog] Cliente colgado — reiniciando WhatsApp...`.
-**Estado actual:** defaults conservadores en `bot/clientes/wwebjs.js` (5min/3/20min: 15 min sin CONNECTED para matar). Si querés ajustar para un área, env overrides `WATCHDOG_INTERVAL`/`WATCHDOG_MAX_SIN_CONNECTED`/`WATCHDOG_TIMEOUT` en el servicio del compose.
-
-### Mensajes salientes desde Baileys llegan como "Esperando mensaje..."
-**Aplica a:** bots con `BOT_WA_CLIENT=baileys`.
-**Síntoma:** `sendText`/`sendMedia` devuelven `wa_id` válido pero el destinatario ve "Esperando mensaje..." en el chat.
-**Causa:** el destinatario tiene Lid mode y el adapter no usa su `@lid` (envía a `@s.whatsapp.net`).
-**Estado actual:** ya corregido en `bot/clientes/baileys.js` — `resolverJidEnvio()` y `checkNumber()` leen `info.lid` con prioridad. Si volvés a verlo, probablemente sea un caso nuevo de cifrado E2E roto en el receptor; mirar logs por `[baileys] onWhatsApp(...) → @lid` para confirmar que estamos usando el JID correcto.
-
-### Audio del bot Baileys llega como archivo en vez de nota de voz
-**Aplica a:** bots con `BOT_WA_CLIENT=baileys`.
-**Estado actual:** ya corregido — los .ogg se envían con `mimetype: 'audio/ogg; codecs=opus'` + `ptt: true`. Si tu integración envía mp3/mp4 va a llegar como audio file normal (no PTT) — comportamiento esperado.
-
-### 502 Bad Gateway tras restart del web
-Normal: PHP-FPM hace preload de ~2500 archivos al arrancar. Esperar 8-15 segundos.
-
-### Modal de "Textos" no carga ni edita
-Era un bug de Blade ya resuelto: `{{ '{{...}}' }}` → `@{{...}}`. Si volvés a ver vista admin que no carga, mirar `php artisan tinker --execute="view('admin.X')->render()"` para ver el error de parse de Blade.
-
-### Conversación de WA aparece sin nombre aunque el paciente está en agenda
-Hoy WhatsApp identifica usuarios con dos formatos:
-- `549...@c.us` — derivado del número (formato legacy)
-- `XXX@lid` — Linked Device ID, anónimo
-
-`contactos.wa_id` guarda el JID real. Si la conv tiene `@lid` y el contacto no tiene `wa_id` resuelto, no matchea. Solución: correr `contactos:mapear-wa` o usar el botón **"+ Agregar contacto"** del panel de conv (alta + vinculación en un click).
-
----
-
-## 6. Seguridad
-
-### Tokens
-
-- **`BOT_INGRESS_TOKEN`** (Laravel ↔ bot, 256 bits): `app/.env` + `bot/.env` + `panel/preload.js`. Si rota, actualizar los 3 lugares + restart bot y web.
-- **`BOT_TOKEN`** (bot ↔ Laravel): `config/app.php` lo usa el middleware `BotTokenAuth`.
-
-### Auth en endpoints del bot
-
-`server.js` exige Bearer en todos excepto `/status` y `/media/*` (públicos para healthchecks y URLs en mensajes WA). EventSource (logs, pruebas/stream) acepta `?token=` por query (browser no manda headers en SSE).
-
-### CORS
-
-Whitelist en `bot/.env` → `ALLOWED_ORIGINS=http://localhost,http://192.168.1.115,http://nginx`. No `*`.
-
-### Mimetypes en uploads
-
-`AtencionController::MIMETYPES_PERMITIDOS` define qué se acepta. `EXTENSIONES_BLOQUEADAS` (exe, bat, php, etc.) bloquea aunque el mimetype haya pasado.
-
-### Confirmaciones destructivas
-
-- "Resolver" conversación: confirm() antes de archivar.
-- "Logout": confirm() antes de cerrar sesión.
-
----
-
-## 7. Mantenimiento programado
-
-| Tarea Windows | Frecuencia | Hora | Script |
-|---|---|---|---|
-| `Crecer\BackupMySQL` | Diaria | 03:00 | `C:\crecer\docker\backup-mysql.ps1` |
-| `Crecer\CleanBotCache` | Diaria | 04:00 | `C:\crecer\docker\clean-bot-cache.ps1` |
-| `Crecer\SyncOmnia` | Diaria | 04:00 | `C:\crecer\docker\sync-omnia.ps1` |
-| `Crecer\MapearWA` | Diaria | 04:30 | `C:\crecer\docker\mapear-wa.ps1` |
-| `Crecer\SyncAvatares` | Diaria | 05:00 | `C:\crecer\docker\sync-avatares.ps1` |
-
-Verificar:
-```powershell
-schtasks /Query /TN "Crecer\BackupMySQL" /V /FO LIST
-schtasks /Query /TN "Crecer\CleanBotCache" /V /FO LIST
-schtasks /Query /TN "Crecer\MapearWA" /V /FO LIST
-schtasks /Query /TN "Crecer\SyncAvatares" /V /FO LIST
-```
-
-**Estado en vivo:** el dashboard `/admin` (sección "Tareas programadas") muestra
-cuándo corrió cada una y si están al día. Lee los artefactos en `C:\crecer\backups\auto\`
-montados read-only en el container web.
-
----
-
-## 8. Estado de los datos (snapshot 2026-04-29)
-
-- **Contactos en directorio**: 9346
-  - Con `wa_id` resuelto: ~7297 (78%, todos `@lid`)
-  - Sin resolver: ~2049 (correr `contactos:auditar-telefonos` para clasificar)
-- **Conversaciones WA**: 318+ activas (317 nuevas, 1 en proceso al cierre de la sesión)
-- **Conversaciones huérfanas remanentes**: ~53 (`@lid` sin match en directorio)
-- **Usuarios activos**: Soporte, Laura, Melisa, Jazmin
-
----
-
-## 9. Performance — números actuales
-
-| Endpoint | Latencia | Observación |
+| Servicio | Puerto host | Qué es |
 |---|---|---|
-| `/atencion/items` cache miss | ~450 ms | Una vez cada 3s |
-| `/atencion/items` cache hit | ~20 ms | El resto |
-| `/atencion/items` ETag 304 | ~13 ms · 0 bytes | Cuando no hay cambios reales |
-| `/contactos/data` (sin query) | ~420 ms · 27 KB | 100 filas de 9346 |
-| `/contactos/data?q=...` | ~30 ms · varía | LIKE en columna indexada |
-| `/atencion/conversacion/{id}` | ~30 ms | Últimos 100 mensajes |
-| `/bot-pulso` | ~50 ms | Proxy al bot |
+| `nginx` | 80 | Entrada web → PHP-FPM |
+| `web` | — | Laravel 12 (PHP 8.2 + OPcache sin revalidación) |
+| `reverb` | 8080 | WebSocket: chat interno, colas WA y recepción en tiempo real |
+| `queue-worker` | — | Cola `resumen` (resúmenes LLM); se recicla solo cada hora |
+| `mysql` | — | Base `clinica`, solo red interna |
+| `bot` | 3001 | WhatsApp **Atención** (el número de cada área lo muestra su `/status`) |
+| `bot-administracion` | 3002 | WhatsApp **Administración** |
+| `bot-ovodonacion` | 3003 | WhatsApp **Ovodonación** |
+| `bot-baileys-test` | 3009 | Experimento Baileys (profile `baileys`, no arranca con `up -d`, no escribe en la base) |
+| `autoheal` | — | Reinicia contenedores `unhealthy` con label `autoheal=true` |
+| `whisper` | — | Transcripción de audios |
+| `ollama` | 11434 | LLM local (qwen2.5:3b en GPU): clasificación y resúmenes |
 
-Polling actual: `/atencion/items` cada 8s, `/bot-pulso` cada 15s, `/chat/no-leidos` cada 6s.
+Los 3 bots son whatsapp-web.js sobre Chrome for Testing 146 pinneado
+(`docker/node-chrome`). Comparten código (`./bot`) y `bot/.env`; el área y el puerto
+salen del compose.
 
----
+**Volúmenes que importan**: `mysql-data`, `wa-session` (atención),
+`wa-session-administracion`, `wa-session-ovodonacion`. Borrar un `wa-session*` = volver
+a escanear el QR con el celular de esa área.
 
-## 10. Pendientes conocidos
+## 2. Ante un incidente
 
-- **Etapa 3.4** — Streaming uploads en `enviarArchivo` (sacar `base64` en memoria). Riesgo medio, beneficio chico.
-- **Etapa 4** — Reverb/WebSockets para reemplazar polling. Recomendado cuando lleguen a 5+ secretarias simultáneas.
-- **Etapa 5.6** — Auditoría de paleta visual `--accent` vs `--error`. Polish UI.
-- **Etapa 6** — Compliance:
-  - Política de contraseñas + lockout
-  - 2FA opcional para roles con acceso a datos sensibles
-  - Cifrado en reposo de `storage/wa-media` y backups
-  - Export "Mis datos" (Habeas Data Ley 25.326 AR)
-  - Auditoría de lecturas/exports
-- **Soft-cleanup Electron** — quitar tabs ya migradas a `/admin` después de 1-2 semanas de uso real con la web.
+1. **¿Los bots están bien?** `http://localhost:3001/status` (y 3002, 3003), sin token.
+   `listo` = bien · `esperando_qr` = hay que escanear · `iniciando` = esperar (hasta 5-7 min).
+2. **No diagnosticar con `docker logs`**: se congela tras eventos de WSL. Los bots
+   escriben a `bot/logs/bot-<area>.log`, pero desde Windows ese archivo puede verse
+   atrasado: leerlo desde adentro, `docker exec crecer-bot-1 tail -n 80 /app/logs/bot-atencion.log`.
+3. **Watchdog**: `backups/auto/watchdog.log` y `watchdog-state.json`. Si vas a operar a
+   mano, crear `backups/auto/watchdog-pause` (observa pero no reinicia) y borrarlo al terminar.
+4. **`esperando_qr`**: no reiniciar (solo regenera el QR). Escanear desde `/v2/admin` con
+   el celular del área (WhatsApp → Dispositivos vinculados).
+5. **Sin internet en el host**: no reiniciar nada; los bots se reconectan solos.
+6. **Error 500 en la web**: `app/storage/logs/laravel-AAAA-MM-DD.log`. Si el error es
+   `could not be opened in append mode`, un archivo quedó con dueño root:
+   `docker exec crecer-web-1 chown -R www-data:www-data /var/www/html/storage`.
+7. **Después de un `wsl --shutdown`** los puertos publicados quedan mudos:
+   `docker compose restart nginx reverb bot bot-administracion bot-ovodonacion`.
 
----
+## 3. Aplicar cambios
 
-## 11. Estructura del repositorio
+| Qué cambió | Qué hacer |
+|---|---|
+| PHP / Blade / config | `docker compose restart web queue-worker` (502 unos segundos: OPcache no revalida) |
+| JS / CSS de `public/` | Nada (van con `?v=filemtime`) |
+| `resources/js` (chat React) | `npm run build` en un contenedor `node:20-alpine` |
+| Código del bot o `bot/.env` | Reiniciar el bot, **con el celular del área a mano**. Si nadie lo hace, lo toma el ciclo del domingo 02:30 |
+| `docker-compose.yml` / `.env` raíz | `docker compose up -d <servicio>` |
 
+Antes de reiniciar: `docker exec crecer-web-1 php -l <archivo>`, `node --check <archivo>`
+y `docker exec -u www-data crecer-web-1 php artisan test` (SQLite en memoria y log nulo:
+no toca la base ni el log de producción).
+
+**Todo `artisan` por `docker exec` va con `-u www-data`** (y `-e HOME=/tmp` para
+`tinker`). Como root, los archivos que crea (el log del día, avatares, carpetas del
+legajo) quedan inescribibles para la web: así se perdieron 84 mensajes entre julio y agosto.
+
+## 4. Tareas programadas (Windows)
+
+| Tarea | Cuándo | Qué hace |
+|---|---|---|
+| `Crecer\BackupFull` | 02:30 | Backup total a `backups/full/`; los domingos reinicia cada bot (~1 min c/u) |
+| `Crecer\BackupMySQL` | 03:00 | Dump con retención 7 diarios / 4 semanales / 12 mensuales |
+| `Crecer\SyncOmnia` | 04:00 | Contactos nuevos desde Omnia + catálogo del checklist |
+| `Crecer\MapearWA` | 04:30 | Resuelve `wa_id` de hasta 300 contactos |
+| `Crecer\SyncAvatares` | domingos 05:00 | Fotos de perfil vencidas (tope 500) |
+| `Crecer\WatchdogBot` | cada 5 min | Vigila los 3 bots, reinicia con freno, avisa por WhatsApp (y por mail cuando esté configurado) |
+| `CrecerTunnelWatchdog` | cada 2 min | Revive el broker del túnel ngrok (acceso remoto de soporte) |
+| `CrecerCleanWSLDumps` | cada 30 min | Borra dumps de crash de WSL |
+| `Crecer\CleanBotCache` | deshabilitada | Reemplazada por el ciclo del domingo |
+
+El tablero de `/v2/admin` muestra si cada una corrió a tiempo.
+
+## 5. Comandos frecuentes
+
+```powershell
+# Omnia: ¿responde?  / sync en seco con la ventana nocturna
+docker exec -u www-data crecer-web-1 php artisan omnia:status
+docker exec -u www-data crecer-web-1 php artisan contactos:sync-omnia --desde=2026-09-13 --hasta=2026-11-22
+
+# Archivar conversaciones inactivas (dry-run; --apply ejecuta y deja un lote deshacible en /admin/archivar)
+docker exec -u www-data crecer-web-1 php artisan conversaciones:archivar-inactivas --dias=7
+
+# Jobs fallidos (cola resumen)
+docker exec -u www-data crecer-web-1 php artisan queue:failed
+docker exec -u www-data crecer-web-1 php artisan queue:retry all
+
+# MySQL (el 3306 no está publicado)
+docker exec -it crecer-mysql-1 mysql -ucrecer -p clinica
 ```
-C:\crecer\
-├── app\                    # Laravel 11 (bind mount → /var/www/html)
-│   ├── app\Http\Controllers\
-│   │   ├── AtencionController.php   # Cola, conversaciones, iniciar, agregar contacto
-│   │   ├── BotController.php        # Webhooks del bot (mensaje entrante, derivar)
-│   │   ├── ContactoController.php   # Directorio + import CSV
-│   │   ├── AdminController.php      # Panel admin web (proxy al bot)
-│   │   └── ChatController.php       # Chat interno Equipo + DMs
-│   ├── app\Models\
-│   ├── app\Livewire\                # Tablet, ColaSecretaria, Login, etc.
-│   ├── resources\views\
-│   │   ├── atencion\                # index, mis-tareas, historial
-│   │   ├── contactos\
-│   │   ├── admin\                   # dashboard, textos, pruebas, logs, usuarios
-│   │   └── chat\_widget.blade.php   # Widget reusable de chat interno
-│   ├── routes\web.php, api.php, console.php
-│   └── database\migrations\
-├── bot\                    # Node + whatsapp-web.js (bind mount → /app)
-│   ├── server.js           # HTTP API (Express)
-│   ├── whatsapp.js         # Cliente WA (Puppeteer + watchdog)
-│   ├── ollama.js           # Clasificación LLM
-│   ├── mensajes.js         # Acumulador + procesamiento
-│   ├── textos.json         # Respuestas automáticas (editable desde /admin/textos)
-│   └── .env                # BOT_INGRESS_TOKEN, ALLOWED_ORIGINS, OLLAMA_URL, etc.
-├── panel\                  # Electron (gestión local de Docker/Ollama)
-├── docker\
-│   ├── nginx\default.conf
-│   ├── php\Dockerfile + opcache.ini + www.conf
-│   ├── node\Dockerfile     # Con tzdata aplicado
-│   ├── backup-mysql.ps1    # Backup automático
-│   └── clean-bot-cache.ps1 # Limpieza de cache Chromium
-├── backups\
-│   ├── 20260427-100037\    # Backup manual pre-hardening
-│   └── auto\               # Rotación automática (daily/weekly/monthly)
-├── docker-compose.yml
-├── CLAUDE-clinica.md       # Contexto histórico y propósito del proyecto
-└── README-OPERATIVO.md     # Este archivo
-```
 
----
+**Recuperar mensajes de un período sin bot** (`/backfill` del bot, idempotente por
+`wa_id`, con la fecha real): `POST http://localhost:300X/backfill` con Bearer
+`BOT_INGRESS_TOKEN` y `{"desde":"2026-09-14T00:00:00-03:00","dryRun":true}`; seguir con
+`GET /backfill/estado`. Pesa sobre el bot: una área por vez y fuera de hora pico.
 
-## 12. Quien quiera entender más
+## 6. Versión de WhatsApp Web
 
-- **Memoria del agente**: `C:\Users\usuario\.claude\projects\C--crecer\memory\` — un archivo `project_*.md` por feature mayor con detalle de implementación, decisiones y comandos específicos.
-- **Manual del bot para usuarios**: `C:\crecer\manual.html` — onboarding para secretarias.
-- **Brochure comercial**: `C:\atencion-bot\brochure-manual.html` — versión comercial del producto (repo light separado).
+Está pineada (`WA_WEB_VERSION` en `bot/clientes/wwebjs.js`) y cada versión dura unos
+3 meses. Una sesión ya vinculada sigue andando con una versión vencida; lo que falla es
+el re-pareo y posiblemente el reinicio. El watchdog chequea una vez por día que la
+configurada siga vigente. Para actualizar: bajar el HTML con
+`curl -sL -o bot/.wwebjs_cache/<VER>.html https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/<VER>.html`,
+cambiar la versión y reiniciar los bots de a uno, con los celulares a mano.
+
+## 7. Trampas conocidas
+
+- **OPcache**: un cambio PHP no existe hasta reiniciar `web`. Un error de sintaxis en un
+  controller tumba el contenedor al reiniciar (queda `Exited`).
+- **`CACHE_STORE=database`**, nunca `file`: el bind mount de Windows no respeta `chown`.
+- **Nunca llamar al bot en bucle desde Laravel**: cada llamada es un `evaluate` en
+  Chromium y una ráfaga lo cuelga (incidente 19/05). Todo lo masivo va con `--limit`.
+- **Los grupos de WhatsApp entran a la cola** (ovo usa sus grupos internos desde el
+  panel). El filtro que parecía excluirlos nunca funcionó; sacarlos es decisión de producto.
+- **`navigator.clipboard` no existe en el panel** (se sirve por HTTP, no es contexto
+  seguro): copiar al portapapeles necesita el fallback con `textarea`.
+- **Scripts `.ps1` con acentos**: UTF-8 **con BOM**, o PowerShell 5.1 los lee mal.
+- **Los `.env` no están en git**: se respaldan cada noche en `backups/full/config/`.

@@ -653,7 +653,7 @@ emisor).
 
 | Tarea | Cuándo | Qué hace |
 |---|---|---|
-| `Crecer\BackupFull` | diaria 02:30 | Backup total (§22.1), incluye limpieza de caché Chromium por bot |
+| `Crecer\BackupFull` | diaria 02:30 | Backup total (§22.1); los domingos reinicia cada bot y limpia su caché Chromium |
 | `Crecer\BackupMySQL` | diaria 03:00 | Dump adicional con retención 7d/4w/12m |
 | `Crecer\CleanBotCache` | **deshabilitada** | Redundante desde que el backup limpia caché (se conserva el script) |
 | `Crecer\SyncOmnia` | diaria 04:00 | `contactos:sync-omnia --apply` sobre [hoy-10d, hoy+60d], con sonda `omnia:status` previa |
@@ -661,7 +661,12 @@ emisor).
 | `Crecer\SyncAvatares` | domingos 05:00 | Refresco de fotos de perfil (TTL 7 días) |
 | `Crecer\WatchdogBot` | cada 5 min | Watchdog de host (§16.5 capa 3) |
 | `CrecerTunnelWatchdog` | cada 2 min + logon + boot | Revive el broker del túnel |
-| `CrecerCleanWSLDumps` | programada | Borra dumps de crash de WSL que inflan disco |
+| `CrecerCleanWSLDumps` | cada 30 min | Borra dumps de crash de WSL que inflan disco |
+
+Todo `docker exec ... artisan` (tareas y a mano) va con **`-u www-data`**: como root,
+los archivos que crea artisan (el log del día, avatares, carpetas del legajo) quedan
+con dueño root y la web ya no puede escribirlos (incidente 13/07 → 23/09: mensajes
+perdidos y resúmenes fallidos). Para `tinker` sumar `-e HOME=/tmp`.
 
 ### 21.3 Acceso remoto (túnel)
 
@@ -693,9 +698,12 @@ emisor).
 3. **Espejo de `app/storage`** (sin `framework/`).
 4. **Config**: los 3 `.env` + `docker-compose.yml` (lo que no está en git).
 5. **`repo/crecer.bundle`**: historia git completa.
-6. **Sesiones WA**: por bot — stop limpio → limpieza de caché → tar del volumen → start
-  (~1 min de corte por bot; rota el tar anterior a `.prev` y lo restaura si el nuevo sale
-  vacío). Única parte con corte de servicio.
+6. **Sesiones WA**: de lunes a sábado se tarea el `session-snapshot` que cada bot deja en
+  su último apagado limpio, **sin tocar el bot**. Los **domingos**, ciclo completo por bot:
+  stop limpio → limpieza de caché → tar del volumen → start (~1 min de corte por bot; rota
+  el tar anterior a `.prev` y lo restaura si el nuevo sale vacío). Es el único corte de
+  servicio programado, y el momento en que los bots toman código o versión de WhatsApp
+  Web nuevos si nadie los reinició antes.
 7. Domingos: higiene Docker (`builder prune` + `image prune`).
 
 Más `backup-mysql.ps1` (03:00) con retención 7 diarios / 4 semanales / 12 mensuales.
@@ -918,11 +926,12 @@ y la **normalización de teléfonos argentinos** (04/05) que recuperó el 91% de
 | `ARQUITECTURA.md` | Primer doc de arquitectura con diagrama | ⚠ parcialmente superado por este |
 | `CLAUDE-clinica.md` | Contexto histórico y propósito | vigente como historia |
 | `docker/README-RESTAURAR.md` | Restore paso a paso en máquina nueva | vigente |
-| `docs/MIGRACION-V2.md` | Plan e inventario de la migración V1→V2 | vigente hasta el retiro de V1 |
-| `docs/PARIDAD-V2.md` | Matriz de paridad, criterio del gate 13/07 | vigente |
+| `docs/MIGRACION-V2.md` | Plan e inventario de la migración V1→V2 | histórico (V1 retirada el 03/08) |
+| `docs/PARIDAD-V2.md` | Matriz de paridad, criterio del gate 13/07 | histórico (gate cerrado) |
 | `docs/DESIGN-SYSTEM.md` | Tokens y componentes CSS | vigente |
 | `docs/omnia-integration-report.md` | Integración Omnia (lectura) | vigente |
-| `manual.html` | Onboarding de secretarias (usuario final) | vigente |
+| `docs/manuales/` | Manual integral (`manual-crecer.html`) + PDFs por rol (generador en `fuentes/`) | vigente (reemplaza al `manual.html` de V1, borrado el 23/09) |
+| `docs/AUDITORIA-2026-09-23.md` | Auditoría integral: hallazgos, arreglos aplicados y pendientes | vigente |
 | `brochure/` | Material comercial | complementa la Parte I |
 | memoria del agente (`~/.claude/projects/C--crecer/memory/`) | Detalle de implementación por feature + playbooks | viva, se actualiza por sesión |
 
