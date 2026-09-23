@@ -267,9 +267,10 @@ class OmniaService
      * Particular), y es lo que manda para el checklist de recepción.
      *
      * appointments/pending no lo trae; el reporte ambulatorio sí. Se pide el del
-     * día una vez cada 10 min (cache) con timeout corto: es el camino del
-     * tablet y no puede colgarlo. Un turno que no está en el cache (se dio
-     * después) fuerza un refresco, uno solo. null = no se pudo saber.
+     * día una vez cada 10 min (cache) con timeout corto. Desde el 23/09 el tablet
+     * lo consulta después de responderle al paciente (Tablet::confirmarLlegada).
+     * Un turno que no está en el cache fuerza un refresco, no más de uno cada
+     * 2 minutos. null = no se pudo saber.
      *
      * @return array{financiador:?string, plan:?string}|null
      */
@@ -292,12 +293,16 @@ class OmniaService
         };
 
         $mapa = Cache::get($clave);
-        if (!is_array($mapa) || !isset($mapa[(string) $turnoId])) {
-            $mapa = $armar();
-            if (!is_array($mapa)) return null;   // Omnia no respondió: no cachear el fallo
-            Cache::put($clave, $mapa, 600);
+        // Un turno que falta (se dio recién, o no es ambulatorio y nunca va a
+        // estar) fuerza un refresco, pero uno cada 2 minutos como mucho: los no
+        // ambulatorios pedían el reporte entero en cada check-in.
+        if ((!is_array($mapa) || !isset($mapa[(string) $turnoId])) && Cache::add($clave . '.refresco', 1, 120)) {
+            $nuevo = $armar();
+            if (!is_array($nuevo)) return null;   // Omnia no respondió: no cachear el fallo
+            Cache::put($clave, $nuevo, 600);
+            $mapa = $nuevo;
         }
-        return $mapa[(string) $turnoId] ?? null;
+        return is_array($mapa) ? ($mapa[(string) $turnoId] ?? null) : null;
     }
 
     // ── API pública ───────────────────────────────────────────

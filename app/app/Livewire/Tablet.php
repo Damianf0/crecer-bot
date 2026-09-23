@@ -8,6 +8,8 @@ use App\Services\ChecklistRecepcion;
 use App\Services\OmniaService;
 use Livewire\Component;
 
+use function Illuminate\Support\defer;
+
 class Tablet extends Component
 {
     public string $paso = 'inicio';   // inicio | turno | sin_turno | confirmado | acercarse
@@ -89,13 +91,13 @@ class Tablet extends Component
         $turno = $this->turnoSeleccionado ?? ($this->turnos[0] ?? null);
         $this->planta = $turno['planta'] ?? 'baja';
 
-        // El checklist va con el financiador DEL TURNO (puede ser Particular aunque
-        // el paciente tenga obra social). Si Omnia no responde, el de la ficha.
-        $delTurno = !empty($turno['id']) ? app(OmniaService::class)->financiadorDelTurno($turno['id']) : null;
-        $financiador = $delTurno['financiador'] ?? $this->paciente['financiador'] ?? $this->paciente['obra_social'] ?? null;
-        $plan        = $delTurno['plan'] ?? $this->paciente['plan'] ?? null;
+        // Arranca con la obra social de la ficha: el tablet no espera a Omnia
+        // (ver corregirConFinanciadorDelTurno).
+        $financiador = $this->paciente['financiador'] ?? $this->paciente['obra_social'] ?? null;
+        $plan        = $this->paciente['plan'] ?? null;
+        $practicas   = $turno['practicas'] ?? array_filter([$turno['practica'] ?? null]);
 
-        ColaAtencion::create([
+        $fila = ColaAtencion::create([
             'dni'          => $this->dni,
             'nombre'       => $this->paciente['nombre'],
             'apellido'     => $this->paciente['apellido'],
@@ -105,23 +107,52 @@ class Tablet extends Component
             'omnia_turno_id' => $turno['id'] ?? null,
             'profesional'  => $turno['profesional'] ?? null,
             'practica'     => $turno['practica'] ?? null,
-            'practicas'    => $turno['practicas'] ?? array_filter([$turno['practica'] ?? null]),
+            'practicas'    => $practicas,
             'turno_hora'   => $turno['hora'] ?? null,
             'planta'       => $this->planta,
             'motivo'       => 'turno',
             'primera_vez'  => $this->paciente['primera_vez'] ?? false,
             'sin_turno'    => false,
-            'checklist'    => ChecklistRecepcion::para(
-                $financiador,
-                $plan,
-                $turno['practicas'] ?? array_filter([$turno['practica'] ?? null]),
-            ),
+            'checklist'    => ChecklistRecepcion::para($financiador, $plan, $practicas),
             'hora_llegada' => now(),
             'orden'        => ColaAtencion::max('orden') + 1,
         ]);
 
+        if (!empty($turno['id'])) {
+            $turnoId = $turno['id'];
+            defer(fn () => self::corregirConFinanciadorDelTurno($fila, $turnoId, $practicas));
+        }
+
         $this->paso = 'confirmado';
         $this->dispatch('iniciarReset', segundos: $this->resetSegundos, componentId: $this->getId());
+    }
+
+    /**
+     * El checklist va con el financiador DEL TURNO, que puede no ser el de la
+     * ficha (una paciente con OSFATLYF vino como Particular). Omnia lo da en el
+     * reporte ambulatorio, que tarda segundos: antes el paciente esperaba en el
+     * tablet (hasta ~17 s si Omnia estaba lento). Ahora corre después de
+     * responderle y, si difiere, corrige la fila; el saved avisa a recepción.
+     * El checklist se rearma solo si nadie empezó a tildarlo.
+     */
+    private static function corregirConFinanciadorDelTurno(ColaAtencion $fila, int|string $turnoId, array $practicas): void
+    {
+        try {
+            $delTurno = app(OmniaService::class)->financiadorDelTurno($turnoId);
+        } catch (\Throwable) {
+            return;   // sin Omnia queda el de la ficha, como antes
+        }
+        if (!$delTurno) return;
+
+        $fila->refresh();
+        $financiador = $delTurno['financiador'] ?? $fila->financiador;
+        $plan        = $delTurno['plan'] ?? $fila->plan;
+        if ($financiador === $fila->financiador && $plan === $fila->plan) return;
+
+        $cambios = ['financiador' => $financiador, 'plan' => $plan];
+        $tildado = collect($fila->checklist ?? [])->contains(fn ($i) => !empty($i['done']));
+        if (!$tildado) $cambios['checklist'] = ChecklistRecepcion::para($financiador, $plan, $practicas);
+        $fila->update($cambios);
     }
 
     public function confirmarSinTurno(?string $motivo = null, ?string $descripcion = null): void
