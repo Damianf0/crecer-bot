@@ -76,7 +76,10 @@ window.V2Conv = (function () {
     function bubbleContenido(m) {
         let inner = '';
         if (m.tipo === 'imagen' && m.archivo_url) {
-            inner += `<img src="${esc(m.archivo_url)}" onclick="window.open('${esc(m.archivo_url)}','_blank')" alt="Imagen">`;
+            // Link y no onclick="window.open('…')": dentro de un string JS el esc()
+            // de HTML no alcanza (el parser devuelve el &#39; a ' antes de ejecutar),
+            // y el nombre del archivo lleva la extensión que declara quien lo manda.
+            inner += `<a href="${esc(m.archivo_url)}" target="_blank" rel="noopener"><img src="${esc(m.archivo_url)}" alt="Imagen"></a>`;
             if (m.contenido) inner += `<div style="margin-top:5px;">${esc(m.contenido)}</div>`;
         } else if (m.tipo === 'audio' && m.archivo_url) {
             inner += `<audio controls src="${esc(m.archivo_url)}"></audio>`;

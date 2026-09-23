@@ -174,22 +174,29 @@ class AdminController extends Controller
             ], 503);
         }
 
+        // Las tareas de Windows vigentes (23/09). CleanBotCache ya no está: se
+        // deshabilitó el 05/07 (el stop/start nocturno era fuente de inestabilidad,
+        // ver docs/DELTA-WORKBENCH-BOT.md) y el tablero la mostraba en rojo para siempre.
         $tareas = [
+            $this->statusTarea('backup_full', 'Backup completo (base, media, sesiones WA)', '02:30', [
+                'patron'  => $base . '/full/mysql/clinica-full-*.sql.gz',
+                'ventana' => 26 * 3600,
+            ]),
             $this->statusTarea('backup_mysql', 'Backup MySQL diario', '03:00', [
                 'patron'  => $base . '/auto/daily/clinica-*.sql.gz',
                 'ventana' => 26 * 3600,   // <26 h desde el último archivo: OK
             ]),
-            $this->statusTarea('clean_bot_cache', 'Limpieza cache bot', '04:00', [
-                'log'     => $base . '/auto/clean-cache.log',
+            $this->statusTarea('sync_omnia', 'Sync contactos desde Omnia', '04:00', [
+                'log'     => $base . '/auto/sync-omnia.log',
                 'ventana' => 26 * 3600,
             ]),
             $this->statusTarea('mapear_wa', 'Sync wa_id de contactos', '04:30', [
                 'log'     => $base . '/auto/mapear-wa.log',
                 'ventana' => 26 * 3600,
             ]),
-            $this->statusTarea('sync_avatares', 'Sync avatares WhatsApp', '05:00', [
+            $this->statusTarea('sync_avatares', 'Sync avatares WhatsApp', 'domingos 05:00', [
                 'log'     => $base . '/auto/sync-avatares.log',
-                'ventana' => 26 * 3600,
+                'ventana' => 8 * 24 * 3600,   // semanal desde el 16/07
             ]),
             $this->statusTarea('watchdog_bot', 'Watchdog del bot WA', 'cada 5 min', [
                 'log'     => $base . '/auto/watchdog.log',

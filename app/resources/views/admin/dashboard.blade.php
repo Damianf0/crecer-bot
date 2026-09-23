@@ -57,7 +57,7 @@
             <tr style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">
                 <th style="padding:8px 6px;text-align:center;width:36px;"></th>
                 <th style="padding:8px 6px;text-align:left;">Tarea</th>
-                <th style="padding:8px 6px;text-align:left;">Hora diaria</th>
+                <th style="padding:8px 6px;text-align:left;">Cuándo</th>
                 <th style="padding:8px 6px;text-align:left;">Última corrida</th>
                 <th style="padding:8px 6px;text-align:left;">Artefacto</th>
             </tr>
