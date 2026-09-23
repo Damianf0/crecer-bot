@@ -45,6 +45,13 @@ async function postConReintentos(url, payload, etiqueta) {
     await api.post(url, payload);
     return;
   } catch (err) {
+    // 4xx = Laravel rechazó el payload (validación, auth): reintentar da lo
+    // mismo. Solo se reintenta lo transitorio (red, timeout, 5xx, 408/429).
+    const st = err.response?.status;
+    if (st >= 400 && st < 500 && st !== 408 && st !== 429) {
+      console.error(`[mensajesApi] ${etiqueta}: rechazado por Laravel (${st}), no se reintenta`);
+      throw err;
+    }
     if (_pendientes >= MAX_PENDIENTES) {
       console.error(`[mensajesApi] ${etiqueta}: fallo y cola de reintentos llena (${_pendientes}) — descartado: ${err.message}`);
       throw err;
@@ -222,9 +229,16 @@ function mimeExt(mimetype, fallback = 'bin') {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
     'application/msword': 'doc',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.ms-powerpoint': 'ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'text/plain': 'txt', 'text/csv': 'csv', 'application/zip': 'zip',
   };
   const base = mimetype?.split(';')[0]?.trim();
-  return map[base] || base?.split('/')[1] || fallback;
+  // El mimetype lo declara quien manda el mensaje: la extensión termina en el
+  // nombre del archivo y en la URL que pinta el panel. Solo alfanuméricos.
+  const ext = (map[base] || base?.split('/')[1] || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10);
+  return ext || fallback;
 }
 
 /**
@@ -256,4 +270,4 @@ async function transcribirAudio(filePath) {
   }
 }
 
-module.exports = { guardarMensajeEntrante, guardarMensajeSaliente, guardarMensajeSalienteExterno, transcribirAudio };
+module.exports = { guardarMensajeEntrante, guardarMensajeSaliente, guardarMensajeSalienteExterno, transcribirAudio, mimeExt };

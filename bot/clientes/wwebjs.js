@@ -43,6 +43,28 @@ function copiarSesion(desde, hacia) {
   });
 }
 
+// Clave serializada de un mensaje: "<fromMe>_<chat>_<id>[_<participante>]".
+// Desde el 17/07 (versión de WhatsApp Web pineada + Chrome 146) el id que
+// devuelve serialize() ya no trae _serialized. Consecuencias hasta el 23/09:
+// wa_id vacío en todos los mensajes, y downloadMedia() —que busca el mensaje
+// por this.id._serialized— fallando en silencio: dos meses sin guardar
+// imágenes, audios ni documentos de pacientes. Se rearma con el mismo formato
+// que MsgKey.toString() (verificado en vivo el 23/09 contra Msg.get(), en chats
+// @lid y en grupos) y se deja puesto en el objeto, así los métodos de wwebjs
+// que lo leen (downloadMedia, getQuotedMessage) vuelven a andar.
+function completarIdSerializado(id) {
+  if (!id || typeof id !== 'object') return '';
+  if (id._serialized) return id._serialized;
+  const wid = (w) => (w && typeof w === 'object')
+    ? (w._serialized || (w.user && w.server ? `${w.user}@${w.server}` : ''))
+    : (w || '');
+  const remote = wid(id.remote);
+  if (!remote || !id.id) return '';
+  const participante = id.participant ? wid(id.participant) : '';
+  id._serialized = `${id.fromMe ? 'true' : 'false'}_${remote}_${id.id}${participante ? `_${participante}` : ''}`;
+  return id._serialized;
+}
+
 function leerMarker() {
   try { return JSON.parse(fs.readFileSync(MARKER_FILE, 'utf8')); } catch (_) { return null; }
 }
@@ -339,7 +361,7 @@ function crearClienteWwebjs() {
         else if (tipoQ === 'sticker')   preview = '😀 Sticker';
       }
       return {
-        wa_id:   quoted.id?._serialized || '',
+        wa_id:   completarIdSerializado(quoted.id),
         autor:   null,
         preview: preview.slice(0, 280),
       };
@@ -351,6 +373,7 @@ function crearClienteWwebjs() {
   async function envolverMensaje(msg) {
     const tipo = normalizarTipo(msg.type);
     if (!tipo) return null;
+    const waId = completarIdSerializado(msg.id);   // antes que quoted y downloadMedia
     let body = null;
     if (tipo === 'texto')   body = msg.body || null;
     else                    body = msg.body || null; // caption (imagen/video/doc) o null
@@ -361,15 +384,22 @@ function crearClienteWwebjs() {
       fromMe: !!msg.fromMe,
       type: tipo,
       body,
-      wa_id: msg.id?._serialized || '',
+      wa_id: waId,
       quoted,
       timestamp: new Date((msg.timestamp || Date.now()/1000) * 1000),
+      // Nunca en silencio: un catch mudo acá escondió dos meses sin adjuntos.
       downloadMedia: async () => {
         try {
           const media = await msg.downloadMedia();
-          if (!media) return null;
+          if (!media) {
+            console.warn(`[whatsapp] downloadMedia sin datos (${tipo}, ${waId || 'sin id'})`);
+            return null;
+          }
           return { mimetype: media.mimetype, data: media.data };
-        } catch (_) { return null; }
+        } catch (e) {
+          console.warn(`[whatsapp] downloadMedia falló (${tipo}, ${waId || 'sin id'}): ${e.message}`);
+          return null;
+        }
       },
     };
   }
@@ -536,8 +566,13 @@ function crearClienteWwebjs() {
       programarReinicio(espera);
     });
 
+    // Los GRUPOS entran (@g.us): el filtro `msg.isGroupMsg` que había acá nunca
+    // anduvo (wwebjs 1.34 no tiene esa propiedad en Message) y ovo terminó
+    // usando sus grupos internos desde el panel (verificado 23/09: tomados,
+    // resueltos y respondidos desde ahí). Sacarlos es decisión de producto,
+    // no un fix. Ojo: el adapter de Baileys SÍ los descarta.
     client.on('message', async (msg) => {
-      if (msg.isGroupMsg || msg.fromMe) return;
+      if (msg.fromMe) return;
       if (msg.from === 'status@broadcast' || msg.from?.endsWith('@broadcast')) return;
       resetActividad();
       const m = await envolverMensaje(msg);
@@ -550,9 +585,8 @@ function crearClienteWwebjs() {
     client.on('message_create', async (msg) => {
       resetActividad();
       if (!msg.fromMe) return;
-      if (msg.isGroupMsg) return;
       if (msg.to === 'status@broadcast') return;
-      const waId = msg.id?._serialized;
+      const waId = completarIdSerializado(msg.id);
       if (await esNuestro(waId)) return; // lo mandó el bot por sendText/sendMedia
       console.log(`[whatsapp] saliente externo (celular) → ${msg.to}`);
       const m = await envolverMensaje(msg);
@@ -585,7 +619,7 @@ function crearClienteWwebjs() {
     // descarta silenciosamente el quote (el mensaje igual se envía).
     if (opts.quoted?.wa_id) sendOpts.quotedMessageId = opts.quoted.wa_id;
     const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, texto, sendOpts), 45_000, 'sendText'));
-    const waId = sent?.id?._serialized || '';
+    const waId = completarIdSerializado(sent?.id);
     marcarEnviado(waId);
     return { wa_id: waId };
   };
@@ -594,7 +628,7 @@ function crearClienteWwebjs() {
     const media = new MessageMedia(mimetype, base64, filename || 'archivo');
     const opts = caption ? { caption } : {};
     const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, media, opts), 90_000, 'sendMedia'));
-    const waId = sent?.id?._serialized || '';
+    const waId = completarIdSerializado(sent?.id);
     marcarEnviado(waId);
     return { wa_id: waId };
   };
@@ -787,4 +821,4 @@ function crearClienteWwebjs() {
   return emitter;
 }
 
-module.exports = { crearClienteWwebjs };
+module.exports = { crearClienteWwebjs, completarIdSerializado };

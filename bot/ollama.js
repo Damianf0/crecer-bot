@@ -1,7 +1,10 @@
 const axios = require('axios');
 
-const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://host.docker.internal:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3:4b';
+// Directo al contenedor por la red de docker. Por host.docker.internal pasaba
+// por el puerto publicado en Windows, que queda mudo tras un wsl --shutdown.
+const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://ollama:11434';
+// Mismo modelo que bot/.env (el que está cargado en la GPU).
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b';
 
 const SYSTEM_PROMPT = `Sos el clasificador de mensajes del bot de WhatsApp de Crecer Reproducción, un centro de reproducción y genética humana.
 
