@@ -970,7 +970,9 @@ Artisan::command('alerta:mail {asunto_b64} {cuerpo_b64}', function () {
  *     días hábiles de las últimas 4 semanas (sin contar días en cero, que son
  *     caídas o feriados) es de al menos --minimo.
  *   - calidad: en las últimas --horas-calidad, más de la mitad de los
- *     entrantes sin wa_id o más de la mitad de los adjuntos sin archivo.
+ *     entrantes sin wa_id o más de un cuarto de los adjuntos sin archivo (en
+ *     días sanos se pierden cero; el 28/09 se perdía el 44 % y con el umbral
+ *     de la mitad no avisó).
  *
  * Exit 0 = bien · 1 = hay alertas (líneas que empiezan con "- "). Lo corre el
  * watchdog una vez por hora en horario de clínica y avisa por WhatsApp y mail.
@@ -1033,7 +1035,7 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
             $alertas[] = "{$nombre}: {$q->sin_id} de {$q->total} entrantes de las últimas {$hCal} h sin wa_id "
                 . '(el bot no lee el id de los mensajes: sin él no se deduplican reintentos ni se puede citar).';
         }
-        if ($q && $q->media >= 4 && $q->media_sin_archivo * 2 > $q->media) {
+        if ($q && $q->media >= 4 && $q->media_sin_archivo * 4 > $q->media) {
             $alertas[] = "{$nombre}: {$q->media_sin_archivo} de {$q->media} adjuntos de las últimas {$hCal} h sin archivo "
                 . '(no se están guardando imágenes, audios ni documentos de pacientes).';
         }

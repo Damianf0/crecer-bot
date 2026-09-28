@@ -370,6 +370,47 @@ function crearClienteWwebjs() {
     }
   }
 
+  // Igual que Message.downloadMedia() de wwebjs 1.34.7, pero pasando el
+  // mimetype a downloadAndMaybeDecrypt. La versión de WA Web que se cargó el
+  // 28/09 (2.3000.1048638736: WhatsApp actualiza sus scripts aunque el HTML
+  // esté pineado) valida el tipo del archivo descifrado y, sin mimetype, lo
+  // toma como application/octet-stream → InvalidMediaFileType (en el log,
+  // "downloadMedia falló: t"). Con el mimetype del mensaje baja completo
+  // (verificado en vivo el 28/09 sobre imágenes y audios que habían fallado).
+  async function descargarMedio(msg) {
+    if (!msg.hasMedia) return null;
+    const result = await client.pupPage.evaluate(async (msgId) => {
+      const C = window.require('WAWebCollections');
+      const m = C.Msg.get(msgId) || (await C.Msg.getMessagesById([msgId]))?.messages?.[0];
+      // REUPLOADING: el medio venció en el servidor, no se puede bajar ahora.
+      if (!m || !m.mediaData || m.mediaData.mediaStage === 'REUPLOADING') return null;
+      if (m.mediaData.mediaStage != 'RESOLVED') {
+        await m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 });
+      }
+      if (m.mediaData.mediaStage.includes('ERROR') || m.mediaData.mediaStage === 'FETCHING') return null;
+      const mockQpl = { addAnnotations() { return this; }, addPoint() { return this; } };
+      try {
+        const buf = await window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
+          directPath: m.directPath,
+          encFilehash: m.encFilehash,
+          filehash: m.filehash,
+          mediaKey: m.mediaKey,
+          mediaKeyTimestamp: m.mediaKeyTimestamp,
+          type: m.type,
+          mimetype: m.mimetype,
+          signal: new AbortController().signal,
+          downloadQpl: mockQpl,
+        });
+        return { data: await window.WWebJS.arrayBufferToBase64Async(buf), mimetype: m.mimetype };
+      } catch (e) {
+        if (e.status && e.status === 404) return null;
+        // Los errores de WA Web vienen minificados (e.message suelto no dice nada).
+        throw new Error(`${e.name || 'Error'}: ${e.message}`);
+      }
+    }, completarIdSerializado(msg.id));
+    return result && result.data ? result : null;
+  }
+
   async function envolverMensaje(msg) {
     const tipo = normalizarTipo(msg.type);
     if (!tipo) return null;
@@ -390,7 +431,7 @@ function crearClienteWwebjs() {
       // Nunca en silencio: un catch mudo acá escondió dos meses sin adjuntos.
       downloadMedia: async () => {
         try {
-          const media = await msg.downloadMedia();
+          const media = await descargarMedio(msg);
           if (!media) {
             console.warn(`[whatsapp] downloadMedia sin datos (${tipo}, ${waId || 'sin id'})`);
             return null;
