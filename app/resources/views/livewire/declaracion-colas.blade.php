@@ -3,7 +3,7 @@
     $tienePendientes = $conversaciones->isNotEmpty() || $tareas->isNotEmpty();
     $iconos = [
         'recepcion'=>'🏥','turnos'=>'📅','ordenes'=>'📋','facturacion'=>'💳','coordinacion'=>'🤝',
-        'atencion'=>'💬','administracion'=>'🗂️','ovodonacion'=>'🥚',
+        'atencion'=>'💬','administracion'=>'🗂️','ovodonacion'=>'🥚','difusion'=>'📣',
     ];
     $primerNombre = explode(' ', trim($usuario->nombre_completo))[0] ?: $usuario->nombre_completo;
 @endphp

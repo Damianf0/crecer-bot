@@ -72,7 +72,8 @@ function registrarExito() {
 async function procesarConversacion(texto) {
   if (breakerAbierto()) {
     console.warn('[ollama] Breaker abierto — clasificación FALLBACK sin llamar a Ollama');
-    return { codigo: 'FALLBACK', confianza: 'baja' };
+    // sinIA: el FALLBACK no lo decidió el modelo (las estadísticas lo separan).
+    return { codigo: 'FALLBACK', confianza: 'baja', sinIA: true };
   }
   try {
     const response = await axios.post(
@@ -101,7 +102,7 @@ async function procesarConversacion(texto) {
   } catch (err) {
     console.error('[ollama] Error al llamar a Ollama:', err.message);
     registrarFallo();
-    return { codigo: 'FALLBACK', confianza: 'baja' };
+    return { codigo: 'FALLBACK', confianza: 'baja', sinIA: true };
   }
 }
 

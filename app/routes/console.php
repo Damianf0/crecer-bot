@@ -826,8 +826,8 @@ Artisan::command('conversaciones:archivar-inactivas {--dias=7} {--area=} {--excl
 
     // ── Selección ─────────────────────────────────────────────────────────
     $area = $this->option('area');
-    if ($area && !isset(ConversacionWA::AREAS[$area])) {
-        $this->error("Área inválida: {$area}. Válidas: " . implode(', ', array_keys(ConversacionWA::AREAS)));
+    if ($area && !array_key_exists($area, ConversacionWA::areas())) {
+        $this->error("Área inválida: {$area}. Válidas: " . implode(', ', array_keys(ConversacionWA::areas())));
         return 1;
     }
     $criterio = [
@@ -1016,7 +1016,7 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
         ->groupBy('c.area')->get()->keyBy('area');
 
     $alertas = [];
-    foreach (ConversacionWA::AREAS as $area => $nombre) {
+    foreach (ConversacionWA::areas() as $area => $nombre) {
         $n   = (int) ($recientes[$area] ?? 0);
         $dias = $base[$area] ?? [];
         sort($dias);
@@ -1050,3 +1050,115 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
     foreach ($alertas as $a) $this->line("- {$a}");
     return 1;
 })->purpose('Chequea que los mensajes de WhatsApp entren a la base y enteros; exit 1 si hay alertas');
+
+/*
+ * Importa la historia de clasificaciones de la IA desde los logs de los bots.
+ *
+ * Hasta el 28/09 la clasificación no se guardaba en la base (solo en el log).
+ * Cada línea "[mensajes] [PRUEBA] CODIGO (confianza)" es una clasificación con
+ * fecha y hora exactas; el área es la del bot que escribió el log. Cuando el
+ * código deriva, la línea siguiente "[cola] Derivado: <contacto> → CODIGO"
+ * dice de quién era, y así queda asociada a su conversación. Un FALLBACK que
+ * sigue a un error o al breaker de Ollama se marca sin_ia.
+ *
+ * Los logs se leen DENTRO del container (desde Windows se ven atrasados):
+ *   docker exec crecer-bot-1 cat /app/logs/bot-atencion.log.1 /app/logs/bot-atencion.log > app/storage/app/logs-bots/atencion.log
+ *   docker exec -u www-data crecer-web-1 php artisan clasificaciones:importar-logs atencion storage/app/logs-bots/atencion.log --hasta="2026-09-28 21:36"
+ *   (agregar --apply para escribir)
+ *
+ * Idempotente: reemplaza lo importado antes (origen 'log') del área.
+ * --hasta: último momento a importar; desde ahí las registra el bot en vivo.
+ */
+Artisan::command('clasificaciones:importar-logs {area} {archivos*} {--hasta=} {--apply}', function () {
+    $area = $this->argument('area');
+    if (!isset(ConversacionWA::AREAS[$area])) {
+        $this->error("Área inválida: {$area}");
+        return 1;
+    }
+    $hasta = $this->option('hasta')
+        ? \Carbon\Carbon::parse($this->option('hasta'))
+        : (\App\Models\ClasificacionWA::where('area', $area)->where('origen', 'bot')->min('created_at') ?? now());
+    $hasta = \Carbon\Carbon::parse($hasta);
+
+    $rxClas = '/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?:\[\w+\] )?\[mensajes\] (?:\[PRUEBA\] )?([A-Z_]+) \((alta|media|baja)\)\s*$/';
+    $rxDeriv = '/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?:\[\w+\] )?\[cola\] Derivado: (\S+) → ([A-Z_]+)/u';
+    $rxSinIa = '/\[ollama\] (Breaker abierto|Error al llamar a Ollama)/';
+
+    $enHorario = function (\Carbon\Carbon $t): bool {
+        if ($t->isSunday()) return false;
+        $fin = $t->isSaturday() ? 13 : 18;
+        return $t->hour >= 8 && $t->hour < $fin;
+    };
+
+    $filas = [];
+    $sinIaPendiente = false;
+    foreach ($this->argument('archivos') as $archivo) {
+        $ruta = str_starts_with($archivo, '/') ? $archivo : base_path($archivo);
+        if (!is_readable($ruta)) { $this->error("No se puede leer {$ruta}"); return 1; }
+        $fh = fopen($ruta, 'r');
+        while (($linea = fgets($fh)) !== false) {
+            if (preg_match($rxSinIa, $linea)) { $sinIaPendiente = true; continue; }
+            if (preg_match($rxClas, $linea, $m)) {
+                $t = \Carbon\Carbon::parse($m[1]);
+                if ($t->gte($hasta)) { $sinIaPendiente = false; continue; }
+                $codigo = \App\Support\TiposConsulta::valido($m[2]) ? $m[2] : 'FALLBACK';
+                $filas[] = [
+                    'area' => $area, 'contacto' => '', 'conversacion_id' => null,
+                    'codigo' => $codigo, 'confianza' => $m[3], 'resumen' => null,
+                    'en_horario' => $enHorario($t), 'sin_ia' => $codigo === 'FALLBACK' && $sinIaPendiente,
+                    'origen' => 'log', 'created_at' => $t, 'updated_at' => $t,
+                ];
+                $sinIaPendiente = false;
+                continue;
+            }
+            if (preg_match($rxDeriv, $linea, $m)) {
+                // Asocia a la última clasificación del mismo código sin contacto, de hasta 5 s antes.
+                $t = \Carbon\Carbon::parse($m[1]);
+                for ($i = count($filas) - 1; $i >= 0 && $i >= count($filas) - 5; $i--) {
+                    $f = &$filas[$i];
+                    if ($f['contacto'] === '' && $f['codigo'] === $m[3] && $t->diffInSeconds($f['created_at'], true) <= 5) {
+                        $f['contacto'] = mb_substr($m[2], 0, 100);
+                        unset($f);
+                        break;
+                    }
+                    unset($f);
+                }
+            }
+        }
+        fclose($fh);
+    }
+
+    // El logger rota renombrando (.log → .log.1): los archivos no se superponen.
+    $unicas = $filas;
+
+    // Conversación por contacto (una consulta por contacto distinto).
+    $convs = ConversacionWA::where('area', $area)
+        ->whereIn('contacto', array_unique(array_filter(array_column($unicas, 'contacto'))))
+        ->pluck('id', 'contacto');
+    foreach ($unicas as &$f) {
+        if ($f['contacto'] !== '') $f['conversacion_id'] = $convs[$f['contacto']] ?? null;
+    }
+    unset($f);
+
+    $porCodigo = collect($unicas)->countBy('codigo')->sortDesc();
+    $conConv = collect($unicas)->whereNotNull('conversacion_id')->count();
+    $this->info(sprintf('%s: %d clasificaciones (%s → %s), %d asociadas a su conversación, %d FALLBACK sin IA',
+        $area, count($unicas),
+        count($unicas) ? $unicas[0]['created_at']->format('d/m/Y') : '—',
+        count($unicas) ? end($unicas)['created_at']->format('d/m/Y H:i') : '—',
+        $conConv, collect($unicas)->where('sin_ia', true)->count()));
+    foreach ($porCodigo as $c => $n) $this->line(sprintf('  %-24s %6d', $c, $n));
+
+    if (!$this->option('apply')) {
+        $this->warn('Simulación: agregar --apply para escribir.');
+        return 0;
+    }
+    DB::transaction(function () use ($area, $unicas) {
+        \App\Models\ClasificacionWA::where('area', $area)->where('origen', 'log')->delete();
+        foreach (array_chunk($unicas, 1000) as $lote) {
+            DB::table('clasificaciones_wa')->insert($lote);
+        }
+    });
+    $this->info('Importado.');
+    return 0;
+})->purpose('Importa la historia de clasificaciones de la IA desde los logs de un bot');

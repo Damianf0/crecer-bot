@@ -59,7 +59,7 @@ class AdminController extends Controller
      */
     public function botStatus(): JsonResponse
     {
-        $labels = \App\Models\ConversacionWA::AREAS;
+        $labels = \App\Models\ConversacionWA::areas();
         $bots = [];
         foreach (array_keys($labels) as $area) {
             $url = \App\Models\ConversacionWA::botUrlPara($area);
@@ -501,7 +501,7 @@ class AdminController extends Controller
     public function archivar()
     {
         return view('admin.archivar', [
-            'areas' => \App\Models\ConversacionWA::AREAS,
+            'areas' => \App\Models\ConversacionWA::areas(),
         ]);
     }
 
@@ -513,7 +513,7 @@ class AdminController extends Controller
             'dias'              => 'required_if:modo,dias|nullable|integer|min:1|max:3650',
             'desde'             => 'required_if:modo,rango|nullable|date',
             'hasta'             => 'required_if:modo,rango|nullable|date|after_or_equal:desde',
-            'area'              => 'nullable|in:' . implode(',', array_keys(\App\Models\ConversacionWA::AREAS)),
+            'area'              => 'nullable|in:' . implode(',', array_keys(\App\Models\ConversacionWA::areas())),
             'excluir_asignadas' => 'boolean',
         ]);
 
@@ -665,7 +665,7 @@ class AdminController extends Controller
 
     public function respuestasRapidas()
     {
-        $areas = ConversacionWA::AREAS;
+        $areas = ConversacionWA::areas();
         return view('admin.respuestas-rapidas', compact('areas'));
     }
 
@@ -678,7 +678,7 @@ class AdminController extends Controller
     public function respuestasRapidasSave(Request $request, ?int $id = null): JsonResponse
     {
         $data = $request->validate([
-            'area'   => 'required|in:' . implode(',', array_keys(ConversacionWA::AREAS)),
+            'area'   => 'required|in:' . implode(',', array_keys(ConversacionWA::areas())),
             'titulo' => 'required|string|max:80',
             'texto'  => 'required|string|max:4000',
             'orden'  => 'nullable|integer',

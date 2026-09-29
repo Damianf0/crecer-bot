@@ -214,5 +214,11 @@ V2Tiempo.escuchar([AREA], ids => {
 const toca = (k) => !V2Tiempo.vivo() || Date.now() - _ult[k] > 60000;
 setInterval(() => { if (toca('cola'))  colaAhora();  }, 8000);
 setInterval(() => { if (toca('panel')) panelAhora(); }, 10000);
+
+// ?conv=<id>: abrir una conversación puntual (links desde Reportes → Tipos de consulta).
+{
+    const convId = parseInt(new URLSearchParams(location.search).get('conv') || '', 10);
+    if (convId) V2Conv.abrir(convId);
+}
 </script>
 @endpush

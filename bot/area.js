@@ -7,7 +7,8 @@
 // número personal sin tocar producción. Si LARAVEL_URL está vacío, los wrappers
 // de mensajesApi no guardan nada en BD (no-op), así el shadow no ensucia la
 // prod. Ver project_migracion_baileys.md.
-const AREAS_VALIDAS = ['atencion', 'administracion', 'ovodonacion', 'test'];
+// 'difusion': 4º número, envíos masivos; las respuestas van a su propia cola.
+const AREAS_VALIDAS = ['atencion', 'administracion', 'ovodonacion', 'difusion', 'test'];
 
 const raw = (process.env.BOT_AREA || 'atencion').trim().toLowerCase();
 const BOT_AREA = AREAS_VALIDAS.includes(raw) ? raw : 'atencion';

@@ -168,12 +168,12 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/atencion/iniciar',          [AtencionController::class, 'iniciarConversacion']);
         Route::post('/atencion/reabrir',          [AtencionController::class, 'reabrir']);
         // Fase 4: página V1 por área retirada — redirect (la data /items sigue viva abajo).
-        Route::get('/atencion/{area}',            fn(string $area) => redirect("/v2/atencion/$area"))->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
-        Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+        Route::get('/atencion/{area}',            fn(string $area) => redirect("/v2/atencion/$area"))->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
+        Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
 
         // UI V2 (producción desde el cutover 30/06).
         Route::get('/v2/atencion', fn() => redirect('/v2/atencion/atencion'));
-        Route::get('/v2/atencion/{area}',         [AtencionController::class, 'indexV2'])->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+        Route::get('/v2/atencion/{area}',         [AtencionController::class, 'indexV2'])->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
         Route::get('/v2/mis-conversaciones',      [\App\Http\Controllers\V2Controller::class, 'misConversaciones']);
         Route::get('/v2/centro-tareas',           [\App\Http\Controllers\V2Controller::class, 'centroTareas']);
         // Mis conversaciones WA asignadas (página V1 → redirect; /data la usa V2)
@@ -186,7 +186,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
 
         // Respuestas rápidas (plantillas) del área — alimenta el dropdown 📋 en la conv.
         Route::get('/atencion/respuestas-rapidas/{area}', [AtencionController::class, 'respuestasRapidas'])
-            ->whereIn('area', ['atencion', 'administracion', 'ovodonacion']);
+            ->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
 
         // Redirects legacy de /mis-tareas (mantienen bookmarks viejos vivos).
         // El deep-link ?tarea_id=N va al centro de tareas; el resto, a mis conversaciones.
@@ -267,6 +267,27 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         ->where('pagina', '[a-z-]+');
     Route::middleware('permiso:admin')->get('/v2/reportes', [\App\Http\Controllers\V2Controller::class, 'reportes']);
 
+    // Difusiones (envíos masivos desde el 4º número) — supervisión.
+    Route::middleware('permiso:admin')->group(function () {
+        $dc = \App\Http\Controllers\DifusionController::class;
+        Route::get('/v2/difusiones',                          [$dc, 'index']);
+        Route::get('/difusiones/data',                        [$dc, 'data']);
+        Route::post('/difusiones/audiencia/preview',          [$dc, 'previewAudiencia']);
+        Route::post('/difusiones/campanias',                  [$dc, 'crearCampania']);
+        Route::get('/difusiones/campanias/{id}',              [$dc, 'campania'])->whereNumber('id');
+        Route::post('/difusiones/campanias/{id}/prueba',      [$dc, 'prueba'])->whereNumber('id');
+        Route::post('/difusiones/campanias/{id}/canal',       [$dc, 'cambiarCanal'])->whereNumber('id');
+        Route::post('/difusiones/campanias/{id}/{accion}',    [$dc, 'accion'])->whereNumber('id')
+            ->whereIn('accion', ['iniciar', 'pausar', 'reanudar', 'cancelar']);
+        Route::delete('/difusiones/campanias/{id}',           [$dc, 'eliminar'])->whereNumber('id');
+        Route::post('/difusiones/plantillas',                 [$dc, 'guardarPlantilla']);
+        Route::post('/difusiones/plantillas/{id}',            [$dc, 'guardarPlantilla'])->whereNumber('id');
+        Route::delete('/difusiones/plantillas/{id}',          [$dc, 'eliminarPlantilla'])->whereNumber('id');
+        Route::get('/difusiones/adjunto/{tipo}/{id}',         [$dc, 'adjunto'])->whereIn('tipo', ['plantilla', 'campania'])->whereNumber('id');
+        Route::post('/difusiones/bajas',                      [$dc, 'agregarBaja']);
+        Route::delete('/difusiones/bajas/{id}',               [$dc, 'quitarBaja'])->whereNumber('id');
+    });
+
     // Admin (panel de administración del bot via web)
     Route::middleware('permiso:admin')->prefix('admin')->group(function () {
         // Fase 4: las páginas HTML de admin viven en el shell V2 (/v2/admin/*);
@@ -304,6 +325,9 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/estadisticas/hoy',          [EstadisticasController::class, 'hoy']);
         Route::get('/estadisticas/secretarias',  [EstadisticasController::class, 'secretarias']);
         Route::get('/estadisticas/tendencias',   [EstadisticasController::class, 'tendencias']);
+        Route::get('/estadisticas/tipos',        [EstadisticasController::class, 'tiposConsulta']);
+        Route::get('/estadisticas/tipos/detalle', [EstadisticasController::class, 'tiposDetalle']);
+        Route::post('/estadisticas/tipos/{id}/corregir', [EstadisticasController::class, 'corregirTipo'])->whereNumber('id');
 
         Route::get('/medicos',           fn() => redirect('/v2/admin/medicos'));
         Route::get('/medicos/data',      [AdminController::class, 'medicosData']);

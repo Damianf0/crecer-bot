@@ -40,7 +40,7 @@ class ArchivadoConversaciones
     {
         $modo = in_array($c['modo'] ?? 'dias', ['dias', 'rango'], true) ? $c['modo'] : 'dias';
         $area = $c['area'] ?? null;
-        if ($area === '' || !isset(ConversacionWA::AREAS[$area])) $area = null;
+        if ($area === '' || !array_key_exists($area, ConversacionWA::areas())) $area = null;
 
         return [
             'modo'              => $modo,
@@ -97,7 +97,7 @@ class ArchivadoConversaciones
             ->groupBy('area')->get()
             ->map(fn($r) => [
                 'area'          => $r->area,
-                'area_label'    => ConversacionWA::AREAS[$r->area] ?? $r->area,
+                'area_label'    => ConversacionWA::areas()[$r->area] ?? $r->area,
                 'total'         => (int) $r->total,
                 'con_no_leidos' => (int) $r->con_no_leidos,
                 'asignadas'     => (int) $r->asignadas,
@@ -127,7 +127,7 @@ class ArchivadoConversaciones
     public static function descripcionCorte(array $c): string
     {
         $c   = self::normalizarCriterio($c);
-        $ambito = $c['area'] ? (ConversacionWA::AREAS[$c['area']] ?? $c['area']) : 'las 3 áreas';
+        $ambito = $c['area'] ? (ConversacionWA::areas()[$c['area']] ?? $c['area']) : 'las 3 áreas';
 
         if ($c['modo'] === 'rango') {
             [$desde, $hasta] = self::rango($c);

@@ -9,6 +9,7 @@ const {
 } = require('./estado-bot');
 const { procesarConversacion, generarResumen } = require('./ollama');
 const { BOT_AREA } = require('./area');
+const { marcarDifusion } = require('./difusion');
 const axios = require('axios');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -347,7 +348,7 @@ app.post('/profile-pic', async (req, res) => {
 });
 
 app.post('/enviar', async (req, res) => {
-  const { contacto, texto, quoted } = req.body;
+  const { contacto, texto, quoted, difusion } = req.body;
   if (!contacto || !texto) {
     return res.status(400).json({ ok: false, error: 'contacto y texto requeridos' });
   }
@@ -359,6 +360,7 @@ app.post('/enviar', async (req, res) => {
     // construir el contextInfo (Baileys) o pasar quotedMessageId (wwebjs).
     const opts = quoted && quoted.wa_id ? { quoted } : undefined;
     const { wa_id } = await _waClient.sendText(contacto, texto, opts);
+    if (difusion) marcarDifusion(wa_id);
     console.log(`[server] Mensaje enviado a ${contacto}${quoted ? ' (reply)' : ''}`);
     res.json({ ok: true, wa_id });
   } catch (err) {
@@ -368,7 +370,7 @@ app.post('/enviar', async (req, res) => {
 });
 
 app.post('/enviar-archivo', async (req, res) => {
-  const { contacto, base64, mimetype, filename, caption } = req.body;
+  const { contacto, base64, mimetype, filename, caption, difusion } = req.body;
   if (!contacto || !base64 || !mimetype) {
     return res.status(400).json({ ok: false, error: 'contacto, base64 y mimetype requeridos' });
   }
@@ -377,6 +379,7 @@ app.post('/enviar-archivo', async (req, res) => {
   }
   try {
     const { wa_id } = await _waClient.sendMedia(contacto, { mimetype, base64, filename, caption });
+    if (difusion) marcarDifusion(wa_id);
     console.log(`[server] Archivo enviado a ${contacto}: ${filename}`);
     res.json({ ok: true, wa_id });
   } catch (err) {

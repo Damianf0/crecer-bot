@@ -65,6 +65,7 @@
         <button class="rp-tab active" data-tab="hoy">Hoy</button>
         <button class="rp-tab"        data-tab="secretarias">Por secretaria</button>
         <button class="rp-tab"        data-tab="tendencias">Tendencias</button>
+        <button class="rp-tab"        data-tab="tipos">Tipos de consulta</button>
     </div>
 
     {{-- ── Tab: Hoy ──────────────────────────────────────────── --}}
@@ -174,6 +175,60 @@
         </div>
     </div>
 
+    {{-- ── Tab: Tipos de consulta ────────────────────────────── --}}
+    <div class="rp-section" id="sec-tipos">
+        <div class="rp-filtros">
+            <select id="tp-rango" class="v2-field">
+                <option value="7">Últimos 7 días</option>
+                <option value="30" selected>Últimos 30 días</option>
+                <option value="90">Últimos 90 días</option>
+            </select>
+            <select id="tp-area" class="v2-field">
+                <option value="">Todas las áreas</option>
+                @foreach(\App\Models\ConversacionWA::AREAS as $k => $v)<option value="{{ $k }}">{{ $v }}</option>@endforeach
+            </select>
+            <button class="v2-btn primary" onclick="cargarTipos()">Aplicar</button>
+            <span style="font-size:11px;color:var(--v2-text-mute);">Según la etiqueta que pone la IA a cada consulta. Historia desde el 26/06.</span>
+        </div>
+        <div class="rp-loading" id="tp-loading">Cargando…</div>
+        <div id="tp-content" style="display:none;">
+            <div class="rp-cards" id="tp-cards"></div>
+
+            <div class="rp-block">
+                <h3>De qué nos consultan — por semana</h3>
+                <canvas id="chart-tipos-sem" height="90"></canvas>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="rp-block">
+                    <h3>Por tipo (clic para ver casos)</h3>
+                    <div id="tp-codigos"></div>
+                </div>
+                <div>
+                    <div class="rp-block">
+                        <h3>Por área</h3>
+                        <div id="tp-areas"></div>
+                    </div>
+                    <div class="rp-block">
+                        <h3>Tiempo hasta la primera respuesta</h3>
+                        <div id="tp-tiempos"></div>
+                    </div>
+                    <div class="rp-block">
+                        <h3>Calidad del clasificador</h3>
+                        <div id="tp-calidad"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="rp-block" id="tp-detalle-wrap" style="display:none;">
+                <h3 id="tp-detalle-h3">Casos</h3>
+                <label style="font-size:12px;display:inline-flex;gap:5px;align-items:center;margin-bottom:8px;">
+                    <input type="checkbox" id="tp-sin-revisar" onchange="verCasos()"> Solo sin revisar</label>
+                <div id="tp-detalle"></div>
+            </div>
+        </div>
+    </div>
+
 </div>
 </div>
 @endsection
@@ -201,6 +256,7 @@ function activarTab(tab) {
     history.replaceState(null, '', tab === 'hoy' ? location.pathname : '#' + tab);
     if (tab === 'secretarias' && !window._secLoaded) cargarSecretarias();
     if (tab === 'tendencias' && !window._tenLoaded) cargarTendencias();
+    if (tab === 'tipos' && !window._tpLoaded) cargarTipos();
 }
 document.querySelectorAll('.rp-tab').forEach(b => b.onclick = () => activarTab(b.dataset.tab));
 
@@ -434,10 +490,137 @@ function unionDias(...maps) {
 }
 function escapeHtml(s) { return String(s ?? '').replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// ── Tipos de consulta ─────────────────────────────────
+let chartTiposSem = null, TP = null, tpCasos = null;
+function tpRango() {
+    const d = parseInt(document.getElementById('tp-rango').value, 10);
+    const to = new Date(), from = new Date(Date.now() - d * 86400000);
+    const f = x => x.toLocaleDateString('en-CA');   // YYYY-MM-DD en hora local
+    return `from=${f(from)}&to=${f(to)}` + (document.getElementById('tp-area').value ? '&area=' + document.getElementById('tp-area').value : '');
+}
+// Color fijo por familia (TiposConsulta::FAMILIAS), en su variante del tema activo.
+const famColor = f => document.documentElement.dataset.theme === 'dark' ? f.color_oscuro : f.color;
+const fmtPct = p => p === null || p === undefined ? '—' : String(p).replace('.', ',') + ' %';
+const fmtN = n => (n ?? 0).toLocaleString('es-AR');
+function fmtMin(m) { if (m === null || m === undefined) return '—'; return m < 60 ? m + ' min' : (m / 60).toFixed(1).replace('.', ',') + ' h'; }
+
+async function cargarTipos() {
+    window._tpLoaded = true;
+    document.getElementById('tp-loading').style.display = 'block';
+    let d;
+    try {
+        const r = await fetch('/admin/estadisticas/tipos?' + tpRango(), { headers: { Accept: 'application/json' } });
+        d = await r.json();
+        if (!r.ok) throw new Error(d.message || 'HTTP ' + r.status);
+    } catch (e) { document.getElementById('tp-loading').textContent = 'No se pudo cargar: ' + e.message; return; }
+    TP = d;
+    document.getElementById('tp-loading').style.display = 'none';
+    document.getElementById('tp-content').style.display = 'block';
+
+    const fams = d.familias.filter(f => f.familia !== 'ruido');
+    const top = fams[0];
+    const fuera = fams.reduce((a, f) => a + f.n * f.pct_fuera / 100, 0);
+    const sinClas = fams.find(f => f.familia === 'sin_clasificar');
+    document.getElementById('tp-cards').innerHTML = [
+        ['Consultas', fmtN(d.consultas), `+ ${fmtN(d.ruido)} saludos / sin consulta`],
+        ['Tipo más frecuente', top ? top.label : '—', top ? fmtPct(top.pct) + ' de las consultas' : ''],
+        ['Fuera de horario', d.consultas ? (100 * fuera / d.consultas).toFixed(1).replace('.', ',') + ' %' : '—', 'noches, sábados tarde y domingos'],
+        ['Sin clasificar', sinClas ? fmtPct(sinClas.pct) : '0 %', 'la IA no supo qué era'],
+    ].map(([l, v, s]) => `<div class="rp-card"><div class="label">${l}</div><div class="val" style="font-size:${String(v).length > 10 ? 17 : 24}px">${escapeHtml(v)}</div><div class="sub">${s}</div></div>`).join('');
+
+    // Semanal apilado por familia (sin ruido).
+    const semanas = Object.keys(d.semanas);
+    if (chartTiposSem) chartTiposSem.destroy();
+    chartTiposSem = new Chart(document.getElementById('chart-tipos-sem'), {
+        type: 'bar',
+        data: {
+            labels: semanas.map((s, i) => 'Sem. ' + s.slice(8, 10) + '/' + s.slice(5, 7) + (i === semanas.length - 1 && Date.now() - new Date(s + 'T00:00') < 7 * 86400000 ? ' (en curso)' : '')),
+            datasets: fams.map(f => ({ label: f.label, backgroundColor: famColor(f), borderColor: css('--v2-bg-card'), borderWidth: 1, data: semanas.map(s => d.semanas[s][f.familia] || 0) })),
+        },
+        options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+
+    // Por código, agrupado por familia.
+    const max = Math.max(1, ...d.codigos.filter(c => c.codigo !== 'IGNORAR').map(c => c.n));
+    document.getElementById('tp-codigos').innerHTML = fams.map(f => {
+        const cods = d.codigos.filter(c => c.familia === f.familia);
+        return `<div style="margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;cursor:pointer;" onclick="verCasos('${f.familia}', null)">
+                <span style="width:10px;height:10px;border-radius:2px;background:${famColor(f)};display:inline-block;"></span>${escapeHtml(f.label)}
+                <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;">${fmtN(f.n)} · ${fmtPct(f.pct)}</span></div>
+            ${cods.length > 1 || cods[0]?.etiqueta !== f.label ? cods.map(c => `
+                <div style="display:grid;grid-template-columns:1fr 110px 54px;gap:8px;align-items:center;font-size:12px;padding:2px 0 2px 16px;cursor:pointer;" onclick="verCasos(null, '${c.codigo}')" title="${c.pct_fuera} % fuera de horario">
+                    <span>${escapeHtml(c.etiqueta)}</span>
+                    <span style="height:8px;background:var(--v2-bg-hover);border-radius:3px;overflow:hidden;"><span style="display:block;height:100%;width:${(100 * c.n / max).toFixed(1)}%;background:${famColor(f)};"></span></span>
+                    <span style="text-align:right;font-family:'JetBrains Mono',monospace;">${fmtN(c.n)}</span></div>`).join('') : ''}
+        </div>`;
+    }).join('') || '<div class="rp-empty">Sin datos en el período.</div>';
+
+    // Por área: % de cada familia dentro del área.
+    const areas = Object.keys(d.areas);
+    document.getElementById('tp-areas').innerHTML = areas.length ? `<table class="rp-table"><thead><tr><th>Tipo</th>${areas.map(a => `<th class="num">${escapeHtml(d.area_labels[a] || a)}</th>`).join('')}</tr></thead><tbody>
+        ${fams.map(f => `<tr><td>${escapeHtml(f.label)}</td>${areas.map(a => {
+            const tot = Object.entries(d.areas[a]).filter(([k]) => k !== 'ruido').reduce((s, [, n]) => s + n, 0);
+            const n = d.areas[a][f.familia] || 0;
+            return `<td class="num">${n ? (100 * n / tot).toFixed(0) + ' %' : '–'}</td>`;
+        }).join('')}</tr>`).join('')}</tbody></table>` : '<div class="rp-empty">Sin datos.</div>';
+
+    document.getElementById('tp-tiempos').innerHTML = d.tiempos.length ? `<table class="rp-table"><thead><tr><th>Tipo</th><th class="num">Casos</th><th class="num">Mediana</th><th class="num">&lt; 1 h</th><th class="num">Sin resp. 48 h</th></tr></thead><tbody>
+        ${d.tiempos.map(t => `<tr><td>${escapeHtml(t.label)}</td><td class="num">${fmtN(t.casos)}</td><td class="num">${fmtMin(t.mediana_min)}</td><td class="num">${fmtPct(t.pct_1h)}</td><td class="num">${fmtPct(t.sin_resp_48h)}</td></tr>`).join('')}
+        </tbody></table><p style="font-size:10.5px;color:var(--v2-text-mute);margin:6px 0 0;">Desde que la IA clasifica hasta el primer mensaje de una persona. En la historia importada solo se conocen los casos derivados; desde el 28/09, todos.</p>`
+        : '<div class="rp-empty">Todavía no hay casos asociados a conversaciones.</div>';
+
+    const q = d.calidad;
+    document.getElementById('tp-calidad').innerHTML = `<table class="rp-table"><tbody>
+        <tr><td>Clasificaciones con confianza baja</td><td class="num">${fmtPct(q.pct_baja)}</td></tr>
+        <tr><td>"Sin clasificar" porque la IA no respondió</td><td class="num">${fmtN(q.sin_ia)}</td></tr>
+        <tr><td>"Sin clasificar" por decisión de la IA</td><td class="num">${fmtN(q.fallback)}</td></tr>
+        <tr><td>Revisadas por supervisión</td><td class="num">${fmtN(q.revisadas)}</td></tr>
+        <tr><td><b>Acierto de la IA</b> (sobre lo revisado)</td><td class="num"><b>${q.pct_acierto === null ? '—' : fmtPct(q.pct_acierto)}</b></td></tr>
+        </tbody></table><p style="font-size:10.5px;color:var(--v2-text-mute);margin:6px 0 0;">Abrí un tipo, revisá casos y confirmá o corregí la etiqueta: con 50-100 revisados ya se sabe cuánto confiar en estos números.</p>`;
+
+    if (tpCasos) verCasos();
+}
+
+async function verCasos(familia, codigo) {
+    if (familia !== undefined || codigo !== undefined) tpCasos = { familia, codigo };
+    if (!tpCasos) return;
+    const wrap = document.getElementById('tp-detalle-wrap'); wrap.style.display = 'block';
+    const titulo = tpCasos.codigo ? (TP.codigos.find(c => c.codigo === tpCasos.codigo)?.etiqueta || tpCasos.codigo)
+                                  : (TP.fam_labels[tpCasos.familia]?.label || tpCasos.familia);
+    document.getElementById('tp-detalle-h3').textContent = 'Casos: ' + titulo;
+    const qs = tpRango() + (tpCasos.codigo ? '&codigo=' + tpCasos.codigo : '&familia=' + tpCasos.familia)
+        + (document.getElementById('tp-sin-revisar').checked ? '&sin_revisar=1' : '');
+    const r = await fetch('/admin/estadisticas/tipos/detalle?' + qs, { headers: { Accept: 'application/json' } });
+    const d = await r.json();
+    const opts = Object.entries(d.codigos).map(([k, v]) => `<option value="${k}">${escapeHtml(v)}</option>`).join('');
+    document.getElementById('tp-detalle').innerHTML = d.filas.length ? `<table class="rp-table"><thead><tr><th>Fecha</th><th>Paciente</th><th>Qué consultó</th><th>Etiqueta</th><th></th></tr></thead><tbody>
+        ${d.filas.map(f => `<tr>
+            <td style="white-space:nowrap;">${f.fecha}<div style="font-size:10.5px;color:var(--v2-text-mute);">${escapeHtml(TP.area_labels[f.area] || f.area)}</div></td>
+            <td><a href="/v2/atencion/${f.area}?conv=${f.conv_id}" target="_blank">${escapeHtml(f.nombre || 'Conversación')}</a></td>
+            <td style="max-width:380px;font-size:12px;">${escapeHtml((f.resumen || '').slice(0, 260))}</td>
+            <td><select class="v2-field" style="font-size:12px;padding:3px 6px;" onchange="corregir(${f.id}, this.value)" data-orig="${f.codigo}">
+                ${opts.replace(`value="${f.corregido || f.codigo}"`, `value="${f.corregido || f.codigo}" selected`)}</select>
+                ${f.corregido ? `<div style="font-size:10.5px;color:var(--v2-ok);">✓ revisada${f.corregido !== f.codigo ? ' (la IA dijo ' + escapeHtml(d.codigos[f.codigo] || f.codigo) + ')' : ''}</div>` : ''}</td>
+            <td>${f.corregido ? '' : `<button class="v2-btn sm" onclick="corregir(${f.id}, '${f.codigo}')" title="La etiqueta de la IA es correcta">✓ Bien</button>`}</td>
+        </tr>`).join('')}</tbody></table>`
+        : '<div class="rp-empty">No hay casos asociados a una conversación en este filtro.</div>';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function corregir(id, codigo) {
+    const r = await fetch(`/admin/estadisticas/tipos/${id}/corregir`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content },
+        body: JSON.stringify({ codigo }) });
+    if (!r.ok) { v2toast('No se pudo guardar', 'err'); return; }
+    v2toast('Guardado');
+    cargarTipos();
+}
+
 // Init: respetar la tab del hash (#secretarias / #tendencias) al recargar.
 cargarHoy();
 const hashTab = location.hash.replace('#', '');
-if (hashTab === 'secretarias' || hashTab === 'tendencias') activarTab(hashTab);
+if (hashTab === 'secretarias' || hashTab === 'tendencias' || hashTab === 'tipos') activarTab(hashTab);
 
 // Auto-refresh de "Hoy" cada 60s (alineado con el cache del endpoint), solo
 // si la pestaña del browser está visible y la tab activa es Hoy — es una

@@ -62,10 +62,10 @@ class AtencionController extends Controller
      */
     public function indexV2(string $area = 'atencion')
     {
-        $area = isset(ConversacionWA::AREAS[$area]) ? $area : 'atencion';
+        $area = array_key_exists($area, ConversacionWA::areas()) ? $area : 'atencion';
         $usuarios  = User::where('activo', true)->orderBy('nombre_completo')->get(['id', 'nombre_completo']);
         $itemsData = $this->buildItems($area);
-        $areaLabel = ConversacionWA::AREAS[$area];
+        $areaLabel = ConversacionWA::areas()[$area];
         return view('v2.atencion', [
             'usuarios'  => $usuarios,
             'itemsData' => $itemsData,
@@ -78,7 +78,7 @@ class AtencionController extends Controller
 
     public function items(Request $request, string $area = 'atencion')
     {
-        $area    = isset(ConversacionWA::AREAS[$area]) ? $area : 'atencion';
+        $area    = array_key_exists($area, ConversacionWA::areas()) ? $area : 'atencion';
         $payload = $this->buildItems($area);
         $json    = json_encode($payload);
         $etag    = '"' . substr(md5($json), 0, 16) . '"';
@@ -546,7 +546,7 @@ class AtencionController extends Controller
         // Verificar bot del área antes de cargar el hilo
         $botUrl    = ConversacionWA::botUrlPara($area);
         $botTok    = config('app.bot_ingress_token');
-        $areaLabel = ConversacionWA::AREAS[$area] ?? $area;
+        $areaLabel = ConversacionWA::areas()[$area] ?? $area;
         try {
             $st = Http::timeout(6)->get("{$botUrl}/status");
             if (!$st->ok() || $st->json('status') !== 'listo') {
@@ -680,7 +680,7 @@ class AtencionController extends Controller
      */
     public function respuestasRapidas(string $area): JsonResponse
     {
-        if (!array_key_exists($area, ConversacionWA::AREAS)) {
+        if (!array_key_exists($area, ConversacionWA::areas())) {
             return response()->json(['ok' => false, 'error' => 'área inválida'], 400);
         }
         $data = Cache::remember(
@@ -824,7 +824,7 @@ class AtencionController extends Controller
             if ($q)     $query->where('contacto', 'like', "%{$q}%");
             if ($area !== 'todas') $query->where('area', $area);
 
-            $areaLabels = ConversacionWA::AREAS;
+            $areaLabels = ConversacionWA::areas();
             $items = $items->concat(
                 $query->limit(200)->get()->map(fn($c) => [
                     'id'          => $c->id,
@@ -879,7 +879,7 @@ class AtencionController extends Controller
             'telefono'    => 'nullable|string|max:30',
             'contacto_id' => 'nullable|integer|exists:contactos,id',
             'texto'       => 'required|string|max:5000',
-            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
+            'area'        => 'nullable|in:' . implode(',', array_keys(ConversacionWA::areas())),
         ]);
         $area = $data['area'] ?? 'atencion';
 
@@ -915,7 +915,7 @@ class AtencionController extends Controller
 
         $botUrl    = ConversacionWA::botUrlPara($area);
         $botTok    = config('app.bot_ingress_token');
-        $areaLabel = ConversacionWA::AREAS[$area] ?? $area;
+        $areaLabel = ConversacionWA::areas()[$area] ?? $area;
 
         if (!$esGrupo) {
             $telefonoNorm = \App\Models\Contacto::normalizarTelefono($telefonoRaw);
@@ -1025,7 +1025,7 @@ class AtencionController extends Controller
     public function derivarArea(int $id, Request $request): JsonResponse
     {
         $data = $request->validate([
-            'area' => 'required|in:atencion,administracion,ovodonacion',
+            'area' => 'required|in:' . implode(',', array_keys(ConversacionWA::areas())),
         ]);
         $destino = $data['area'];
         $conv = ConversacionWA::findOrFail($id);
@@ -1034,8 +1034,8 @@ class AtencionController extends Controller
             return response()->json(['ok' => false, 'error' => 'La conversación ya está en esa área.'], 422);
         }
 
-        $origenLabel  = ConversacionWA::AREAS[$conv->area] ?? $conv->area;
-        $destinoLabel = ConversacionWA::AREAS[$destino];
+        $origenLabel  = ConversacionWA::areas()[$conv->area] ?? $conv->area;
+        $destinoLabel = ConversacionWA::areas()[$destino];
         $botTok       = config('app.bot_ingress_token');
 
         // Teléfono del bot destino, en vivo. Si no responde → mensaje genérico sin número.

@@ -178,7 +178,7 @@ class V2Controller extends Controller
             $porArea = \App\Models\ConversacionWA::where('estado', 'activa')
                 ->selectRaw('area, count(*) as abiertas, sum(case when urgente = 1 and asignada_a is null then 1 else 0 end) as urg')
                 ->groupBy('area')->get()->keyBy('area');
-            $d['pulso'] = collect(\App\Models\ConversacionWA::AREAS)
+            $d['pulso'] = collect(\App\Models\ConversacionWA::areas())
                 ->map(fn($label, $key) => [
                     'key'      => $key,
                     'label'    => $label,
@@ -196,7 +196,7 @@ class V2Controller extends Controller
 
         // Para los modales de acción rápida (+ Tarea / + Conversación).
         $d['usuarios'] = $this->usuarios();
-        $d['areas']    = \App\Models\ConversacionWA::AREAS;
+        $d['areas']    = \App\Models\ConversacionWA::areas();
 
         return view('v2.mi-dia', $d);
     }

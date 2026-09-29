@@ -19,6 +19,12 @@ Route::middleware(BotTokenAuth::class)->group(function () {
         Route::post('mensajes/saliente',     [BotController::class, 'mensajeSaliente']);
         Route::post('mensajes/marcar-leido', [BotController::class, 'marcarLeido']);
 
+        // Clasificación de la IA (estadísticas por tipo de consulta)
+        Route::post('clasificaciones',       [BotController::class, 'registrarClasificacion']);
+
+        // Acuses del bot de difusiones (entregado / leído / error)
+        Route::post('difusion/ack',          [BotController::class, 'ackDifusion']);
+
         // Conversación WA directa (sin pasar por derivaciones)
         Route::post('conversacion/derivar',    [BotController::class, 'derivarConversacion']);
         Route::get('conversacion/historial',   [BotController::class, 'obtenerHistorial']);

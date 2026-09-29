@@ -115,7 +115,7 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
-            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
+            'area'        => 'nullable|in:' . implode(',', array_keys(ConversacionWA::areas())),
             'codigo'      => 'required|string|max:50',
             'resumen_llm' => 'nullable|string|max:1000',
         ]);
@@ -149,6 +149,61 @@ class BotController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /**
+     * Clasificación de la IA de una tanda de mensajes (todas, incluidas las
+     * que no derivan y los IGNORAR). Alimenta los reportes por tipo de consulta.
+     * POST /api/bot/clasificaciones
+     */
+    public function registrarClasificacion(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'contacto'   => 'required|string|max:100',
+            'area'       => 'nullable|in:' . implode(',', array_keys(\App\Models\ConversacionWA::areas())),
+            'codigo'     => 'required|string|max:40',
+            'confianza'  => 'nullable|string|max:10',
+            'resumen'    => 'nullable|string|max:300',
+            'en_horario' => 'nullable|boolean',
+            'sin_ia'     => 'nullable|boolean',
+        ]);
+        $area = $data['area'] ?? 'atencion';
+
+        // Un código que el catálogo no conoce (el modelo inventó uno) cuenta
+        // como FALLBACK: no se pierde la fila ni se ensucia el reporte.
+        $codigo = \App\Support\TiposConsulta::valido($data['codigo']) ? $data['codigo'] : 'FALLBACK';
+
+        $conv = ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)->first();
+
+        \App\Models\ClasificacionWA::create([
+            'conversacion_id' => $conv?->id,
+            'area'            => $area,
+            'contacto'        => $data['contacto'],
+            'codigo'          => $codigo,
+            'confianza'       => $data['confianza'] ?? null,
+            'resumen'         => $data['resumen'] ?? null,
+            'en_horario'      => $data['en_horario'] ?? true,
+            'sin_ia'          => $data['sin_ia'] ?? false,
+            'origen'          => 'bot',
+        ]);
+
+        return response()->json(['ok' => true], 201);
+    }
+
+    /**
+     * Acuse de un mensaje enviado por el bot de difusiones (entregado/leído/error).
+     * POST /api/bot/difusion/ack
+     */
+    public function ackDifusion(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'wa_id' => 'required|string|max:150',
+            'ack'   => 'required|integer|min:-1|max:5',
+        ]);
+        $ok = \App\Services\Difusion\Difusiones::aplicarAckWwebjs($data['wa_id'], (int) $data['ack']);
+        // 200 aunque no sea de una campaña (el bot también manda lo que la
+        // gente contesta a mano desde el celular): no es un error para reintentar.
+        return response()->json(['ok' => true, 'campania' => $ok]);
+    }
+
     // ── Historial LLM ───────────────────────────────────────────────
 
     /**
@@ -171,7 +226,7 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'  => 'required|string|max:100',
-            'area'      => 'nullable|in:atencion,administracion,ovodonacion',
+            'area'      => 'nullable|in:' . implode(',', array_keys(ConversacionWA::areas())),
             'historial' => 'required|string|max:5000',
         ]);
         $area = $data['area'] ?? 'atencion';
@@ -192,7 +247,7 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
-            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
+            'area'        => 'nullable|in:' . implode(',', array_keys(ConversacionWA::areas())),
             'tipo'        => 'required|in:texto,audio,imagen,documento,video,sticker',
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',
@@ -269,6 +324,14 @@ class BotController extends Controller
             'no_leidos'        => $conv->no_leidos + 1,
         ]);
 
+        // Respuesta a una difusión (por el número de difusiones o por el de un
+        // área, si la campaña salió por ahí): marca "respondió" y detecta bajas.
+        try {
+            \App\Services\Difusion\Difusiones::registrarRespuesta($data['contacto'], $data['contenido'] ?? null, $conv->id, $area);
+        } catch (\Throwable $e) {
+            Log::warning('Difusión: no se pudo registrar la respuesta', ['conv' => $conv->id, 'err' => $e->getMessage()]);
+        }
+
         // Invalidar cache de la cola para que la nueva conversación / mensaje aparezca al toque.
         ConversacionWA::invalidarColaCache();
 
@@ -344,7 +407,7 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto' => 'required|string|max:100',
-            'area'     => 'nullable|in:atencion,administracion,ovodonacion',
+            'area'     => 'nullable|in:' . implode(',', array_keys(ConversacionWA::areas())),
         ]);
         $area = $data['area'] ?? 'atencion';
 
@@ -367,7 +430,7 @@ class BotController extends Controller
     {
         $data = $request->validate([
             'contacto'    => 'required|string|max:100',
-            'area'        => 'nullable|in:atencion,administracion,ovodonacion',
+            'area'        => 'nullable|in:' . implode(',', array_keys(ConversacionWA::areas())),
             'tipo'        => 'nullable|in:texto,audio,imagen,documento,video,sticker',
             'contenido'   => 'nullable|string|max:10000',
             'archivo_url' => 'nullable|string|max:500',

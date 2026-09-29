@@ -63,7 +63,7 @@
             </a>
 
             <div class="v2-nav-sec">WhatsApp</div>
-            @foreach(\App\Models\ConversacionWA::AREAS as $aKey => $aLabel)
+            @foreach(\App\Models\ConversacionWA::areas() as $aKey => $aLabel)
             <a class="v2-nav-item {{ $areaActiva === $aKey ? 'active' : '' }}" href="/v2/atencion/{{ $aKey }}">
                 <span class="ico">💬</span><span class="lbl">{{ $aLabel }}</span>
                 @if(($pendByArea[$aKey] ?? 0) > 0)<span class="v2-nav-badge">{{ $pendByArea[$aKey] }}</span>@endif
@@ -122,6 +122,9 @@
             <div class="v2-nav-sec">Supervisión</div>
             <a class="v2-nav-item {{ $navActiva === 'reportes' ? 'active' : '' }}" href="/v2/reportes">
                 <span class="ico">📈</span><span class="lbl">Reportes</span>
+            </a>
+            <a class="v2-nav-item {{ $navActiva === 'difusiones' ? 'active' : '' }}" href="/v2/difusiones">
+                <span class="ico">📣</span><span class="lbl">Difusiones</span>
             </a>
             <a class="v2-nav-item {{ $navActiva === 'admin' ? 'active' : '' }}" href="/v2/admin">
                 <span class="ico">⚙️</span><span class="lbl">Admin</span>

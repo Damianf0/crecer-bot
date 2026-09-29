@@ -620,7 +620,14 @@ function crearClienteWwebjs() {
       if (m) emitter.emit('message', m);
     });
 
-    client.on('message_ack',     resetActividad);
+    // Acuses de lo que mandamos (1 servidor, 2 entregado, 3 leído, 4 escuchado,
+    // -1 error): las estadísticas de difusiones salen de acá.
+    client.on('message_ack', (msg, ack) => {
+      resetActividad();
+      if (!msg || !msg.fromMe) return;
+      const waId = completarIdSerializado(msg.id);
+      if (waId) emitter.emit('ack', { wa_id: waId, ack });
+    });
     client.on('contact_changed', resetActividad);
 
     client.on('message_create', async (msg) => {

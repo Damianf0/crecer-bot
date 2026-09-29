@@ -270,4 +270,28 @@ async function transcribirAudio(filePath) {
   }
 }
 
-module.exports = { guardarMensajeEntrante, guardarMensajeSaliente, guardarMensajeSalienteExterno, transcribirAudio, mimeExt };
+/**
+ * Guarda la clasificación de la IA para las estadísticas de tipo de consulta.
+ * Hasta el 28/09 solo quedaba en memoria (/admin/pruebas) y en el log: a
+ * Laravel llegaban únicamente las derivaciones (7 de los 16 códigos).
+ */
+async function registrarClasificacion({ contacto, codigo, confianza, resumen, enHorario, sinIA }) {
+  if (MODO_SHADOW) return;
+  await postConReintentos('/bot/clasificaciones', {
+    contacto,
+    area: BOT_AREA,
+    codigo,
+    confianza: confianza || null,
+    resumen: resumen ? String(resumen).slice(0, 300) : null,
+    en_horario: !!enHorario,
+    sin_ia: !!sinIA,
+  }, `clasificación ${contacto}`);
+}
+
+/** Acuse de un mensaje enviado (solo el bot de difusiones, ver whatsapp.js). */
+async function registrarAck(waId, ack) {
+  if (MODO_SHADOW) return;
+  await postConReintentos('/bot/difusion/ack', { wa_id: waId, ack }, `ack ${waId}`);
+}
+
+module.exports = { guardarMensajeEntrante, guardarMensajeSaliente, guardarMensajeSalienteExterno, transcribirAudio, mimeExt, registrarClasificacion, registrarAck };

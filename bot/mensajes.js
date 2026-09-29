@@ -5,7 +5,7 @@ const { obtenerRespuesta, enviarRespuesta } = require('./respuestas');
 const { derivarConversacion, obtenerHistorial, guardarHistorial, marcarLeido } = require('./cola');
 const { estaEnHorario } = require('./horario');
 const { estado: estadoBot, pushClasificacion } = require('./estado-bot');
-const { guardarMensajeSaliente, transcribirAudio } = require('./mensajesApi');
+const { guardarMensajeSaliente, transcribirAudio, registrarClasificacion } = require('./mensajesApi');
 
 const MEDIA_DIR = '/app/media';
 
@@ -83,10 +83,14 @@ async function procesarYResponder(client, contacto) {
   console.log(`[mensajes] Procesando: "${textosNuevos.slice(0, 80)}" (historial: ${s.historial.length} chars)`);
 
   const enHorario  = estaEnHorario();
-  const { codigo, confianza, resumen } = await procesarConversacion(textoCombinado);
+  const { codigo, confianza, resumen, sinIA } = await procesarConversacion(textoCombinado);
   const modoPrueba = estadoBot.modoPrueba;
 
   console.log(`[mensajes] ${modoPrueba ? '[PRUEBA] ' : ''}${codigo} (${confianza})`);
+
+  // Antes del return de IGNORAR: el volumen de ruido también es un dato.
+  registrarClasificacion({ contacto, codigo, confianza, resumen, enHorario, sinIA })
+    .catch(() => {});   // postConReintentos ya loguea
 
   if (codigo === 'IGNORAR') {
     console.log(`[mensajes] Mensaje ignorado: "${textosNuevos.slice(0, 60)}"`);

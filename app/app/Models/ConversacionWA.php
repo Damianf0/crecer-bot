@@ -30,6 +30,22 @@ class ConversacionWA extends Model
         'ovodonacion'    => 'Ovodonación',
     ];
 
+    /** Cola de las respuestas a las difusiones (4º número, ver config/difusion.php). */
+    public const AREA_DIFUSION = 'difusion';
+
+    /**
+     * Áreas con cola en el panel: las de AREAS más la de difusiones cuando está
+     * activa. Usar esto (no AREAS) en validaciones, rutas y vistas: con
+     * DIFUSION_ACTIVA=false no aparece una cola vacía ni se busca un bot que
+     * todavía no existe.
+     */
+    public static function areas(): array
+    {
+        return config('difusion.activa')
+            ? self::AREAS + [self::AREA_DIFUSION => 'Difusiones']
+            : self::AREAS;
+    }
+
     /**
      * Campos que se ven en la cola: si cambia alguno, se avisa por Reverb.
      * historial_llm y resumen_intento_at quedan afuera — el bot los reescribe
@@ -53,14 +69,14 @@ class ConversacionWA extends Model
     /** URL interna del bot que corresponde al área de esta conversación. */
     public function botUrl(): string
     {
-        $area = isset(self::AREAS[$this->area]) ? $this->area : 'atencion';
+        $area = array_key_exists($this->area, self::areas()) ? $this->area : 'atencion';
         return rtrim(config('app.bot_url_' . $area) ?: config('app.bot_url'), '/');
     }
 
     /** URL del bot para un área dada (helper estático, p/ casos sin instancia). */
     public static function botUrlPara(?string $area): string
     {
-        $area = isset(self::AREAS[$area]) ? $area : 'atencion';
+        $area = array_key_exists($area, self::areas()) ? $area : 'atencion';
         return rtrim(config('app.bot_url_' . $area) ?: config('app.bot_url'), '/');
     }
 
@@ -71,14 +87,14 @@ class ConversacionWA extends Model
     public static function areasDeLaSesion(): array
     {
         $colas = (array) session('colas', []);
-        $sel = array_values(array_intersect($colas, array_keys(self::AREAS)));
-        return $sel ?: array_keys(self::AREAS);
+        $sel = array_values(array_intersect($colas, array_keys(self::areas())));
+        return $sel ?: array_keys(self::areas());
     }
 
     /** Invalida el cache de la cola de /atencion (una clave por área). */
     public static function invalidarColaCache(): void
     {
-        foreach (array_keys(self::AREAS) as $a) {
+        foreach (array_keys(self::areas()) as $a) {
             \Illuminate\Support\Facades\Cache::forget("atencion.items.{$a}");
         }
     }

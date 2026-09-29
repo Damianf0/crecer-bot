@@ -101,7 +101,9 @@ services:
       - mysql
     environment:
       - TZ=America/Argentina/Buenos_Aires
-    command: ["sh", "-c", "sleep 8 && php artisan queue:work --queue=resumen --tries=2 --timeout=120 --sleep=5 --max-time=3600"]
+    # difusion: envío de campañas (un job por mensaje, espaciados por la pausa
+    # del canal) y acuses simulados. Va detrás de resumen en prioridad.
+    command: ["sh", "-c", "sleep 8 && php artisan queue:work --queue=resumen,difusion --tries=2 --timeout=120 --sleep=5 --max-time=3600"]
     networks:
       - clinica-net
 
@@ -227,6 +229,40 @@ services:
     networks:
       - clinica-net
 
+  # Bot WhatsApp — DIFUSIONES (4º número, envíos masivos). Mismo código que
+  # los otros; con BOT_AREA=difusion no clasifica ni autoresponde, reporta
+  # acuses (entregado/leído) y las respuestas van a la cola 'difusion'.
+  # Fuera del `up -d` normal hasta que haya número pareado:
+  #   docker compose --profile difusion up -d bot-difusion
+  #   QR en /v2/admin → Bots, o http://127.0.0.1:3004/qr?token=<BOT_INGRESS_TOKEN>
+  # y en app/.env: DIFUSION_ACTIVA=true, DIFUSION_PROVEEDOR=wwebjs.
+  bot-difusion:
+    build: ./docker/node-chrome
+    restart: unless-stopped
+    profiles: ["difusion"]
+    volumes:
+      - ./bot:/app
+      - wa-session-difusion:/app/.wwebjs_auth
+    ports:
+      - "3004:3004"
+    depends_on:
+      - web
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+      - BOT_AREA=difusion
+      - PORT=3004
+      - BOT_PUBLIC_URL=http://192.168.1.115:3004
+    labels:
+      - autoheal=true
+    healthcheck:
+      test: ["CMD-SHELL", "sh /app/healthcheck.sh"]
+      interval: 30s
+      timeout: 12s
+      retries: 4
+      start_period: 300s
+    networks:
+      - clinica-net
+
   # Shadow de Baileys v7 (21/09): se vincula como un dispositivo MÁS del número
   # de administración, sin desvincular wwebjs. BOT_AREA=test → no escribe en la
   # BD ni deriva ni llama a Ollama; /enviar sí manda de verdad (es la prueba).
@@ -327,6 +363,7 @@ volumes:
   wa-session:                  # sesión WhatsApp del bot de ATENCIÓN (wwebjs)
   wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
   wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs)
+  wa-session-difusion:         # sesión WhatsApp del bot de DIFUSIONES (wwebjs)
   wa-baileys-test:             # sesión Baileys v7 del shadow (bot-baileys-test)
 
 networks:

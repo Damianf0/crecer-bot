@@ -109,7 +109,7 @@ class DeclaracionColas extends Component
     {
         return view('livewire.declaracion-colas', [
             'todasLasColas'  => User::COLAS,
-            'areas'          => ConversacionWA::AREAS,
+            'areas'          => ConversacionWA::areas(),
             'usuario'        => Auth::user(),
             'conversaciones' => $this->conversacionesPendientes(),
             'tareas'         => $this->tareasPendientes(),

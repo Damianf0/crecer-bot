@@ -272,6 +272,179 @@ class EstadisticasController extends Controller
 
     // ── Helpers ────────────────────────────────────────────
 
+    // ── Tab Tipos de consulta ──────────────────────────────
+    // Fuente: clasificaciones_wa (la etiqueta de la IA de cada tanda de mensajes;
+    // historia importada de los logs desde el 26/06). Ver App\Support\TiposConsulta.
+
+    public function tiposConsulta(Request $request): JsonResponse
+    {
+        [$from, $to] = $this->rango($request, 30);
+        // Semanas enteras: una primera semana cortada se lee como una caída que no existió.
+        $from = $from->copy()->startOfWeek();
+        $area = array_key_exists((string) $request->input('area'), ConversacionWA::AREAS) ? $request->input('area') : null;
+        $cacheKey = 'stats.tipos2.v' . Cache::get('stats.tipos.ver', 1) . ".{$from->timestamp}.{$to->timestamp}." . ($area ?? 'todas');
+
+        $data = Cache::remember($cacheKey, 300, function () use ($from, $to, $area) {
+            $T = \App\Support\TiposConsulta::class;
+            $base = fn() => DB::table('clasificaciones_wa')->whereBetween('created_at', [$from, $to])
+                ->when($area, fn($q) => $q->where('area', $area));
+            $codigoSql = 'COALESCE(codigo_corregido, codigo)';
+
+            // Por día × código (se agrupa en semanas en PHP: portable y liviano).
+            $porDia = $base()->selectRaw("DATE(created_at) dia, {$codigoSql} cod, COUNT(*) n, SUM(en_horario = 0) fuera")
+                ->groupBy('dia', 'cod')->get();
+
+            $porCodigo = []; $fueraPorCodigo = []; $semanas = [];
+            foreach ($porDia as $r) {
+                $porCodigo[$r->cod] = ($porCodigo[$r->cod] ?? 0) + (int) $r->n;
+                $fueraPorCodigo[$r->cod] = ($fueraPorCodigo[$r->cod] ?? 0) + (int) $r->fuera;
+                $sem = Carbon::parse($r->dia)->startOfWeek()->toDateString();
+                $fam = $T::familia($r->cod);
+                $semanas[$sem][$fam] = ($semanas[$sem][$fam] ?? 0) + (int) $r->n;
+            }
+            ksort($semanas);
+
+            $consultas = array_sum($porCodigo) - ($porCodigo['IGNORAR'] ?? 0);
+            $codigos = [];
+            foreach ($porCodigo as $cod => $n) {
+                $codigos[] = [
+                    'codigo'   => $cod,
+                    'etiqueta' => $T::etiqueta($cod),
+                    'familia'  => $T::familia($cod),
+                    'n'        => $n,
+                    'pct'      => $cod === 'IGNORAR' || !$consultas ? null : round(100 * $n / $consultas, 1),
+                    'pct_fuera'=> $n ? round(100 * ($fueraPorCodigo[$cod] ?? 0) / $n, 1) : 0,
+                ];
+            }
+            usort($codigos, fn($a, $b) => $b['n'] <=> $a['n']);
+
+            $familias = [];
+            foreach ($codigos as $c) {
+                $f = &$familias[$c['familia']];
+                $f['n'] = ($f['n'] ?? 0) + $c['n'];
+                $f['fuera'] = ($f['fuera'] ?? 0) + (int) round($c['n'] * $c['pct_fuera'] / 100);
+                unset($f);
+            }
+            $famOut = [];
+            foreach ($T::FAMILIAS as $k => [$label, $claro, $oscuro]) {
+                if (!isset($familias[$k])) continue;
+                $n = $familias[$k]['n'];
+                $famOut[] = ['familia' => $k, 'label' => $label, 'color' => $claro, 'color_oscuro' => $oscuro, 'n' => $n,
+                    'pct' => $k === 'ruido' || !$consultas ? null : round(100 * $n / $consultas, 1),
+                    'pct_fuera' => $n ? round(100 * $familias[$k]['fuera'] / $n, 1) : 0];
+            }
+            // Más frecuente primero; los saludos siempre al final.
+            usort($famOut, fn($a, $b) => [$a['familia'] === 'ruido', -$a['n']] <=> [$b['familia'] === 'ruido', -$b['n']]);
+
+            // Por área × familia.
+            $porArea = $base()->selectRaw("area, {$codigoSql} cod, COUNT(*) n")->groupBy('area', 'cod')->get();
+            $areas = [];
+            foreach ($porArea as $r) {
+                $fam = $T::familia($r->cod);
+                $areas[$r->area][$fam] = ($areas[$r->area][$fam] ?? 0) + (int) $r->n;
+            }
+
+            // Tiempo hasta la primera respuesta humana, por familia (solo las
+            // clasificaciones asociadas a su conversación: las derivadas en la
+            // historia importada, todas desde el 28/09). El bot está en modo
+            // prueba: todo saliente es de una persona.
+            $conResp = $base()->whereNotNull('conversacion_id')->where('codigo', '!=', 'IGNORAR')
+                ->selectRaw("{$codigoSql} cod, created_at,
+                    (SELECT MIN(m.created_at) FROM mensajes_wa m WHERE m.conversacion_id = clasificaciones_wa.conversacion_id
+                        AND m.direccion = 'saliente' AND m.created_at > clasificaciones_wa.created_at) primera")
+                ->limit(20000)->get();
+            $esperas = [];
+            foreach ($conResp as $r) {
+                $fam = $T::familia($r->cod);
+                $seg = $r->primera ? Carbon::parse($r->created_at)->diffInSeconds(Carbon::parse($r->primera)) : null;
+                $esperas[$fam][] = ($seg !== null && $seg <= 48 * 3600) ? (int) $seg : null;
+            }
+            $tiempos = [];
+            foreach ($esperas as $fam => $s) {
+                $validos = array_filter($s, fn($x) => $x !== null);
+                $tiempos[] = [
+                    'familia'    => $fam,
+                    'label'      => $T::FAMILIAS[$fam][0] ?? $fam,
+                    'casos'      => count($s),
+                    'mediana_min'=> ($m = $this->mediana($s)) !== null ? round($m / 60) : null,
+                    'pct_1h'     => $this->pctEnMenos($s, 3600),
+                    'sin_resp_48h' => count($s) ? round(100 * (count($s) - count($validos)) / count($s), 1) : 0,
+                ];
+            }
+            usort($tiempos, fn($a, $b) => $b['casos'] <=> $a['casos']);
+
+            // Calidad del clasificador.
+            $q = $base()->selectRaw("COUNT(*) total, SUM(confianza = 'baja') baja, SUM(sin_ia = 1) sin_ia,
+                SUM(codigo = 'FALLBACK' AND sin_ia = 0) fallback,
+                SUM(codigo_corregido IS NOT NULL) revisadas, SUM(codigo_corregido IS NOT NULL AND codigo_corregido = codigo) acertadas")->first();
+            $total = (int) $q->total;
+
+            return [
+                'from' => $from->toDateString(), 'to' => $to->toDateString(),
+                'total' => $total, 'consultas' => $consultas, 'ruido' => $porCodigo['IGNORAR'] ?? 0,
+                'familias' => $famOut, 'codigos' => $codigos,
+                'semanas' => $semanas, 'areas' => $areas, 'tiempos' => $tiempos,
+                'area_labels' => ConversacionWA::AREAS,
+                'fam_labels' => collect($T::FAMILIAS)->map(fn($v) => ['label' => $v[0], 'color' => $v[1], 'color_oscuro' => $v[2]]),
+                'calidad' => [
+                    'pct_baja'     => $total ? round(100 * $q->baja / $total, 1) : 0,
+                    'sin_ia'       => (int) $q->sin_ia,
+                    'fallback'     => (int) $q->fallback,
+                    'revisadas'    => (int) $q->revisadas,
+                    'pct_acierto'  => $q->revisadas ? round(100 * $q->acertadas / $q->revisadas, 1) : null,
+                ],
+            ];
+        });
+
+        return response()->json(['ok' => true] + $data);
+    }
+
+    /** Clasificaciones recientes de un código o familia, para revisar y corregir. */
+    public function tiposDetalle(Request $request): JsonResponse
+    {
+        [$from, $to] = $this->rango($request, 30);
+        $T = \App\Support\TiposConsulta::class;
+        $codigos = $request->filled('codigo') ? [$request->input('codigo')]
+            : array_keys(array_filter($T::CODIGOS, fn($v) => $v[1] === $request->input('familia')));
+
+        $filas = \App\Models\ClasificacionWA::with('conversacion:id,nombre,contacto,area,resumen_llm')
+            ->whereBetween('created_at', [$from, $to])
+            ->when($request->filled('area'), fn($q) => $q->where('area', $request->input('area')))
+            ->whereIn(DB::raw('COALESCE(codigo_corregido, codigo)'), $codigos)
+            ->whereNotNull('conversacion_id')
+            ->when($request->boolean('sin_revisar'), fn($q) => $q->whereNull('codigo_corregido'))
+            ->orderByDesc('created_at')->limit(40)->get();
+
+        return response()->json(['ok' => true, 'filas' => $filas->map(fn($c) => [
+            'id'        => $c->id,
+            'fecha'     => $c->created_at->timezone(self::TZ)->format('d/m H:i'),
+            'area'      => $c->area,
+            'codigo'    => $c->codigo,
+            'corregido' => $c->codigo_corregido,
+            'confianza' => $c->confianza,
+            'conv_id'   => $c->conversacion_id,
+            'nombre'    => $c->conversacion?->nombre ?: $c->conversacion?->contacto,
+            'resumen'   => $c->resumen ?: $c->conversacion?->resumen_llm,
+            'origen'    => $c->origen,
+        ]), 'codigos' => collect($T::CODIGOS)->map(fn($v) => $v[0])]);
+    }
+
+    /** La supervisora confirma (mismo código) o corrige la etiqueta de la IA. */
+    public function corregirTipo(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate(['codigo' => 'required|string|in:' . implode(',', array_keys(\App\Support\TiposConsulta::CODIGOS))]);
+        \App\Models\ClasificacionWA::findOrFail($id)->update([
+            'codigo_corregido' => $data['codigo'],
+            'corregido_por'    => auth()->id(),
+            'corregido_at'     => now(),
+        ]);
+        // Los reportes cachean 5 min: cambiar la versión de la clave hace que la
+        // corrección se vea en el acto (flush no: borraría toda la caché, incluido
+        // el token de la cadena de una difusión en curso).
+        Cache::forever('stats.tipos.ver', (int) Cache::get('stats.tipos.ver', 1) + 1);
+        return response()->json(['ok' => true]);
+    }
+
     private function rango(Request $r, int $diasDefault): array
     {
         $tz = self::TZ;
