@@ -335,6 +335,22 @@ app.post('/resolve-jid', async (req, res) => {
 // Body: { jid }
 // Devuelve: { ok, url } — url puede ser null si el contacto oculta la foto o no tiene.
 // La URL expira en horas — el caller debe descargarla y cachear local si la quiere persistir.
+// Teléfono real y nombre de WhatsApp de una lista de chats (máx. 500): una sola
+// lectura local de la página. Lo usa Laravel para identificar las
+// conversaciones @lid (ver contactos:identificar-wa).
+app.post('/contactos-info', async (req, res) => {
+  const { jids } = req.body || {};
+  if (!Array.isArray(jids) || !jids.length) return res.status(400).json({ ok: false, error: 'jids requerido (array)' });
+  if (!_waClient || typeof _waClient.contactosInfo !== 'function') {
+    return res.status(503).json({ ok: false, error: 'Cliente WhatsApp no disponible' });
+  }
+  try {
+    res.json({ ok: true, data: await _waClient.contactosInfo(jids) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post('/profile-pic', async (req, res) => {
   const { jid } = req.body;
   if (!jid) return res.status(400).json({ ok: false, error: 'jid requerido' });

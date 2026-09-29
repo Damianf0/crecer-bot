@@ -62,7 +62,11 @@ function filtrados() {
     if (state.vista === 'urgentes') list = list.filter(i => i.urgente);
     if (state.q) {
         const q = state.q.toLowerCase();
-        list = list.filter(i => (i.contacto || '').toLowerCase().includes(q) || (i.telefono || '').includes(q));
+        // Por nombre (ficha o WhatsApp) o por número, con o sin espacios/guiones.
+        const qd = q.replace(/D/g, '');
+        list = list.filter(i => (i.contacto || '').toLowerCase().includes(q)
+            || (i.nombre_wa || '').toLowerCase().includes(q)
+            || (qd.length >= 3 && (i.telefono || '').includes(qd)));
     }
     return list;
 }
@@ -99,7 +103,7 @@ function renderBandeja() {
             : `<span class="who libre">○ Sin tomar</span>`;
         return `<div class="v2-card ${i.urgente ? 'urgente' : ''} ${sel ? 'selected' : ''}" onclick="abrirItem(${i.id})">
             <div class="v2-card-l1">${pill}${urg}<span class="tipo">WhatsApp</span><span class="ago ${i.urgente ? 'urg' : ''}">${esc(i.hace || '')}</span></div>
-            <div class="v2-card-l2">${avatarHtml(i.avatar_url, i.contacto, 26)}<span class="nombre">${esc(i.contacto)}</span></div>
+            <div class="v2-card-l2">${avatarHtml(i.avatar_url, i.contacto, 26)}<span class="nombre">${esc(i.contacto)}</span>${i.wa_distinto ? `<span class="v2-pill espera" title="El WhatsApp de este número está a nombre de otra persona: la foto y el nombre de perfil son de ella." style="margin-left:auto;">📱 ${esc((i.nombre_wa || '').slice(0, 18))}</span>` : ''}</div>
             <div class="resumen">${esc(i.resumen || '—')}</div>
             <div class="v2-card-foot">${who}</div>
         </div>`;

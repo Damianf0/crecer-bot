@@ -1162,3 +1162,56 @@ Artisan::command('clasificaciones:importar-logs {area} {archivos*} {--hasta=} {-
     $this->info('Importado.');
     return 0;
 })->purpose('Importa la historia de clasificaciones de la IA desde los logs de un bot');
+
+/*
+ * Completa la identidad de WhatsApp de las conversaciones (teléfono real del
+ * @lid + nombre de perfil) y vincula con el directorio cuando es seguro. Ver
+ * App\Services\IdentidadWA. Lotes de 300 por área: una llamada liviana al bot
+ * por lote (lectura local de WA Web), con pausa entre lotes.
+ *
+ *   docker exec -u www-data crecer-web-1 php artisan contactos:identificar-wa            (simulación)
+ *   docker exec -u www-data crecer-web-1 php artisan contactos:identificar-wa --apply
+ *
+ * Por defecto solo las que nunca se identificaron o hace más de --dias días.
+ */
+Artisan::command('contactos:identificar-wa {--area=} {--dias=30} {--apply}', function () {
+    $areas = $this->option('area') ? [$this->option('area')] : array_keys(ConversacionWA::areas());
+    $apply = (bool) $this->option('apply');
+    $tot = ['convs' => 0, 'con_tel' => 0, 'con_nombre' => 0, 'vinculables' => 0, 'vinculadas' => 0, 'distinto' => 0, 'sin_bot' => 0];
+
+    foreach ($areas as $area) {
+        if (!isset(ConversacionWA::areas()[$area])) { $this->error("Área inválida: {$area}"); return 1; }
+        $q = ConversacionWA::where('area', $area)
+            ->where(fn($w) => $w->whereNull('wa_info_at')->orWhere('wa_info_at', '<', now()->subDays((int) $this->option('dias'))))
+            ->where(fn($w) => $w->where('contacto', 'like', '%@lid')->orWhere('contacto', 'like', '%@c.us'))
+            ->orderBy('id');
+        $n = 0;
+        foreach ($q->lazyById(300)->chunk(300) as $lote) {
+            $info = \App\Services\IdentidadWA::consultar($area, $lote->pluck('contacto')->all());
+            if ($info === null) { $tot['sin_bot'] += $lote->count(); $this->warn("{$area}: el bot no respondió, sigo con la próxima área"); break; }
+            foreach ($lote as $c) {
+                $i = $info[$c->contacto] ?? ['telefono' => null, 'nombre' => null];
+                $tot['convs']++; $n++;
+                if ($i['telefono']) $tot['con_tel']++;
+                if ($i['nombre']) $tot['con_nombre']++;
+                $ficha = Contacto::buscarPorContacto($c->contacto);
+                if ($ficha && $i['nombre'] && ConversacionWA::nombresDistintos($ficha->nombre, $i['nombre'])) $tot['distinto']++;
+                if (!$ficha && $i['telefono'] && str_ends_with($c->contacto, '@lid')
+                    && Contacto::where('telefono', Contacto::normalizarTelefono($i['telefono']))->whereNull('wa_id')->exists()) {
+                    $tot['vinculables']++;
+                }
+                if ($apply && \App\Services\IdentidadWA::aplicar($c, $i) === 'vinculada') $tot['vinculadas']++;
+            }
+            usleep(500_000);
+        }
+        $this->line("{$area}: {$n} conversaciones revisadas");
+    }
+
+    $this->info(sprintf('Conversaciones: %d · con teléfono según WhatsApp: %d · con nombre de WhatsApp: %d',
+        $tot['convs'], $tot['con_tel'], $tot['con_nombre']));
+    $this->info(sprintf('Vinculables a una ficha sin WhatsApp: %d%s · ficha con WhatsApp a nombre de otra persona: %d',
+        $tot['vinculables'], $apply ? " (vinculadas: {$tot['vinculadas']})" : '', $tot['distinto']));
+    if ($tot['sin_bot']) $this->warn("Sin respuesta del bot: {$tot['sin_bot']}");
+    if (!$apply) $this->warn('Simulación: agregar --apply para guardar.');
+    return 0;
+})->purpose('Guarda teléfono real y nombre de WhatsApp de las conversaciones y vincula con el directorio cuando es seguro');

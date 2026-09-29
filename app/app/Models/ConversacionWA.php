@@ -14,6 +14,7 @@ class ConversacionWA extends Model
     protected $fillable = [
         'contacto', 'area', 'nombre', 'estado', 'no_leidos', 'ultima_actividad',
         'urgente', 'asignada_a', 'resumen_llm', 'historial_llm', 'resumen_intento_at',
+        'telefono_wa', 'nombre_wa', 'wa_info_at',
     ];
 
     protected $casts = [
@@ -21,6 +22,7 @@ class ConversacionWA extends Model
         'resumen_intento_at' => 'datetime',
         'no_leidos'          => 'integer',
         'urgente'            => 'boolean',
+        'wa_info_at'         => 'datetime',
     ];
 
     /** Áreas válidas (= números de WhatsApp). 'atencion' es el bot original. */
@@ -52,7 +54,7 @@ class ConversacionWA extends Model
      * en cada mensaje y no cambian nada de lo que muestra el panel.
      */
     private const CAMPOS_COLA = ['estado', 'no_leidos', 'ultima_actividad', 'urgente',
-                                 'asignada_a', 'area', 'nombre', 'resumen_llm'];
+                                 'asignada_a', 'area', 'nombre', 'resumen_llm', 'telefono_wa', 'nombre_wa'];
 
     protected static function booted(): void
     {
@@ -186,16 +188,45 @@ class ConversacionWA extends Model
         return $this->hasMany(ConversacionEvento::class, 'conversacion_id')->orderBy('created_at');
     }
 
+    /**
+     * Teléfono para mostrar: el que WhatsApp asocia al chat (telefono_wa) o el
+     * del JID @c.us. Un @lid sin resolver devuelve '' (antes devolvía el código
+     * "123456@lid", que no le sirve a nadie).
+     */
     public function getTelefonoAttribute(): string
     {
-        return str_replace('@c.us', '', $this->contacto);
+        if ($this->telefono_wa) return $this->telefono_wa;
+        return str_ends_with((string) $this->contacto, '@c.us') ? str_replace('@c.us', '', $this->contacto) : '';
     }
 
+    /** Nombre para mostrar: ficha del directorio → nombre de WhatsApp → teléfono → el JID como último recurso. */
     public function getNombreOTelefonoAttribute(): string
     {
         if ($this->nombre) return $this->nombre;
         $contacto = Contacto::buscarPorContacto($this->contacto);
-        return $contacto?->nombre ?? $this->telefono;
+        if ($contacto?->nombre) return $contacto->nombre;
+        if ($this->nombre_wa) return $this->nombre_wa;
+        return $this->telefono ? '+' . $this->telefono : (string) $this->contacto;
+    }
+
+    /**
+     * ¿El WhatsApp de este chat está a nombre de otra persona que la ficha?
+     * Pasa cuando el número de Omnia es de la pareja, la madre o un número
+     * viejo: el vínculo es correcto (es ese número), pero la foto y el nombre
+     * de WhatsApp son del otro. Sin coincidencia ni en la inicial de ningún
+     * nombre (los apodos y abreviaturas no cuentan como distinto).
+     */
+    public static function nombresDistintos(?string $ficha, ?string $wa): bool
+    {
+        $tok = fn($s) => array_values(array_filter(
+            preg_split('/\s+/', preg_replace('/[^a-z ]/', ' ', strtolower(\Illuminate\Support\Str::ascii((string) $s)))),
+            fn($w) => strlen($w) >= 3
+        ));
+        $a = $tok($ficha);
+        $b = $tok($wa);
+        if (!$a || !$b) return false;
+        foreach ($a as $x) foreach ($b as $y) if ($x[0] === $y[0]) return false;
+        return true;
     }
 
     public function scopeActivas($query)

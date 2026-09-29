@@ -49,7 +49,7 @@ class BotMensajeEntranteTest extends TestCase
     {
         Http::fake(['*' => Http::failedConnection()]);
         // Lo que pasaba con el log de root: cualquier escritura explota.
-        Log::shouldReceive('warning')->once()->andThrow(new \UnexpectedValueException('log no escribible'));
+        Log::shouldReceive('warning')->atLeast()->once()->andThrow(new \UnexpectedValueException('log no escribible'));
 
         $this->entrante('false_5492235550000@c.us_AAA')->assertCreated();
 
@@ -63,8 +63,12 @@ class BotMensajeEntranteTest extends TestCase
         $this->entrante('false_5492235550000@c.us_AAA')->assertCreated();
         $this->entrante('false_5492235550000@c.us_BBB')->assertCreated();
 
-        Http::assertSentCount(1);
-        Http::assertSent(fn ($r) => $r->url() === 'http://bot-administracion:3002/profile-pic');
+        // Una sola foto por ráfaga, al bot del área (además va una consulta de
+        // identidad, también una sola: ver IdentidadWATest).
+        $fotos = collect(Http::recorded())->filter(fn ($p) => str_ends_with($p[0]->url(), '/profile-pic'));
+        $this->assertCount(1, $fotos);
+        $this->assertSame('http://bot-administracion:3002/profile-pic', $fotos->first()[0]->url());
+        $this->assertCount(1, collect(Http::recorded())->filter(fn ($p) => str_ends_with($p[0]->url(), '/contactos-info')));
         $this->assertSame(2, MensajeWA::count());
     }
 

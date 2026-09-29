@@ -834,11 +834,42 @@ function crearClienteWwebjs() {
   };
 
   emitter.resolveContact = async (jid) => {
+    // Para un @lid, contact.number es el propio código del lid, NO un teléfono
+    // (así quedaron 2.010 conversaciones sin vincular hasta el 29/09). El
+    // teléfono real lo da contactosInfo (phoneNumber del modelo de WA).
+    if (String(jid).endsWith('@lid')) {
+      const [info] = await emitter.contactosInfo([jid]);
+      return { numero: info?.telefono || null, name: info?.nombre || null };
+    }
     const c = await conTimeout(client.getContactById(jid), 15_000, 'resolveContact');
     return {
       numero: c?.number ? String(c.number).replace(/\D/g, '') : null,
       name:   c?.pushname || c?.name || null,
     };
+  };
+
+  // Teléfono y nombre de WhatsApp de muchos chats en UNA lectura de la
+  // colección local de contactos de WA Web (sin pedidos a la red). phoneNumber
+  // es el vínculo lid→teléfono de WhatsApp mismo: verificado el 29/09, coincide
+  // con la ficha en 398 de 400. Tope de 500 por llamada.
+  emitter.contactosInfo = async (jids) => {
+    const lista = (Array.isArray(jids) ? jids : []).slice(0, 500).map(String);
+    return conTimeout(client.pupPage.evaluate((jids) => {
+      const C = window.require('WAWebCollections');
+      const W = window.require('WAWebWidFactory');
+      return jids.map((jid) => {
+        try {
+          const c = C.Contact.get(W.createWid(jid));
+          if (!c) return { jid, telefono: null, nombre: null };
+          let tel = null;
+          if (c.phoneNumber) tel = c.phoneNumber.user || String(c.phoneNumber).split('@')[0];
+          else if (jid.endsWith('@c.us')) tel = jid.split('@')[0];
+          // agenda: cómo lo tiene agendado el celular del área (el dato más
+          // confiable de quién es: "Dr Elena"); nombre: su nombre de perfil.
+          return { jid, telefono: tel ? String(tel).replace(/\D/g, '') : null, nombre: c.pushname || c.verifiedName || null, agenda: c.name || null };
+        } catch (e) { return { jid, telefono: null, nombre: null }; }
+      });
+    }, lista), 20_000, 'contactosInfo');
   };
 
   // NOTA: al 2026-05-03, WhatsApp Web tiene un bug que rompe todas las APIs

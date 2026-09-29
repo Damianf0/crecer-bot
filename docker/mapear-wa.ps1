@@ -30,6 +30,16 @@ $out | ForEach-Object { Log $_ }
 
 $err = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
 if ($err) { Log "stderr: $err" }
+
+# Identidad de WhatsApp de las conversaciones (29/09): teléfono real del @lid y
+# nombre de perfil, en lotes de 300 por área (lectura local de WA Web, no
+# pedidos por contacto). Vincula con fichas sin WhatsApp cuando el teléfono
+# coincide. Solo las que no se identificaron en los últimos 30 días.
+Log "--- identificar-wa ---"
+$out = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan contactos:identificar-wa --apply 2>$tmpErr"
+$out | ForEach-Object { Log $_ }
+$err = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
+if ($err) { Log "stderr: $err" }
 Remove-Item $tmpErr -ErrorAction SilentlyContinue
 
 # Rotación de log si pasa de 1 MB

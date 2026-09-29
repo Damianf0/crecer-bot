@@ -324,6 +324,18 @@ class BotController extends Controller
             'no_leidos'        => $conv->no_leidos + 1,
         ]);
 
+        // Identidad de WhatsApp (teléfono real del @lid + nombre de perfil): una
+        // consulta por conversación que todavía no la tiene, después de
+        // responderle al bot y una sola vez por ráfaga. Las viejas las completa
+        // el comando nocturno contactos:identificar-wa.
+        if (!$esBackfill && !$conv->wa_info_at && Cache::add("identidad-wa:{$conv->id}", 1, 600)) {
+            $convId = $conv->id;
+            defer(function () use ($convId) {
+                $c = ConversacionWA::find($convId);
+                if ($c) \App\Services\IdentidadWA::identificar($c);
+            });
+        }
+
         // Respuesta a una difusión (por el número de difusiones o por el de un
         // área, si la campaña salió por ahí): marca "respondió" y detecta bajas.
         try {

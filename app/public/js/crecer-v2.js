@@ -235,7 +235,8 @@ window.V2Conv = (function () {
                 ${avatarHtml(c.avatar_url, c.contacto, 36)}
                 <div class="info">
                     <div class="nombre">${esc(c.contacto)}</div>
-                    <div class="sub">${esc(c.telefono)}</div>
+                    <div class="sub">${c.telefono ? esc('+' + c.telefono) : ''}${c.nombre_wa && c.nombre_wa !== c.contacto ? ` · WhatsApp: ${esc(c.nombre_wa)}` : ''}</div>
+                    ${c.wa_distinto ? `<div class="sub" style="color:var(--v2-warn);" title="El vínculo es correcto (es ese número), pero ese WhatsApp lo usa otra persona: la foto y el nombre de perfil son suyos.">📱 Este número figura en WhatsApp a nombre de ${esc(c.nombre_wa)}</div>` : ''}
                 </div>
                 ${asig}
                 <div class="acciones">${acciones.join('')}</div>

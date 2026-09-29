@@ -159,9 +159,9 @@ class AtencionController extends Controller
 
         // Path 1: match por wa_id (cubre @lid y @c.us con wa_id poblado)
         \App\Models\Contacto::whereIn('wa_id', $jids)
-            ->get(['id', 'wa_id', 'avatar_path'])
+            ->get(['id', 'wa_id', 'avatar_path', 'nombre'])
             ->each(function ($c) use (&$lookup) {
-                $lookup[$c->wa_id] = ['id' => $c->id, 'avatar_path' => $c->avatar_path];
+                $lookup[$c->wa_id] = ['id' => $c->id, 'avatar_path' => $c->avatar_path, 'nombre' => $c->nombre];
             });
 
         // Path 2: fallback para @c.us no resueltos arriba — buscar por teléfono
@@ -172,10 +172,10 @@ class AtencionController extends Controller
 
         if (!empty($pendientes)) {
             \App\Models\Contacto::whereIn('telefono', array_keys($pendientes))
-                ->get(['id', 'telefono', 'avatar_path'])
+                ->get(['id', 'telefono', 'avatar_path', 'nombre'])
                 ->each(function ($c) use (&$lookup, $pendientes) {
                     $jid = $pendientes[$c->telefono] ?? null;
-                    if ($jid) $lookup[$jid] = ['id' => $c->id, 'avatar_path' => $c->avatar_path];
+                    if ($jid) $lookup[$jid] = ['id' => $c->id, 'avatar_path' => $c->avatar_path, 'nombre' => $c->nombre];
                 });
         }
 
@@ -292,6 +292,9 @@ class AtencionController extends Controller
         $telefonoSugerido = null;
         if ($esHuerfana && str_ends_with($conv->contacto, '@c.us')) {
             $telefonoSugerido = str_replace('@c.us', '', $conv->contacto);
+        } elseif ($esHuerfana && $conv->telefono_wa) {
+            // @lid: el teléfono que WhatsApp asocia al chat (contactos:identificar-wa).
+            $telefonoSugerido = $conv->telefono_wa;
         }
 
         return response()->json([
@@ -299,6 +302,8 @@ class AtencionController extends Controller
                 'id'                => $conv->id,
                 'contacto'          => $conv->nombreOTelefono,
                 'telefono'          => $conv->telefono,
+                'nombre_wa'         => $conv->nombre_wa,
+                'wa_distinto'       => ConversacionWA::nombresDistintos($contactoMatch?->nombre ?? $conv->nombre, $conv->nombre_wa),
                 'asig_id'           => $conv->asignada_a,
                 'asig_name'         => $conv->asignadaA?->nombre_completo,
                 'resumen'           => $conv->resumen_llm,
@@ -1371,6 +1376,9 @@ class AtencionController extends Controller
             'contacto'    => $c->nombreOTelefono,
             'contacto_id' => $hit['id'] ?? null,
             'telefono'    => $c->telefono,
+            'nombre_wa'   => $c->nombre_wa,
+            // El WhatsApp de este número está a nombre de otra persona (foto y nombre de perfil son de ella).
+            'wa_distinto' => ConversacionWA::nombresDistintos($hit['nombre'] ?? $c->nombre, $c->nombre_wa),
             'etiqueta'    => 'WhatsApp',
             'resumen'     => $c->resumen_llm ?: ($ultimo?->snippet ?? '—'),
             'urgente'     => (bool) $c->urgente,
