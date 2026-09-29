@@ -206,6 +206,47 @@ function crearClienteWwebjs() {
     }
     return fueEnviadoPorNosotros(waId);
   }
+  // Parches a whatsapp-web.js 1.34.7 dentro de la página, para WA Web
+  // 2.3000.10486xxxxx (se autoactualizó el 28/09 pese al pin; verificado en
+  // vivo el 29/09 mandando al chat propio del número de administración):
+  //  1. processMediaData devuelve el modelo MediaData de WhatsApp y wwebjs lo
+  //     esparce (...mediaOptions) dentro del mensaje: arrastra campos internos
+  //     (parent, collection…) y el constructor de Msg revienta en
+  //     getValidatedSender → "Data passed to getter must include an id property
+  //     (it's how we memoize) but got undefined". Ningún archivo salía del
+  //     panel. Devolviendo el objeto plano (toJSON) el adjunto sale bien.
+  //  2. La MsgKey ya no trae _serialized: sendMessage termina con
+  //     Msg.get(newMsgKey._serialized) → undefined, así que el envío volvía sin
+  //     id (el panel guardaba sin wa_id y el eco del celular podía duplicarlo).
+  //     toString() da la clave exacta con la que el mensaje está en la colección
+  //     (en los salientes termina en "_out"). En los entrantes da el mismo
+  //     formato que completarIdSerializado, y serialize() no copia el getter:
+  //     el wa_id que ve Node no cambia.
+  // Idempotente; se reaplica si la página recargó (WA Web se actualiza solo).
+  const VERSION_PARCHE = 1;
+  async function asegurarParcheEnvio() {
+    if (!client?.pupPage) return;
+    await client.pupPage.evaluate((ver) => {
+      if (window.__crecerParcheEnvio === ver || !window.WWebJS?.processMediaData) return;
+      const orig = window.WWebJS.__pmdOriginal || window.WWebJS.processMediaData;
+      window.WWebJS.__pmdOriginal = orig;
+      window.WWebJS.processMediaData = async (...args) => {
+        const md = await orig(...args);
+        return md && typeof md.toJSON === 'function' ? md.toJSON() : md;
+      };
+      const MsgKey = window.require('WAWebMsgKey');
+      if (!Object.getOwnPropertyDescriptor(MsgKey.prototype, '_serialized')) {
+        Object.defineProperty(MsgKey.prototype, '_serialized', {
+          configurable: true,
+          get() { return this.toString(); },
+          // Si WhatsApp algún día lo vuelve a asignar, que quede como propio.
+          set(v) { Object.defineProperty(this, '_serialized', { value: v, writable: true, configurable: true, enumerable: true }); },
+        });
+      }
+      window.__crecerParcheEnvio = ver;
+    }, VERSION_PARCHE);
+  }
+
   async function enviarRegistrando(promesa) {
     _enVuelo++;
     try { return await promesa; } finally { _enVuelo--; }
@@ -559,6 +600,7 @@ function crearClienteWwebjs() {
       reintentosSeguidos = 0;
       listoEnEstaCorrida = true;
       escribirMarker({ ts: new Date().toISOString(), phone, intentos_restore: 0 });
+      asegurarParcheEnvio().catch((e) => console.warn('[whatsapp] No se pudo aplicar el parche de envío:', e.message));
       console.log(`[whatsapp] Cliente listo. Número: ${phone}`);
       emitter.emit('ready', { phone });
       detenerWatchdog();
@@ -666,6 +708,7 @@ function crearClienteWwebjs() {
     // adentro la búsqueda en su store de Chromium. Si el original ya no está,
     // descarta silenciosamente el quote (el mensaje igual se envía).
     if (opts.quoted?.wa_id) sendOpts.quotedMessageId = opts.quoted.wa_id;
+    await asegurarParcheEnvio();
     const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, texto, sendOpts), 45_000, 'sendText'));
     const waId = completarIdSerializado(sent?.id);
     marcarEnviado(waId);
@@ -675,6 +718,7 @@ function crearClienteWwebjs() {
   emitter.sendMedia = async (jid, { mimetype, base64, filename, caption }) => {
     const media = new MessageMedia(mimetype, base64, filename || 'archivo');
     const opts = caption ? { caption } : {};
+    await asegurarParcheEnvio();
     const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, media, opts), 90_000, 'sendMedia'));
     const waId = completarIdSerializado(sent?.id);
     marcarEnviado(waId);
