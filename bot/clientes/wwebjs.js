@@ -541,7 +541,7 @@ function crearClienteWwebjs() {
       // aceptar vinculaciones nuevas con ella (QR que no vincula / LOGOUT al
       // escanear). Las versiones duran ~3 meses: el watchdog avisa cuando la
       // pineada sale de la lista vigente de wa-version.
-      webVersion: process.env.WA_WEB_VERSION || '2.3000.1048136787-alpha',
+      webVersion: process.env.WA_WEB_VERSION || '2.3000.1048860261-alpha',
       webVersionCache: {
         type: 'local',
         path: path.join(__dirname, '..', '.wwebjs_cache'),
@@ -757,17 +757,27 @@ function crearClienteWwebjs() {
           const id = c.id?._serialized || String(c.id || '');
           if (!id) continue;
           const group = !!(c.isGroup || (c.id && c.id.server === 'g.us'));
-          out.push({ id, t: c.t || 0, group });
+          // Tras una vinculación nueva, WA tarda en actualizar c.t aunque los
+          // mensajes ya estén en memoria: se toma también el último mensaje
+          // (30/09: el backfill de la caída de ovo encontraba 0 con 39 en memoria).
+          let ult = 0;
+          try { const arr = c.msgs?.getModelsArray?.() || []; ult = arr.length ? (arr[arr.length - 1].t || 0) : 0; } catch (e) {}
+          out.push({ id, t: Math.max(c.t || 0, ult), group });
         } catch (e) { /* chat roto: saltear */ }
       }
       return out;
     }), 30_000, 'backfill:listarChats');
 
+    // Margen de 3 días: tras una re-vinculación, WA deja la "última actividad"
+    // de cada chat congelada en lo que sabía antes de la caída (30/09, ovo: el
+    // chat más reciente figuraba a las 09:01 con mensajes posteriores). Los
+    // mensajes se filtran igual por su hora real más abajo.
+    const MARGEN_MS = 3 * 24 * 3600 * 1000;
     const candidatos = metas.filter(c =>
       !c.group &&
       !c.id.endsWith('@broadcast') &&
       !c.id.endsWith('@g.us') &&
-      c.t * 1000 >= desdeMs
+      c.t * 1000 >= desdeMs - MARGEN_MS
     );
     console.log(`[backfill] ${metas.length} chats, ${candidatos.length} con actividad en rango`);
 
