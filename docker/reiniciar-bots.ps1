@@ -34,7 +34,11 @@ Set-Location C:\crecer
 foreach ($b in $Bots) {
     $antes = Estado $b.Puerto
     Log ("{0}: estado antes = {1}; reiniciando" -f $b.Servicio, $antes)
-    docker compose restart $b.Servicio 2>&1 | Out-Null
+    # Recrear (no solo reiniciar): toma la configuracion actual del compose.
+    # El 30/09 admin y ovo seguian con un WA_WEB_VERSION viejo grabado de
+    # cuando el container se creo; restart no lo saca. La sesion vive en su
+    # volumen y se conserva. --no-deps: no tocar web ni los demas.
+    docker compose up -d --force-recreate --no-deps $b.Servicio 2>&1 | Out-Null
     $t0 = Get-Date
     $st = ''
     do {

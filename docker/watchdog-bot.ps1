@@ -367,18 +367,32 @@ if ((EnHorario $now) -and ((-not $ultimoChequeo) -or (($now - $ultimoChequeo).To
     try {
         $lista = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/versions.json' -TimeoutSec 20
         $vigentes = @($lista.versions | ForEach-Object { $_.version })
-        $usadas = @()
-        $def = Select-String -Path 'C:\crecer\bot\clientes\wwebjs.js' -Pattern "WA_WEB_VERSION \|\| '([^']+)'" | Select-Object -First 1
-        if ($def) { $usadas += $def.Matches[0].Groups[1].Value }
-        Select-String -Path 'C:\crecer\docker-compose.yml' -Pattern '^\s*-\s*WA_WEB_VERSION=(\S+)' | ForEach-Object { $usadas += $_.Matches[0].Groups[1].Value }
-        $usadas = @($usadas | Select-Object -Unique)
-        $vencidas = @($usadas | Where-Object { $vigentes -notcontains $_ })
-        if ($vigentes.Count -gt 50 -and $vencidas.Count -gt 0) {
-            $msg = 'Watchdog Crecer: la version de WhatsApp Web ' + ($vencidas -join ', ') + ' ya no esta vigente (actual: ' + $lista.currentVersion + '). Los bots conectados siguen andando, pero al reiniciarse o re-escanear el QR pueden quedar sin sesion. Actualizar WA_WEB_VERSION (bajar el HTML a bot/.wwebjs_cache) y reiniciar en un momento controlado.'
-            Log ('VERSION VENCIDA: ' + ($vencidas -join ', ') + ' (vigente: ' + $lista.currentVersion + ')')
-            Notificar ('Crecer: version de WhatsApp Web vencida') $msg | Out-Null
+        # Pre-descarga de la vigente: si un bot arranca sin internet usa la mas
+        # nueva de la cache, que asi nunca tiene mas de un dia.
+        $htmlVigente = 'C:\crecer\bot\.wwebjs_cache\' + $lista.currentVersion + '.html'
+        if ($lista.currentVersion -and -not (Test-Path $htmlVigente)) {
+            $tmp = $htmlVigente + '.watchdog.tmp'
+            Invoke-WebRequest -Uri ('https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/' + $lista.currentVersion + '.html') -OutFile $tmp -TimeoutSec 30 -UseBasicParsing
+            if ((Get-Item $tmp).Length -gt 100000) { Move-Item $tmp $htmlVigente -Force; Log ('WA Web ' + $lista.currentVersion + ' descargada a la cache') }
+            else { Remove-Item $tmp -Force; Log ('HTML de WA Web ' + $lista.currentVersion + ' invalido, no se guardo') }
+        }
+        # Desde el 30/09 cada bot resuelve solo la version vigente al arrancar y
+        # deja anotado cual usa (bot/.wwebjs_cache/en-uso-<area>.json). Solo hay
+        # que avisar si un bot arranco SIN poder consultarla (sin internet) y
+        # quedo con una de la cache que ya no esta vigente: ese no re-vincula.
+        $problemas = @(); $resumen = @()
+        Get-ChildItem 'C:\crecer\bot\.wwebjs_cache\en-uso-*.json' -ErrorAction SilentlyContinue | ForEach-Object {
+            $area = $_.BaseName -replace '^en-uso-', ''
+            try { $u = Get-Content $_.FullName -Raw | ConvertFrom-Json } catch { return }
+            $resumen += ($area + '=' + $u.version + ' (' + $u.origen + ')')
+            if ($u.origen -ne 'WA_WEB_VERSION' -and $vigentes -notcontains $u.version) { $problemas += ($area + ': ' + $u.version + ' (' + $u.origen + ')') }
+        }
+        if ($vigentes.Count -gt 50 -and $problemas.Count -gt 0) {
+            $msg = 'Watchdog Crecer: bots con una version de WhatsApp Web que ya no esta vigente: ' + ($problemas -join '; ') + '. Siguen andando, pero si se desvinculan no van a poder volver a vincular hasta reiniciarse con internet (toman la vigente solos). Reiniciar el bot en un momento controlado.'
+            Log ('VERSION NO VIGENTE: ' + ($problemas -join '; ') + ' (vigente: ' + $lista.currentVersion + ')')
+            Notificar ('Crecer: version de WhatsApp Web no vigente') $msg | Out-Null
         } else {
-            Log ('Version WhatsApp Web OK: ' + ($usadas -join ', ') + ' vigente(s)')
+            Log ('Version WhatsApp Web OK: ' + ($resumen -join ', '))
         }
         @{ checked_at = $now.ToString('o') } | ConvertTo-Json | Out-File -FilePath $VersionStateFile -Encoding utf8 -Force
     } catch {

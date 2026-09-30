@@ -9,6 +9,73 @@ const fs = require('fs');
 const dns = require('dns');
 const path = require('path');
 
+// ── Versión de WhatsApp Web, resuelta sola (30/09) ─────────────────────────
+// Para VINCULAR un dispositivo, WhatsApp exige una versión reciente: publica
+// 3-4 por día y el 30/09 un pin de una semana ya no vinculaba (ovo quedó sin
+// QR válido). Una sesión ya vinculada sobrevive con una versión vieja, así que
+// el riesgo es solo al re-vincular o reiniciar. En cada arranque:
+//   1. WA_WEB_VERSION en el entorno manda (override manual).
+//   2. Si no, la versión vigente de wppconnect-team/wa-version, bajando su HTML
+//      a la caché local si falta (timeout corto: el arranque NUNCA depende de
+//      GitHub — corte de internet del 15/07).
+//   3. Sin red: la más nueva que ya esté en la caché.
+// La caché (bot/.wwebjs_cache) la comparten los 3 bots: se escribe a un
+// temporal y se renombra, así un bot nunca lee un HTML a medio bajar.
+const VERSION_WA_FALLBACK = '2.3000.1048860261-alpha';
+const WA_CACHE_DIR = path.join(__dirname, '..', '.wwebjs_cache');
+const WA_VERSIONES_URL = 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main';
+
+function compararVersiones(a, b) {
+  const n = (v) => String(v).replace(/-alpha$/, '').split('.').map(Number);
+  const x = n(a), y = n(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
+  }
+  return 0;
+}
+
+function versionesEnCache() {
+  try {
+    return fs.readdirSync(WA_CACHE_DIR)
+      .filter((f) => /^2\.\d+\.\d+(-alpha)?\.html$/.test(f))
+      .map((f) => f.replace(/\.html$/, ''))
+      .sort(compararVersiones);
+  } catch (_) { return []; }
+}
+
+async function bajarHtmlVersion(version) {
+  const destino = path.join(WA_CACHE_DIR, `${version}.html`);
+  if (fs.existsSync(destino)) return true;
+  const axios = require('axios');
+  const r = await axios.get(`${WA_VERSIONES_URL}/html/${version}.html`, { timeout: 15_000, responseType: 'text' });
+  const html = String(r.data || '');
+  // Un HTML de WA Web real pesa ~500 KB y trae decenas de <script>.
+  if (html.length < 100_000 || !html.includes('<script')) throw new Error(`HTML de ${version} inválido (${html.length} bytes)`);
+  fs.mkdirSync(WA_CACHE_DIR, { recursive: true });
+  const tmp = `${destino}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, html);
+  fs.renameSync(tmp, destino);
+  return true;
+}
+
+async function resolverVersionWA() {
+  if (process.env.WA_WEB_VERSION) return { version: process.env.WA_WEB_VERSION, origen: 'WA_WEB_VERSION' };
+  try {
+    const axios = require('axios');
+    const r = await axios.get(`${WA_VERSIONES_URL}/versions.json`, { timeout: 8_000 });
+    const vigente = r.data?.currentVersion;
+    if (vigente) {
+      await bajarHtmlVersion(vigente);
+      return { version: vigente, origen: 'vigente' };
+    }
+  } catch (e) {
+    console.warn(`[whatsapp] No se pudo consultar/bajar la versión vigente de WA Web (${e.message}) — uso la caché`);
+  }
+  const cache = versionesEnCache();
+  if (cache.length) return { version: cache[cache.length - 1], origen: 'caché' };
+  return { version: VERSION_WA_FALLBACK, origen: 'fallback' };
+}
+
 const AUTH_PATH = '/app/.wwebjs_auth';
 
 // ── Snapshot de sesión + auto-restauración ────────────────────────────
@@ -522,26 +589,20 @@ function crearClienteWwebjs() {
       programarReinicio(5000);
     }, BOOT_TIMEOUT_MIN * 60 * 1000);
 
+    const wa = await resolverVersionWA();
+    console.log(`[whatsapp] WhatsApp Web ${wa.version} (${wa.origen})`);
+    // Para el watchdog: qué versión usa cada bot (antes leía el default del código).
+    try { fs.writeFileSync(path.join(WA_CACHE_DIR, `en-uso-${require('../area').BOT_AREA}.json`), JSON.stringify({ version: wa.version, origen: wa.origen, ts: new Date().toISOString() })); } catch (_) {}
+
     client = new Client({
       authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
       puppeteer: PUPPETEER_OPTS,
       userAgent: USER_AGENT_MODERNO,
-      // Pin de versión de WA Web (delta workbench-bot 16/07): build estable del
-      // 29/06 — el mismo día que la que lleva meses validada en workbench-bot.
-      // Cache LOCAL y estricto: el HTML vive en bot/.wwebjs_cache y el boot no
-      // depende de GitHub (con type:remote, cada initialize hacía un fetch a
-      // raw.githubusercontent.com — la noche del corte 15/07 todos los reintentos
-      // nacían condenados por eso). strict: si falta el HTML de la versión
-      // pineada, falla con VersionResolveError claro en vez de driftear en
-      // silencio a la última versión viva.
-      // Para cambiar de versión: bajar el HTML primero →
-      //   curl -sL -o bot/.wwebjs_cache/<VER>.html https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/<VER>.html
-      // y después setear WA_WEB_VERSION=<VER> (o cambiar el default acá).
-      // 22/09: la del 29/06 (2.3000.1042292006-alpha) venció — WhatsApp dejó de
-      // aceptar vinculaciones nuevas con ella (QR que no vincula / LOGOUT al
-      // escanear). Las versiones duran ~3 meses: el watchdog avisa cuando la
-      // pineada sale de la lista vigente de wa-version.
-      webVersion: process.env.WA_WEB_VERSION || '2.3000.1048860261-alpha',
+      // Cache LOCAL y estricto: el HTML vive en bot/.wwebjs_cache (lo baja
+      // resolverVersionWA antes de llegar acá) y el boot no depende de GitHub
+      // (con type:remote, la noche del corte 15/07 todos los reintentos nacían
+      // condenados). strict: sin el HTML falla claro en vez de driftear.
+      webVersion: wa.version,   // resuelta arriba (resolverVersionWA)
       webVersionCache: {
         type: 'local',
         path: path.join(__dirname, '..', '.wwebjs_cache'),
@@ -954,4 +1015,4 @@ function crearClienteWwebjs() {
   return emitter;
 }
 
-module.exports = { crearClienteWwebjs, completarIdSerializado };
+module.exports = { crearClienteWwebjs, completarIdSerializado, resolverVersionWA };
