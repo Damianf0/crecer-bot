@@ -44,10 +44,10 @@ V2Conv.init({
     usuarios: @json($usuarios),
     meId: {{ auth()->id() }},
     area: AREA,
-    onChanged: () => { state.etag = null; pollItems(); },
+    onChanged: () => { state.etag = null; pollItems(); if (state.vista === 'resueltas') cargarResueltas(); },
 });
 
-let state = { items: [], vista: 'espera', q: '', etag: null };
+let state = { items: [], vista: 'espera', q: '', etag: null, resueltas: [], resLimitado: false, resCargando: false };
 
 function normalizar(data) {
     const tag = (arr, estado) => arr.map(i => ({ ...i, _estado: estado }));
@@ -56,6 +56,8 @@ function normalizar(data) {
 }
 
 function filtrados() {
+    // Resueltas: vienen del servidor ya filtradas por la búsqueda.
+    if (state.vista === 'resueltas') return state.resueltas;
     let list = state.items;
     if (state.vista === 'espera')   list = list.filter(i => i._estado === 'nueva');
     if (state.vista === 'proceso')  list = list.filter(i => i._estado === 'proceso');
@@ -63,7 +65,7 @@ function filtrados() {
     if (state.q) {
         const q = state.q.toLowerCase();
         // Por nombre (ficha o WhatsApp) o por número, con o sin espacios/guiones.
-        const qd = q.replace(/D/g, '');
+        const qd = q.replace(/\D/g, '');
         list = list.filter(i => (i.contacto || '').toLowerCase().includes(q)
             || (i.nombre_wa || '').toLowerCase().includes(q)
             || (qd.length >= 3 && (i.telefono || '').includes(qd)));
@@ -79,26 +81,53 @@ function renderVistas() {
     };
     document.getElementById('b-vistas').innerHTML = [['espera','En espera'],['proceso','En proceso'],['urgentes','Urgentes']]
         .map(([k, lbl]) => `<button class="v2-vista ${state.vista === k ? 'active' : ''}" onclick="setVista('${k}')">${lbl}<span class="n">${counts[k]}</span></button>`)
-        .join('');
+        .join('')
+        // Resueltas: consulta rápida de lo ya cerrado, sin ir al Historial.
+        + `<button class="v2-vista ${state.vista === 'resueltas' ? 'active' : ''}" onclick="setVista('resueltas')" title="Conversaciones ya resueltas de esta cola">✓ Resueltas</button>`;
     document.getElementById('b-count').textContent = state.items.length;
 }
-function setVista(v) { state.vista = v; renderBandeja(); }
+function setVista(v) {
+    state.vista = v;
+    if (v === 'resueltas') cargarResueltas();
+    renderBandeja();
+}
+
+let resTimer = null;
+async function cargarResueltas() {
+    state.resCargando = true; renderBandeja();
+    try {
+        const r = await fetch(`/atencion/${AREA}/resueltas?q=${encodeURIComponent(state.q)}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+        const d = await r.json();
+        state.resueltas = (d.items || []).map(i => ({ ...i, _estado: 'resuelta' }));
+        state.resLimitado = !!d.limitado;
+    } catch (e) { v2toast('No se pudieron cargar las resueltas', 'err'); }
+    state.resCargando = false;
+    if (state.vista === 'resueltas') renderBandeja();
+}
 
 function renderBandeja() {
     renderVistas();
     const list = filtrados();
     const cont = document.getElementById('b-cards');
+    if (state.vista === 'resueltas' && state.resCargando && !list.length) {
+        cont.innerHTML = `<div class="v2-empty">Buscando…</div>`;
+        return;
+    }
     if (!list.length) {
         cont.innerHTML = `<div class="v2-empty"><span class="ico">📭</span>Nada por acá${state.q ? ' con esa búsqueda' : ''}.</div>`;
         return;
     }
     cont.innerHTML = list.map(i => {
         const sel = V2Conv.panelId === i.id;
-        const pill = i._estado === 'nueva'
+        const pill = i._estado === 'resuelta'
+            ? `<span class="v2-pill neutral">✓ Resuelta</span>`
+            : i._estado === 'nueva'
             ? `<span class="v2-pill nueva">En espera${i.no_leidos > 0 ? ' · ' + i.no_leidos : ''}</span>`
             : `<span class="v2-pill proceso">En proceso</span>`;
         const urg = i.urgente ? `<span class="v2-pill urgente">Urgente</span>` : '';
-        const who = i.asig_name
+        const who = i._estado === 'resuelta'
+            ? `<span class="who">${i.cerrada_por ? esc(i.cerrada_por.split(' ')[0] === 'Archivada' ? i.cerrada_por : 'Resolvió ' + i.cerrada_por.split(' ')[0]) : 'Resuelta'}${i.cerrada_hace ? ' · ' + esc(i.cerrada_hace) : ''}</span>`
+            : i.asig_name
             ? `<span class="who">● ${esc(i.asig_name.split(' ')[0])} la tiene</span>`
             : `<span class="who libre">○ Sin tomar</span>`;
         return `<div class="v2-card ${i.urgente ? 'urgente' : ''} ${sel ? 'selected' : ''}" onclick="abrirItem(${i.id})">
@@ -107,16 +136,19 @@ function renderBandeja() {
             <div class="resumen">${esc(i.resumen || '—')}</div>
             <div class="v2-card-foot">${who}</div>
         </div>`;
-    }).join('');
+    }).join('') + (state.vista === 'resueltas' && state.resLimitado
+        ? `<div class="v2-empty" style="padding:12px;font-size:11.5px;">Se muestran las 60 más recientes. Buscá por nombre o número para encontrar una anterior.</div>` : '');
 }
 
 async function abrirItem(id) {
-    await V2Conv.abrir(id);
+    // Las resueltas se abren en solo lectura, con el botón Reabrir.
+    await V2Conv.abrir(id, { readOnly: state.vista === 'resueltas' });
     renderBandeja();
 }
 
 document.getElementById('b-search').addEventListener('input', e => {
     state.q = e.target.value.trim();
+    if (state.vista === 'resueltas') { clearTimeout(resTimer); resTimer = setTimeout(cargarResueltas, 350); return; }
     renderBandeja();
 });
 

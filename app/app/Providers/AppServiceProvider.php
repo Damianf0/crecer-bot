@@ -19,6 +19,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Fechas relativas en español en todo el panel ("hace 19 horas", no
+        // "19 hours ago"). Solo Carbon: el locale de la app queda en 'en' porque
+        // no hay traducciones de validación instaladas.
+        \Carbon\Carbon::setLocale('es');
     }
 }

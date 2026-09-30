@@ -469,6 +469,50 @@ class AtencionController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /**
+     * GET /atencion/{area}/resueltas?q= — conversaciones ya resueltas (archivadas)
+     * del área, para consultarlas desde la misma cola sin ir al Historial.
+     * Las 60 más recientes, o las que coinciden con la búsqueda (nombre de la
+     * ficha, nombre de WhatsApp o número). Se abren en solo lectura con Reabrir.
+     */
+    public function resueltas(Request $request, string $area): JsonResponse
+    {
+        $q   = trim((string) $request->query('q', ''));
+        $dig = preg_replace('/\D/', '', $q);
+
+        $query = ConversacionWA::where('area', $area)->where('estado', 'archivada');
+        if ($q !== '') {
+            $query->where(function ($w) use ($q, $dig) {
+                $w->where('nombre', 'like', "%{$q}%")
+                  ->orWhere('nombre_wa', 'like', "%{$q}%")
+                  // Por el nombre de la ficha del directorio (conversaciones sin nombre propio).
+                  ->orWhereIn('contacto', \App\Models\Contacto::where('nombre', 'like', "%{$q}%")
+                      ->whereNotNull('wa_id')->limit(200)->pluck('wa_id'));
+                if (strlen($dig) >= 3) {
+                    $w->orWhere('telefono_wa', 'like', "%{$dig}%")->orWhere('contacto', 'like', "%{$dig}%");
+                }
+            });
+        }
+        $convs = $query->with('ultimoMensaje')->orderByDesc('ultima_actividad')->limit(60)->get();
+
+        // Quién la cerró y cuándo: el último evento de cierre de cada una (una consulta).
+        $cierres = ConversacionEvento::whereIn('conversacion_id', $convs->pluck('id'))
+            ->whereIn('tipo', ['resuelta', 'archivada_auto', 'reenviada'])
+            ->with('usuario:id,nombre_completo')
+            ->orderBy('id')->get()->keyBy('conversacion_id');   // keyBy se queda con el último
+
+        $lookup = $this->resolverContactosBulk($convs->pluck('contacto')->unique()->all());
+        $items = $convs->map(function ($c) use ($lookup, $cierres) {
+            $cierre = $cierres[$c->id] ?? null;
+            return $this->mapWA($c, $lookup) + [
+                'cerrada_por'  => $cierre?->tipo === 'archivada_auto' ? 'Archivada por inactividad' : ($cierre?->usuario?->nombre_completo),
+                'cerrada_hace' => $cierre?->created_at?->diffForHumans(),
+            ];
+        })->values();
+
+        return response()->json(['ok' => true, 'items' => $items, 'limitado' => $items->count() >= 60]);
+    }
+
     public function misConversacionesData(): JsonResponse
     {
         return response()->json(['ok' => true, 'data' => $this->misConvItems()]);

@@ -170,6 +170,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         // Fase 4: página V1 por área retirada — redirect (la data /items sigue viva abajo).
         Route::get('/atencion/{area}',            fn(string $area) => redirect("/v2/atencion/$area"))->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
         Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
+        Route::get('/atencion/{area}/resueltas',  [AtencionController::class, 'resueltas'])->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
 
         // UI V2 (producción desde el cutover 30/06).
         Route::get('/v2/atencion', fn() => redirect('/v2/atencion/atencion'));
