@@ -19,19 +19,10 @@
 </head>
 <body>
 @php
-    // Mismos contadores cacheados que usa el navbar de producción (comparte clave de cache).
+    // Contadores del menú: al cargar salen de acá; después los refresca /bot-pulso (ver script abajo).
     $uid = auth()->id() ?? 0;
-    [$misConv, $misTareasCnt, $pendByArea] = \Illuminate\Support\Facades\Cache::remember(
-        "navbar.counts.{$uid}",
-        5,
-        fn() => [
-            \App\Models\ConversacionWA::where('estado','activa')->where('asignada_a', $uid)->count(),
-            \App\Models\Derivacion::where('estado','en_atencion')->where('asignada_a', $uid)->count()
-                + \App\Models\Tarea::where('estado','!=','completada')->where('asignada_a', $uid)->count(),
-            \App\Models\ConversacionWA::where('estado','activa')->whereNull('asignada_a')->where('no_leidos','>',0)
-                ->selectRaw('area, count(*) as n')->groupBy('area')->pluck('n','area')->toArray(),
-        ]
-    );
+    $cnt = \App\Support\ContadoresNavbar::para($uid);
+    [$misConv, $misTareasCnt, $pendByArea] = [$cnt['mis_conv'], $cnt['mis_tareas'], $cnt['por_area']];
     $areaActiva = $area ?? null;
     $navActiva  = $navActive ?? null;   // mis-conversaciones | tareas | historial | contactos
     $u = auth()->user();
@@ -66,18 +57,18 @@
             @foreach(\App\Models\ConversacionWA::areas() as $aKey => $aLabel)
             <a class="v2-nav-item {{ $areaActiva === $aKey ? 'active' : '' }}" href="/v2/atencion/{{ $aKey }}">
                 <span class="ico">💬</span><span class="lbl">{{ $aLabel }}</span>
-                @if(($pendByArea[$aKey] ?? 0) > 0)<span class="v2-nav-badge">{{ $pendByArea[$aKey] }}</span>@endif
+                <span class="v2-nav-badge" data-contador="area:{{ $aKey }}" @if(($pendByArea[$aKey] ?? 0) === 0) hidden @endif>{{ $pendByArea[$aKey] ?? 0 }}</span>
             </a>
             @endforeach
             <a class="v2-nav-item {{ $navActiva === 'mis-conversaciones' ? 'active' : '' }}" href="/v2/mis-conversaciones">
                 <span class="ico">👤</span><span class="lbl">Mis conversaciones</span>
-                @if($misConv > 0)<span class="v2-nav-badge">{{ $misConv }}</span>@endif
+                <span class="v2-nav-badge" data-contador="mis_conv" @if($misConv === 0) hidden @endif>{{ $misConv }}</span>
             </a>
 
             <div class="v2-nav-sec">Trabajo</div>
             <a class="v2-nav-item {{ $navActiva === 'tareas' ? 'active' : '' }}" href="/v2/centro-tareas">
                 <span class="ico">✓</span><span class="lbl">Tareas</span>
-                @if($misTareasCnt > 0)<span class="v2-nav-badge" style="background:var(--v2-info);">{{ $misTareasCnt }}</span>@endif
+                <span class="v2-nav-badge" data-contador="mis_tareas" style="background:var(--v2-info);" @if($misTareasCnt === 0) hidden @endif>{{ $misTareasCnt }}</span>
             </a>
             @if($u && $u->hasPermiso('historial'))
             <a class="v2-nav-item {{ $navActiva === 'historial' ? 'active' : '' }}" href="/v2/historial">
@@ -176,17 +167,38 @@
     };
     syncThemeBtn();
 
+    // Estado de los bots + contadores del menú. Cada 15 s y, además, al instante
+    // cuando llega un aviso en tiempo real de una cola (ver abajo, V2Tiempo).
+    function pintarContador(clave, n) {
+        const el = document.querySelector(`[data-contador="${clave}"]`);
+        if (!el) return;
+        el.textContent = n;
+        el.hidden = !n;
+    }
     async function pulso() {
         const dot = document.getElementById('bots-dot'), txt = document.getElementById('bots-txt');
         try {
-            const r = await fetch('/bot-pulso', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const r = await fetch('/bot-pulso', { headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } });
+            if (r.redirected || r.status === 401) return;
             const d = await r.json();
+            const bots = Object.values(d.bots || {});
+            const mal = bots.filter(b => b.estado !== 'listo').map(b => b.label).join(', ');
+            dot.parentElement.title = bots.map(b => `${b.label}: ${b.estado}${b.has_qr ? ' (falta QR)' : ''}`).join('\n');
             if (d.estado === 'listo') { dot.className = 'v2-dot ok'; txt.textContent = 'Bots ok'; }
-            else if (d.has_qr || d.estado === 'iniciando') { dot.className = 'v2-dot warn'; txt.textContent = 'Bot iniciando'; }
-            else { dot.className = 'v2-dot err'; txt.textContent = 'Bot caído'; }
+            else if (d.estado === 'iniciando') { dot.className = 'v2-dot warn'; txt.textContent = 'Iniciando: ' + mal; }
+            else { dot.className = 'v2-dot err'; txt.textContent = 'Caído: ' + mal; }
+            const c = d.contadores || {};
+            for (const [area, n] of Object.entries(c.por_area || {})) pintarContador('area:' + area, n);
+            document.querySelectorAll('[data-contador^="area:"]').forEach(el => {
+                if (!(el.dataset.contador.slice(5) in (c.por_area || {}))) pintarContador(el.dataset.contador, 0);
+            });
+            pintarContador('mis_conv', c.mis_conv || 0);
+            pintarContador('mis_tareas', c.mis_tareas || 0);
         } catch { dot.className = 'v2-dot warn'; txt.textContent = 'Bots ?'; }
     }
-    pulso(); setInterval(pulso, 20000);
+    let pulsoTimer = null;
+    window.v2PulsoPronto = () => { clearTimeout(pulsoTimer); pulsoTimer = setTimeout(pulso, 1500); };
+    pulso(); setInterval(pulso, 15000);
 })();
 
 window.v2toast = function (msg, tipo = 'ok') {
@@ -199,6 +211,13 @@ window.v2toast = function (msg, tipo = 'ok') {
 </script>
 <script src="/js/crecer-notify.js?v={{ filemtime(public_path('js/crecer-notify.js')) }}"></script>
 <script src="/js/crecer-v2.js?v={{ filemtime(public_path('js/crecer-v2.js')) }}"></script>
+@if($u && $u->hasPermiso('atencion'))
+<script>
+// Cualquier cambio en una cola (mensaje nuevo, tomada, resuelta…) refresca los
+// contadores del menú en ~1,5 s, sin esperar al pulso de 15 s.
+V2Tiempo.escuchar(@json(array_keys(\App\Models\ConversacionWA::areas())), () => window.v2PulsoPronto());
+</script>
+@endif
 @stack('scripts')
 
 {{-- Chat interno (mismo widget React que producción; sus var(--accent) etc.

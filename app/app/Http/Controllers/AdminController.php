@@ -34,22 +34,44 @@ class AdminController extends Controller
      * Accesible para cualquier secretaria autenticada (no requiere permiso:admin).
      * Devuelve solo el estado, sin el QR data-url (para no exponer a usuarios sin admin).
      */
+    /**
+     * GET /bot-pulso — lo pide cada pestaña del panel cada 15 s (y al instante
+     * cuando llega un aviso en tiempo real de una cola). Devuelve:
+     *  - el estado de TODOS los bots (antes solo el de atención: si se caía
+     *    administración, arriba seguía diciendo "Bots ok"). Caché de 10 s
+     *    compartida: con muchas pestañas abiertas no se multiplican los /status.
+     *  - los contadores del menú lateral (antes quedaban congelados desde que
+     *    se cargó la página).
+     */
     public function pulso(): JsonResponse
     {
-        try {
-            $r = $this->bot()->get($this->botUrl() . '/status');
-            if (!$r->ok()) {
-                return response()->json(['ok' => false, 'estado' => 'sin_respuesta']);
+        $bots = \Illuminate\Support\Facades\Cache::remember('pulso.bots', 10, function () {
+            $out = [];
+            foreach (\App\Models\ConversacionWA::areas() as $area => $label) {
+                try {
+                    $r = Http::timeout(3)->get(\App\Models\ConversacionWA::botUrlPara($area) . '/status');
+                    $out[$area] = $r->ok()
+                        ? ['label' => $label, 'estado' => $r->json('status') ?? 'desconocido', 'has_qr' => (bool) $r->json('has_qr')]
+                        : ['label' => $label, 'estado' => 'sin_respuesta', 'has_qr' => false];
+                } catch (\Throwable) {
+                    $out[$area] = ['label' => $label, 'estado' => 'sin_respuesta', 'has_qr' => false];
+                }
             }
-            $j = $r->json();
-            return response()->json([
-                'ok'     => true,
-                'estado' => $j['status'] ?? 'desconocido',
-                'has_qr' => !empty($j['has_qr']),
-            ]);
-        } catch (\Exception) {
-            return response()->json(['ok' => false, 'estado' => 'sin_respuesta']);
-        }
+            return $out;
+        });
+
+        // Estado general = el peor: caído > iniciando/esperando QR > listo.
+        $caidos   = array_filter($bots, fn($b) => !in_array($b['estado'], ['listo', 'iniciando'], true) && !$b['has_qr']);
+        $noListos = array_filter($bots, fn($b) => $b['estado'] !== 'listo');
+        $estado   = $caidos ? 'sin_respuesta' : ($noListos ? 'iniciando' : 'listo');
+
+        return response()->json([
+            'ok'         => true,
+            'estado'     => $estado,
+            'has_qr'     => (bool) array_filter($bots, fn($b) => $b['has_qr']),
+            'bots'       => $bots,
+            'contadores' => \App\Support\ContadoresNavbar::para((int) auth()->id()),
+        ]);
     }
 
     /**
