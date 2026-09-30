@@ -980,8 +980,8 @@ class AtencionController extends Controller
             $estado = $st->ok() ? $st->json('status') : null;
             if ($estado !== 'listo') {
                 $msg = $estado === 'esperando_qr'
-                    ? "El bot de {$areaLabel} todavía no se vinculó a WhatsApp. Abrí el panel Electron → tab \"QR / Conexión\" y escaneá el QR de ese número antes de iniciar conversaciones desde acá."
-                    : "El bot de {$areaLabel} no está conectado a WhatsApp (estado: " . ($estado ?? 'sin respuesta') . "). Revisá el panel Electron.";
+                    ? "El bot de {$areaLabel} todavía no se vinculó a WhatsApp. Hay que escanear el QR de ese número desde el panel → Admin antes de iniciar conversaciones desde acá."
+                    : "El bot de {$areaLabel} no está conectado a WhatsApp (estado: " . ($estado ?? 'sin respuesta') . "). Revisá su estado en el panel → Admin.";
                 return response()->json(['ok' => false, 'error' => $msg], 503);
             }
         } catch (\Exception) {

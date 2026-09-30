@@ -201,6 +201,14 @@
     pulso(); setInterval(pulso, 15000);
 })();
 
+// Números de WhatsApp desde los que se puede iniciar una conversación, y el que
+// se ofrece primero: la primera cola que la persona declaró al entrar (antes
+// Contactos salía siempre por Atención aunque la persona atendiera otra cola).
+window.V2_AREAS = @json(\App\Models\ConversacionWA::areas());
+window.V2_AREA_DEFAULT = @json(\App\Models\ConversacionWA::areasDeLaSesion()[0] ?? 'atencion');
+window.v2OpcionesArea = (elegida) => Object.entries(window.V2_AREAS)
+    .map(([k, l]) => `<option value="${k}" ${k === elegida ? 'selected' : ''}>WhatsApp de ${l}</option>`).join('');
+
 window.v2toast = function (msg, tipo = 'ok') {
     const el = document.getElementById('v2-toast');
     el.textContent = msg;

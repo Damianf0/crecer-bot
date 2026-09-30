@@ -817,7 +817,9 @@ window.V2Conv = (function () {
             div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
             div.innerHTML = `<div style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:22px;width:min(520px,92vw);max-height:calc(100vh - 64px);overflow-y:auto;">
                 <div style="font-weight:650;font-size:15px;margin-bottom:6px;">💬 Iniciar nueva conversación</div>
-                <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">El mensaje sale por el número de WhatsApp de esta área. Antes de enviar se verifica que el destino exista en WhatsApp.</div>
+                <label class="v2-label" style="margin-top:0;">Enviar desde</label>
+                <select id="v2-nx-area" class="v2-field" style="width:100%;margin-bottom:6px;">${window.v2OpcionesArea(cfg.area || window.V2_AREA_DEFAULT)}</select>
+                <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">Antes de enviar se verifica que el destino exista en WhatsApp.</div>
                 <div class="v2-compose-modos" style="margin-bottom:10px;">
                     <button class="v2-compose-modo active" id="v2-nx-tab-contacto" onclick="V2Conv.nxSetModo('contacto')">Buscar contacto</button>
                     <button class="v2-compose-modo" id="v2-nx-tab-manual" onclick="V2Conv.nxSetModo('manual')">Número manual</button>
@@ -898,7 +900,8 @@ window.V2Conv = (function () {
         async confirmarNueva() {
             const texto = document.getElementById('v2-nx-texto')?.value.trim() || '';
             if (!texto) { v2toast('Falta el mensaje', 'err'); return; }
-            const body = { texto, area: cfg.area || 'atencion' };
+            const area = document.getElementById('v2-nx-area')?.value || cfg.area || 'atencion';
+            const body = { texto, area };
             if (state.nxModo === 'contacto') {
                 if (!state.nxContacto) { v2toast('Seleccioná un contacto', 'err'); return; }
                 body.contacto_id = state.nxContacto.id;
@@ -914,6 +917,8 @@ window.V2Conv = (function () {
                 const r = await post('/atencion/iniciar', body);
                 document.getElementById('v2-overlay-modal')?.remove();
                 v2toast(r.reusada ? 'Conversación reabierta' : 'Conversación creada y mensaje enviado');
+                // Salió por otro número: la conversación vive en esa cola, ir ahí.
+                if (area !== cfg.area && r.conv_id) { location.href = `/v2/atencion/${area}?conv=${r.conv_id}`; return; }
                 if (cfg.onChanged) cfg.onChanged('iniciar');
                 if (r.conv_id) await V2Conv.abrir(r.conv_id);
             } catch (e) {

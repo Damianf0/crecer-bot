@@ -247,10 +247,10 @@
 {{-- Modal: iniciar conversación WA (reusa POST /atencion/iniciar de producción) --}}
 <dialog class="v2-dialog" id="md-modal-conv" style="width:min(480px,calc(100vw - 40px));">
     <h3>Iniciar conversación</h3>
-    <label class="v2-label" style="margin-top:4px;">Área</label>
+    <label class="v2-label" style="margin-top:4px;">Enviar desde</label>
     <select id="mc-area" class="v2-field">
         @foreach($areas as $k => $label)
-        <option value="{{ $k }}">{{ $label }}</option>
+        <option value="{{ $k }}">WhatsApp de {{ $label }}</option>
         @endforeach
     </select>
 
@@ -359,6 +359,7 @@ function abrirNuevaConv() {
     const res = document.getElementById('mc-resultados');
     res.style.display = 'none'; res.innerHTML = '';
     mcModo('contacto');
+    document.getElementById('mc-area').value = window.V2_AREA_DEFAULT;   // la primera cola declarada, no siempre Atención
     document.getElementById('md-modal-conv').showModal();
     setTimeout(() => document.getElementById('mc-search').focus(), 50);
 }
@@ -425,7 +426,7 @@ async function enviarNuevaConv() {
         if (!r.ok) throw new Error(j.message || j.error || '');
         document.getElementById('md-modal-conv').close();
         v2toast(j.reusada ? 'Conversación reabierta' : 'Conversación creada');
-        setTimeout(() => location.href = '/v2/atencion/' + body.area, 400);
+        setTimeout(() => location.href = '/v2/atencion/' + body.area + (j.conv_id ? '?conv=' + j.conv_id : ''), 400);
     } catch (e) {
         v2toast(e.message || 'No se pudo iniciar la conversación', 'err');
         btn.disabled = false; btn.textContent = 'Iniciar y enviar';

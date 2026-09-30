@@ -177,6 +177,9 @@
     <h3>Chatear con <span id="chat-nombre">—</span></h3>
     <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:8px;">Teléfono: <span id="chat-tel" style="font-family:'JetBrains Mono',monospace;">—</span></div>
 
+    <label class="v2-label">Enviar desde</label>
+    <select id="chat-area" class="v2-field"></select>
+
     <label class="v2-label">Plantilla rápida</label>
     <select id="chat-plantilla" class="v2-field" onchange="aplicarPlantillaChat(this.value)">
         <option value="0">En blanco</option>
@@ -466,6 +469,8 @@ function iniciarChat(c) {
     document.getElementById('chat-tel').textContent    = c.telefono;
     document.getElementById('chat-texto').value = '';
     document.getElementById('chat-plantilla').value = '0';
+    // Antes salía siempre por Atención: ahora arranca en la primera cola declarada.
+    document.getElementById('chat-area').innerHTML = window.v2OpcionesArea(window.V2_AREA_DEFAULT);
     document.getElementById('modal-chat').showModal();
     setTimeout(() => document.getElementById('chat-texto').focus(), 50);
 }
@@ -491,7 +496,7 @@ async function enviarChat() {
         const r = await fetch('/atencion/iniciar', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'X-Requested-With': 'XMLHttpRequest' },
-            body: JSON.stringify({ contacto_id: _chatContacto.id, texto }),
+            body: JSON.stringify({ contacto_id: _chatContacto.id, texto, area: document.getElementById('chat-area').value }),
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) {
@@ -502,7 +507,9 @@ async function enviarChat() {
         cerrarChat();
         btn.disabled = false; btn.textContent = 'Iniciar y enviar';
         if (confirm((data.reusada ? 'Conversación reabierta' : 'Mensaje enviado') + '. ¿Ir a la conversación ahora?')) {
-            window.location.href = '/v2/atencion';
+            // A la cola del número elegido, con la conversación abierta (antes: siempre Atención).
+            const area = document.getElementById('chat-area').value;
+            window.location.href = `/v2/atencion/${area}` + (data.conv_id ? `?conv=${data.conv_id}` : '');
         } else {
             v2toast('Mensaje enviado');
         }
