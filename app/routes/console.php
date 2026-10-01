@@ -382,7 +382,9 @@ Artisan::command('contactos:mapear-wa {--solo-contactos} {--solo-conversaciones}
 
     if ($hacerContactos) {
         $this->info('=== Mapeando wa_id de contactos sin resolver ===');
-        $q = Contacto::whereNull('wa_id')->whereNotNull('telefono');
+        // Sin las fichas cuyo teléfono es el WhatsApp de otra persona
+        // (contactos:corregir-identidad): re-vincularlas por teléfono deshace la corrección.
+        $q = Contacto::whereNull('wa_id')->whereNull('wa_id_rechazado')->whereNotNull('telefono');
         if ($limit) $q->limit($limit);
         $contactos = $q->get();
         $this->info("Contactos a procesar: {$contactos->count()}" . ($limit ? " (limit={$limit})" : ''));
@@ -1215,3 +1217,54 @@ Artisan::command('contactos:identificar-wa {--area=} {--dias=30} {--apply}', fun
     if (!$apply) $this->warn('Simulación: agregar --apply para guardar.');
     return 0;
 })->purpose('Guarda teléfono real y nombre de WhatsApp de las conversaciones y vincula con el directorio cuando es seguro');
+
+/*
+ * Desata las fichas que quedaron atadas al WhatsApp de OTRA persona (el
+ * teléfono de Omnia es de la pareja, la madre, un médico): la clínica tiene
+ * ese WhatsApp agendado con otro nombre y ningún celular lo tiene con el de la
+ * ficha. Ver IdentidadWA::detectarAjenos / desatar. Caso testigo 30/09: la
+ * ficha de una paciente con el celular del Dr. Elena.
+ *
+ *   docker exec -u www-data crecer-web-1 php artisan contactos:corregir-identidad            (simulación)
+ *   docker exec -u www-data crecer-web-1 php artisan contactos:corregir-identidad --apply
+ *
+ * Con --apply deja el registro para revertir en
+ * storage/app/private/correcciones/identidad-<fecha>.json
+ */
+Artisan::command('contactos:corregir-identidad {--apply}', function () {
+    $r = \App\Services\IdentidadWA::detectarAjenos();
+    if ($r['sin_bot']) $this->warn('Sin respuesta del bot de: ' . implode(', ', $r['sin_bot']) . ' (se evaluó con las agendas de los demás)');
+    $casos = $r['casos'];
+    $this->info(count($casos) . ' fichas atadas al WhatsApp de otra persona');
+    // Impacto (solo lectura): a quién se re-vincularía y cuántos documentos cambian de legajo.
+    $revinc = 0; $docsTot = 0;
+    foreach ($casos as $i => $c) {
+        $f = $c['ficha'];
+        $real = null;
+        foreach (array_unique($c['agendas']) as $n) { if ($real = \App\Services\IdentidadWA::fichaPorNombreDeAgenda($n, $f->id)) break; }
+        if ($real) $revinc++;
+        $convIds = ConversacionWA::whereIn('contacto', array_filter([$f->wa_id, $f->telefono ? $f->telefono . '@c.us' : null]))->pluck('id');
+        $docsTot += \App\Models\DocumentoPaciente::where('contacto_id', $f->id)->whereIn('conversacion_id', $convIds)->count();
+        if ($i < 15) $this->line(sprintf('  #%-6d %-30s → %-28s %s', $f->id, mb_substr($f->nombre, 0, 30),
+            mb_substr(implode(' / ', array_unique($c['agendas'])), 0, 28), $real ? '→ ficha #' . $real->id : '(sin ficha propia)'));
+    }
+    if (count($casos) > 15) $this->line('  …');
+    $this->info("Se re-vincularían a la ficha de quien escribe: {$revinc} · quedarían sin ficha: " . (count($casos) - $revinc)
+        . " · documentos que salen de un legajo ajeno: {$docsTot}");
+    if (!$this->option('apply')) { $this->warn('Simulación: agregar --apply para desatarlas.'); return 0; }
+
+    $registro = []; $docs = 0; $convs = 0;
+    foreach ($casos as $c) {
+        $hecho = \App\Services\IdentidadWA::desatar($c['ficha'], $c['agendas']);
+        $registro[] = $hecho;
+        $docs += count($hecho['documentos_desvinculados']);
+        $convs += count($hecho['conversaciones']);
+    }
+    if ($registro) {
+        $ruta = 'correcciones/identidad-' . now()->format('Ymd-His') . '.json';
+        \Illuminate\Support\Facades\Storage::disk('local')->put($ruta, json_encode($registro, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $this->info("Registro: storage/app/private/{$ruta}");
+    }
+    $this->info(sprintf('Desatadas %d fichas · %d conversaciones renombradas · %d documentos fuera de legajos ajenos', count($registro), $convs, $docs));
+    return 0;
+})->purpose('Desata las fichas atadas al WhatsApp de otra persona (según la agenda de los celulares de la clínica)');

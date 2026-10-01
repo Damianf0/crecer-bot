@@ -74,6 +74,44 @@ class IdentidadWATest extends TestCase
         $this->assertTrue(ConversacionWA::nombresDistintos('CANDELA ORFEI', 'Dr Elena'));
     }
 
+    public function test_desata_la_ficha_atada_al_whatsapp_de_otra_persona(): void
+    {
+        // Caso real 30/09: la ficha de una paciente tenía el celular del director.
+        Http::fake(['*/contactos-info' => function ($req) {
+            $data = [];
+            foreach ($req['jids'] as $j) {
+                $data[] = ['jid' => $j, 'telefono' => null, 'nombre' => null,
+                           'agenda' => ['555@lid' => 'Dr Elena', '666@lid' => 'Bel'][$j] ?? null];
+            }
+            return Http::response(['ok' => true, 'data' => $data]);
+        }]);
+        $candela = Contacto::create(['telefono' => '5492235550005', 'nombre' => 'CANDELA ORFEI', 'wa_id' => '555@lid', 'avatar_path' => 'wa-avatars/x.jpg']);
+        $belen   = Contacto::create(['telefono' => '5492235550006', 'nombre' => 'Belén Pérez', 'wa_id' => '666@lid']);   // apodo: no se toca
+        $conv = ConversacionWA::create(['contacto' => '555@lid', 'area' => 'atencion', 'estado' => 'activa', 'nombre' => 'CANDELA ORFEI']);
+        $doc = \App\Models\DocumentoPaciente::create(['contacto_id' => $candela->id, 'conversacion_id' => $conv->id, 'direccion' => 'entrante',
+            'tipo' => 'audio', 'mime' => 'audio/ogg', 'nombre_original' => 'a.ogg', 'nombre_storage' => 'a.ogg', 'path' => 'x/a.ogg', 'tamanio_bytes' => 1]);
+
+        $r = IdentidadWA::detectarAjenos();
+        $this->assertCount(1, $r['casos']);
+        $this->assertSame($candela->id, $r['casos'][0]['ficha']->id);
+
+        $hecho = IdentidadWA::desatar($r['casos'][0]['ficha'], $r['casos'][0]['agendas']);
+        $candela->refresh();
+        $this->assertNull($candela->wa_id);
+        $this->assertNull($candela->avatar_path);
+        $this->assertSame('555@lid', $candela->wa_id_rechazado);
+        $this->assertSame('Dr Elena', $conv->fresh()->nombre);
+        $this->assertNull($doc->fresh()->contacto_id);                       // el audio del doctor sale del legajo de la paciente
+        $this->assertSame([$doc->id], $hecho['documentos_desvinculados']);
+        $this->assertSame('666@lid', $belen->fresh()->wa_id);
+
+        // Nada la vuelve a atar: ni por teléfono (@c.us) ni la vinculación automática.
+        $this->assertNull(Contacto::buscarPorContacto('5492235550005@c.us'));
+        $otra = ConversacionWA::create(['contacto' => '777@lid', 'area' => 'atencion', 'estado' => 'activa']);
+        $this->assertNull(IdentidadWA::aplicar($otra, ['telefono' => '5492235550005', 'nombre' => 'Dr Elena']));
+        $this->assertNull($candela->fresh()->wa_id);
+    }
+
     public function test_el_entrante_de_una_conversacion_nueva_la_identifica(): void
     {
         config(['app.bot_token' => 'token-de-prueba']);

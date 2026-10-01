@@ -30,7 +30,8 @@ class IdentidadWA
             foreach ((array) $r->json('data') as $d) {
                 // El nombre con que la clínica agendó el número gana sobre el de
                 // perfil (lo pone el equipo, no la persona: "Dr Elena" vs un apodo).
-                $out[$d['jid']] = ['telefono' => $d['telefono'] ?? null, 'nombre' => ($d['agenda'] ?? null) ?: ($d['nombre'] ?? null)];
+                $out[$d['jid']] = ['telefono' => $d['telefono'] ?? null, 'nombre' => ($d['agenda'] ?? null) ?: ($d['nombre'] ?? null),
+                                   'agenda' => $d['agenda'] ?? null];
             }
             return $out;
         } catch (\Throwable $e) {
@@ -56,7 +57,7 @@ class IdentidadWA
         $resultado = null;
         if ($tel !== '' && str_ends_with($c->contacto, '@lid')
             && !Contacto::where('wa_id', $c->contacto)->exists()) {
-            $ficha = Contacto::where('telefono', $tel)->whereNull('wa_id')->first();
+            $ficha = Contacto::where('telefono', $tel)->whereNull('wa_id')->whereNull('wa_id_rechazado')->first();
             if ($ficha) {
                 $ficha->update(['wa_id' => $c->contacto]);
                 $resultado = 'vinculada';
@@ -68,6 +69,101 @@ class IdentidadWA
         }
         $c->save();
         return $resultado;
+    }
+
+    /**
+     * Fichas atadas al WhatsApp de OTRA persona. Regla conservadora: al menos
+     * un celular de la clínica tiene ese WhatsApp agendado y NINGUNO lo tiene
+     * con el nombre de la ficha (ni la inicial de un nombre en común: apodos y
+     * "Mamá de X" no cuentan como distinto). La agenda la carga el equipo: es el
+     * dato más confiable de quién es un número.
+     *
+     * @return array{casos: array, sin_bot: array}  casos = [['ficha' => Contacto, 'agendas' => [area => nombre]]]
+     */
+    public static function detectarAjenos(): array
+    {
+        $casos = []; $sinBot = [];
+        Contacto::whereNotNull('wa_id')->where('wa_id', 'not like', '%@g.us')->orderBy('id')
+            ->chunkById(400, function ($lote) use (&$casos, &$sinBot) {
+                $agendas = [];
+                foreach (array_keys(ConversacionWA::AREAS) as $area) {
+                    $info = self::consultar($area, $lote->pluck('wa_id')->all());
+                    if ($info === null) { $sinBot[$area] = true; continue; }
+                    foreach ($info as $jid => $i) if (!empty($i['agenda'])) $agendas[$jid][$area] = $i['agenda'];
+                }
+                foreach ($lote as $f) {
+                    $ag = $agendas[$f->wa_id] ?? [];
+                    if (!$ag) continue;
+                    $coincideAlguna = collect($ag)->contains(fn($n) => !ConversacionWA::nombresDistintos($f->nombre, $n));
+                    if (!$coincideAlguna) $casos[] = ['ficha' => $f, 'agendas' => $ag];
+                }
+                usleep(300_000);   // lotes espaciados: lectura local del bot, pero sin ráfagas
+            });
+        return ['casos' => $casos, 'sin_bot' => array_keys($sinBot)];
+    }
+
+    /**
+     * Desata una ficha del WhatsApp que no es suyo:
+     *  - la ficha pierde ese wa_id (queda en wa_id_rechazado para que nada la
+     *    vuelva a atar) y la foto, que es del otro;
+     *  - sus conversaciones pasan a llamarse como las agendó la clínica;
+     *  - los documentos que ESE WhatsApp mandó salen del legajo de la paciente
+     *    (quedan en el sistema, sin paciente asignado).
+     * @return array registro de lo hecho (para revertir si hiciera falta)
+     */
+    public static function desatar(Contacto $f, array $agendas): array
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($f, $agendas) {
+            $jid = $f->wa_id;
+            $nombre = reset($agendas);
+            $jids = array_filter([$jid, $f->telefono ? $f->telefono . '@c.us' : null]);
+            $convs = ConversacionWA::whereIn('contacto', $jids)->get();
+            $antes = [];
+            foreach ($convs as $c) {
+                $antes[$c->id] = $c->nombre;
+                $n = $agendas[$c->area] ?? $nombre;
+                $c->update(['nombre' => mb_substr($n, 0, 255), 'nombre_wa' => mb_substr($n, 0, 100)]);
+            }
+            $docs = \App\Models\DocumentoPaciente::where('contacto_id', $f->id)
+                ->whereIn('conversacion_id', $convs->pluck('id'))->pluck('id')->all();
+            if ($docs) \App\Models\DocumentoPaciente::whereIn('id', $docs)->update(['contacto_id' => null]);
+            $f->update(['wa_id' => null, 'avatar_path' => null, 'wa_id_rechazado' => $jid,
+                        'wa_rechazo_nombre' => mb_substr($nombre, 0, 100), 'wa_rechazado_at' => now()]);
+
+            // Re-vincular a quien realmente escribe, si tiene ficha propia inequívoca:
+            // la conversación toma su nombre y los documentos pasan a su legajo.
+            $real = null;
+            foreach (array_unique($agendas) as $n) { if ($real = self::fichaPorNombreDeAgenda($n, $f->id)) break; }
+            if ($real) {
+                $real->update(['wa_id' => $jid]);
+                foreach ($convs as $c) $c->update(['nombre' => $real->nombre]);
+                if ($docs) \App\Models\DocumentoPaciente::whereIn('id', $docs)->update(['contacto_id' => $real->id]);
+            }
+            ConversacionWA::invalidarColaCache();
+            return ['ficha_id' => $f->id, 'ficha_nombre' => $f->nombre, 'jid' => $jid, 'agendas' => $agendas,
+                    'conversaciones' => $antes, 'documentos_desvinculados' => $docs,
+                    'revinculada_a' => $real ? ['id' => $real->id, 'nombre' => $real->nombre] : null];
+        });
+    }
+
+    /**
+     * La ficha de quien REALMENTE escribe, por el nombre con que la clínica lo
+     * agendó. Estricto: todas las palabras del nombre (al menos dos: nombre y
+     * apellido) en la ficha, una sola ficha que cumpla y sin WhatsApp asignado.
+     * Caso típico: la ficha del marido tenía el celular de la mujer; ella tiene
+     * su propia ficha y ahora sus mensajes y estudios van a su legajo.
+     */
+    public static function fichaPorNombreDeAgenda(string $agenda, int $excluirId): ?Contacto
+    {
+        $palabras = array_values(array_filter(
+            preg_split('/\s+/', trim(preg_replace('/[^\p{L} ]/u', ' ', $agenda))),
+            fn($w) => mb_strlen($w) >= 3
+        ));
+        if (count($palabras) < 2) return null;
+        $q = Contacto::whereNull('wa_id')->whereNull('wa_id_rechazado')->where('id', '!=', $excluirId);
+        foreach ($palabras as $w) $q->where('nombre', 'like', '%' . $w . '%');
+        $candidatas = $q->limit(2)->get();
+        return $candidatas->count() === 1 ? $candidatas->first() : null;
     }
 
     /** Identifica una sola conversación (al crearse). Nunca tira excepción. */

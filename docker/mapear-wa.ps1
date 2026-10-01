@@ -38,6 +38,13 @@ if ($err) { Log "stderr: $err" }
 Log "--- identificar-wa ---"
 $out = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan contactos:identificar-wa --apply 2>$tmpErr"
 $out | ForEach-Object { Log $_ }
+
+# Fichas atadas al WhatsApp de otra persona (30/09, caso Dr. Elena): si la
+# clinica tiene ese WhatsApp agendado con otro nombre, se desata la ficha para
+# que no se le archiven mensajes ni documentos ajenos. Deja registro para revertir.
+Log "--- corregir-identidad ---"
+$out = cmd /c "docker exec -u www-data crecer-web-1 php //var/www/html/artisan contactos:corregir-identidad --apply 2>$tmpErr"
+$out | ForEach-Object { Log $_ }
 $err = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
 if ($err) { Log "stderr: $err" }
 Remove-Item $tmpErr -ErrorAction SilentlyContinue

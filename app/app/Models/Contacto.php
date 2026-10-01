@@ -11,11 +11,13 @@ class Contacto extends Model
 {
     protected $table = 'contactos';
 
-    protected $fillable = ['telefono', 'wa_id', 'avatar_path', 'avatar_actualizado_at', 'nombre', 'dni', 'email', 'fecha_nacimiento', 'omnia_patient_id', 'notas'];
+    protected $fillable = ['telefono', 'wa_id', 'avatar_path', 'avatar_actualizado_at', 'nombre', 'dni', 'email', 'fecha_nacimiento', 'omnia_patient_id', 'notas',
+                           'wa_id_rechazado', 'wa_rechazo_nombre', 'wa_rechazado_at'];
 
     protected $casts = [
         'avatar_actualizado_at' => 'datetime',
         'fecha_nacimiento'      => 'date',
+        'wa_rechazado_at'       => 'datetime',
     ];
 
     /** TTL del cache de avatar en días — pasado este lapso se re-sincroniza. */
@@ -39,10 +41,12 @@ class Contacto extends Model
         $hit = static::where('wa_id', $contactoWA)->first();
         if ($hit) return $hit;
 
-        // 2) Fallback: solo funciona para @c.us porque deriva del número
+        // 2) Fallback: solo funciona para @c.us porque deriva del número. No
+        //    vale para una ficha cuyo teléfono se sabe que es el WhatsApp de otra
+        //    persona (wa_id_rechazado, ver IdentidadWA::corregir).
         if (str_ends_with($contactoWA, '@c.us')) {
             $telefono = str_replace('@c.us', '', $contactoWA);
-            return static::where('telefono', $telefono)->first();
+            return static::where('telefono', $telefono)->whereNull('wa_id_rechazado')->first();
         }
 
         return null;
