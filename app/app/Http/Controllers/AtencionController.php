@@ -172,6 +172,7 @@ class AtencionController extends Controller
 
         if (!empty($pendientes)) {
             \App\Models\Contacto::whereIn('telefono', array_keys($pendientes))
+                ->whereNull('wa_id_rechazado')   // ese teléfono es el WhatsApp de otra persona
                 ->get(['id', 'telefono', 'avatar_path', 'nombre'])
                 ->each(function ($c) use (&$lookup, $pendientes) {
                     $jid = $pendientes[$c->telefono] ?? null;
@@ -303,6 +304,7 @@ class AtencionController extends Controller
                 'contacto'          => $conv->nombreOTelefono,
                 'telefono'          => $conv->telefono,
                 'nombre_wa'         => $conv->nombre_wa,
+                'favorito'          => isset(\App\Models\FavoritoWA::set()[$conv->contacto]),
                 'wa_distinto'       => ConversacionWA::nombresDistintos($contactoMatch?->nombre ?? $conv->nombre, $conv->nombre_wa),
                 'asig_id'           => $conv->asignada_a,
                 'asig_name'         => $conv->asignadaA?->nombre_completo,
@@ -1433,7 +1435,43 @@ class AtencionController extends Controller
             'no_leidos'   => $c->no_leidos,
             'estado'      => $c->estado,
             'avatar_url'  => !empty($hit['avatar_path']) ? asset('storage/' . $hit['avatar_path']) : null,
+            'favorito'    => isset(\App\Models\FavoritoWA::set()[$c->contacto]),
         ];
+    }
+
+    /**
+     * POST /atencion/favorito {conv_id} — marca o desmarca como favorito al
+     * contacto de esa conversación (compartido por el equipo, vale para todas
+     * las colas). Devuelve el estado nuevo.
+     */
+    public function toggleFavorito(Request $request): JsonResponse
+    {
+        $data = $request->validate(['conv_id' => 'required|integer']);
+        $conv = ConversacionWA::findOrFail($data['conv_id']);
+        $fav = \App\Models\FavoritoWA::where('contacto', $conv->contacto)->first();
+        if ($fav) {
+            $fav->delete();
+        } else {
+            \App\Models\FavoritoWA::create(['contacto' => $conv->contacto, 'creado_por' => Auth::id()]);
+        }
+        \App\Models\FavoritoWA::limpiarCache();
+        return response()->json(['ok' => true, 'favorito' => !$fav]);
+    }
+
+    /**
+     * GET /atencion/{area}/favoritos — las conversaciones de esta cola con
+     * contactos favoritos, abiertas o resueltas, la más reciente primero.
+     */
+    public function favoritos(string $area): JsonResponse
+    {
+        $jids = array_keys(\App\Models\FavoritoWA::set());
+        $convs = $jids
+            ? ConversacionWA::where('area', $area)->whereIn('contacto', $jids)
+                ->with(['ultimoMensaje', 'asignadaA:id,nombre_completo'])
+                ->orderByDesc('ultima_actividad')->limit(100)->get()
+            : collect();
+        $lookup = $this->resolverContactosBulk($convs->pluck('contacto')->unique()->all());
+        return response()->json(['ok' => true, 'items' => $convs->map(fn($c) => $this->mapWA($c, $lookup))->values()]);
     }
 
     private function generarResumenSiNecesario($item, string $tipo): void

@@ -44,21 +44,26 @@ V2Conv.init({
     usuarios: @json($usuarios),
     meId: {{ auth()->id() }},
     area: AREA,
-    onChanged: () => { state.etag = null; pollItems(); if (state.vista === 'resueltas') cargarResueltas(); },
+    onChanged: () => {
+        state.etag = null; pollItems();
+        if (state.vista === 'resueltas') cargarResueltas();
+        if (state.vista === 'favoritos') cargarFavoritos();
+    },
 });
 
-let state = { items: [], vista: 'espera', q: '', etag: null, resueltas: [], resLimitado: false, resCargando: false };
+let state = { items: [], vista: 'espera', q: '', etag: null, resueltas: [], resLimitado: false, resCargando: false, favoritos: [] };
 
 function normalizar(data) {
     const tag = (arr, estado) => arr.map(i => ({ ...i, _estado: estado }));
+    // Urgentes primero, después los favoritos, después por última actividad.
     return [...tag(data.nuevas || [], 'nueva'), ...tag(data.enProceso || [], 'proceso')]
-        .sort((a, b) => (b.urgente - a.urgente) || (b.ts - a.ts));
+        .sort((a, b) => (b.urgente - a.urgente) || (b.favorito - a.favorito) || (b.ts - a.ts));
 }
 
 function filtrados() {
     // Resueltas: vienen del servidor ya filtradas por la búsqueda.
     if (state.vista === 'resueltas') return state.resueltas;
-    let list = state.items;
+    let list = state.vista === 'favoritos' ? state.favoritos : state.items;
     if (state.vista === 'espera')   list = list.filter(i => i._estado === 'nueva');
     if (state.vista === 'proceso')  list = list.filter(i => i._estado === 'proceso');
     if (state.vista === 'urgentes') list = list.filter(i => i.urgente);
@@ -78,18 +83,35 @@ function renderVistas() {
         espera:   state.items.filter(i => i._estado === 'nueva').length,
         proceso:  state.items.filter(i => i._estado === 'proceso').length,
         urgentes: state.items.filter(i => i.urgente).length,
+        favoritos: state.favoritos.length,   // cuántos favoritos tiene esta cola
     };
+    // Dorada cuando un favorito escribió y nadie lo tomó todavía.
+    const favEsperando = state.favoritos.some(i => i._estado === 'nueva' && i.no_leidos > 0);
     document.getElementById('b-vistas').innerHTML = [['espera','En espera'],['proceso','En proceso'],['urgentes','Urgentes']]
         .map(([k, lbl]) => `<button class="v2-vista ${state.vista === k ? 'active' : ''}" onclick="setVista('${k}')">${lbl}<span class="n">${counts[k]}</span></button>`)
         .join('')
         // Resueltas: consulta rápida de lo ya cerrado, sin ir al Historial.
+        + `<button class="v2-vista ${state.vista === 'favoritos' ? 'active' : ''}" onclick="setVista('favoritos')"
+              style="${favEsperando && state.vista !== 'favoritos' ? 'border-color:var(--v2-warn);background:var(--v2-warn-bg);color:var(--v2-warn);font-weight:600;' : ''}"
+              title="${favEsperando ? 'Un favorito escribió y está esperando respuesta' : 'Contactos favoritos del equipo: sus conversaciones abiertas y resueltas'}">★ Favoritos<span class="n">${counts.favoritos}</span></button>`
         + `<button class="v2-vista ${state.vista === 'resueltas' ? 'active' : ''}" onclick="setVista('resueltas')" title="Conversaciones ya resueltas de esta cola">✓ Resueltas</button>`;
     document.getElementById('b-count').textContent = state.items.length;
 }
 function setVista(v) {
     state.vista = v;
     if (v === 'resueltas') cargarResueltas();
+    if (v === 'favoritos') cargarFavoritos();
     renderBandeja();
+}
+
+async function cargarFavoritos() {
+    try {
+        const r = await fetch(`/atencion/${AREA}/favoritos`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+        const d = await r.json();
+        state.favoritos = (d.items || []).map(i => ({ ...i,
+            _estado: i.estado === 'archivada' ? 'resuelta' : (i.asig_id ? 'proceso' : 'nueva') }));
+    } catch (e) { return; }   // silencioso: se reintenta en el próximo refresco de la cola
+    if (state.vista === 'favoritos') renderBandeja(); else renderVistas();
 }
 
 let resTimer = null;
@@ -130,9 +152,11 @@ function renderBandeja() {
             : i.asig_name
             ? `<span class="who">● ${esc(i.asig_name.split(' ')[0])} la tiene</span>`
             : `<span class="who libre">○ Sin tomar</span>`;
-        return `<div class="v2-card ${i.urgente ? 'urgente' : ''} ${sel ? 'selected' : ''}" onclick="abrirItem(${i.id})">
+        // Favorito: borde y fondo dorados + estrella, para que salte a la vista cuando escribe.
+        const fav = i.favorito && !i.urgente && !sel ? 'border-left:3px solid var(--v2-warn);background:var(--v2-warn-bg);' : '';
+        return `<div class="v2-card ${i.urgente ? 'urgente' : ''} ${sel ? 'selected' : ''}" style="${fav}" onclick="abrirItem(${i.id})">
             <div class="v2-card-l1">${pill}${urg}<span class="tipo">WhatsApp</span><span class="ago ${i.urgente ? 'urg' : ''}">${esc(i.hace || '')}</span></div>
-            <div class="v2-card-l2">${avatarHtml(i.avatar_url, i.contacto, 26)}<span class="nombre">${esc(i.contacto)}</span>${i.wa_distinto ? `<span class="v2-pill espera" title="El WhatsApp de este número está a nombre de otra persona: la foto y el nombre de perfil son de ella." style="margin-left:auto;">📱 ${esc((i.nombre_wa || '').slice(0, 18))}</span>` : ''}</div>
+            <div class="v2-card-l2">${avatarHtml(i.avatar_url, i.contacto, 26)}<span class="nombre">${i.favorito ? '<span style="color:var(--v2-warn);" title="Favorito">★</span> ' : ''}${esc(i.contacto)}</span>${i.wa_distinto ? `<span class="v2-pill espera" title="El WhatsApp de este número está a nombre de otra persona: la foto y el nombre de perfil son de ella." style="margin-left:auto;">📱 ${esc((i.nombre_wa || '').slice(0, 18))}</span>` : ''}</div>
             <div class="resumen">${esc(i.resumen || '—')}</div>
             <div class="v2-card-foot">${who}</div>
         </div>`;
@@ -141,8 +165,9 @@ function renderBandeja() {
 }
 
 async function abrirItem(id) {
-    // Las resueltas se abren en solo lectura, con el botón Reabrir.
-    await V2Conv.abrir(id, { readOnly: state.vista === 'resueltas' });
+    // Las resueltas (también las de un favorito) se abren en solo lectura, con Reabrir.
+    const item = filtrados().find(i => i.id === id);
+    await V2Conv.abrir(id, { readOnly: item?._estado === 'resuelta' });
     renderBandeja();
 }
 
@@ -163,6 +188,7 @@ async function pollItems() {
         state.items = normalizar(await r.json());
         detectarNotifs(state.items);
         renderBandeja();
+        cargarFavoritos();   // la cola cambió: el número y el color de la pestaña Favoritos también
     } catch (e) {}
 }
 
@@ -171,18 +197,36 @@ async function pollItems() {
 const ME_ID = {{ auth()->id() }};
 const _notifUrg = new Set();
 const _misConvs = new Set();
+const _favNoLeidos = new Map();   // conv favorita → no_leidos de la última pasada
 let _notifPrimera = true;
 
 function detectarNotifs(items) {
     const urgentes = items.filter(i => i._estado === 'nueva' && i.urgente);
     const mias     = items.filter(i => parseInt(i.asig_id) === ME_ID);
+    const favs     = items.filter(i => i.favorito);
 
     if (_notifPrimera) {
         urgentes.forEach(i => _notifUrg.add(i.id));
         mias.forEach(i => _misConvs.add(i.id));
+        favs.forEach(i => _favNoLeidos.set(i.id, i.no_leidos || 0));
         _notifPrimera = false;
         return;
     }
+
+    // Un favorito escribió (subieron sus no leídos, o apareció en la cola).
+    favs.forEach(i => {
+        const antes = _favNoLeidos.get(i.id);
+        _favNoLeidos.set(i.id, i.no_leidos || 0);
+        if ((i.no_leidos || 0) === 0 || (antes !== undefined && i.no_leidos <= antes)) return;
+        if (V2Conv.panelId === i.id) return;   // ya la estoy mirando
+        sonarPing();
+        v2toast(`★ Escribió ${i.contacto}`);
+        window.Notify?.disparar({
+            titulo: `★ Escribió ${i.contacto}`,
+            cuerpo: (i.resumen || '').slice(0, 80),
+            tag: `fav-${i.id}-${i.no_leidos}`,
+        });
+    });
 
     urgentes.forEach(i => {
         if (_notifUrg.has(i.id)) return;
@@ -237,6 +281,7 @@ function sonarPing() {
 state.items = normalizar(@json($itemsData));
 detectarNotifs(state.items);
 renderBandeja();
+cargarFavoritos();
 // Tiempo real: cada aviso de Reverb re-pide la cola y, si la conversación
 // abierta es una de las que cambiaron, también el panel. El polling queda de
 // respaldo: cada 8-10 s si el socket no está, cada 60 s si está.

@@ -171,6 +171,8 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/atencion/{area}',            fn(string $area) => redirect("/v2/atencion/$area"))->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
         Route::get('/atencion/{area}/items',      [AtencionController::class, 'items'])->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
         Route::get('/atencion/{area}/resueltas',  [AtencionController::class, 'resueltas'])->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
+        Route::get('/atencion/{area}/favoritos',  [AtencionController::class, 'favoritos'])->whereIn('area', array_keys(\App\Models\ConversacionWA::areas()));
+        Route::post('/atencion/favorito',         [AtencionController::class, 'toggleFavorito']);
 
         // UI V2 (producción desde el cutover 30/06).
         Route::get('/v2/atencion', fn() => redirect('/v2/atencion/atencion'));

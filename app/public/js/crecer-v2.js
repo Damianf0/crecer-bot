@@ -194,6 +194,8 @@ window.V2Conv = (function () {
             acciones.push(`<button class="v2-btn${c.urgente ? ' urg' : ''}" onclick="V2Conv.menuMas(event)" title="Más acciones">${c.urgente ? '⚑ ' : ''}⋯</button>`);
             acciones.push(`<button class="v2-btn accent" onclick="V2Conv.accion('resolver')">Resolver</button>`);
         }
+        // Favorito (compartido por el equipo, vale para todas las colas).
+        acciones.unshift(`<button class="v2-btn" onclick="V2Conv.toggleFavorito()" title="${c.favorito ? 'Quitar de favoritos' : 'Marcar como favorito: se destaca en la cola cuando escribe'}" style="${c.favorito ? 'color:var(--v2-warn);border-color:var(--v2-warn);' : ''}">${c.favorito ? '★' : '☆'}</button>`);
 
         const asig = state.readOnly
             ? `<span class="v2-pill neutral">Archivada</span>`
@@ -985,6 +987,16 @@ window.V2Conv = (function () {
             } finally {
                 btn.disabled = false;
             }
+        },
+
+        async toggleFavorito() {
+            if (!state.panelId) return;
+            try {
+                const r = await post('/atencion/favorito', { conv_id: state.panelId });
+                v2toast(r.favorito ? '★ Agregado a favoritos' : 'Quitado de favoritos');
+                await V2Conv.refrescar();
+                if (cfg.onChanged) cfg.onChanged('favorito');
+            } catch (e) { v2toast(e.message || 'No se pudo cambiar el favorito', 'err'); }
         },
 
         async accion(tipo) {
