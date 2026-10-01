@@ -135,7 +135,7 @@ class Tablet extends Component
      * responderle y, si difiere, corrige la fila; el saved avisa a recepción.
      * El checklist se rearma solo si nadie empezó a tildarlo.
      */
-    private static function corregirConFinanciadorDelTurno(ColaAtencion $fila, int|string $turnoId, array $practicas): void
+    public static function corregirConFinanciadorDelTurno(ColaAtencion $fila, int|string $turnoId, array $practicas): void   // también la usa la atención en mostrador
     {
         try {
             $delTurno = app(OmniaService::class)->financiadorDelTurno($turnoId);

@@ -445,6 +445,57 @@ class EstadisticasController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    // ── Tab Recepción ──────────────────────────────────────
+    // Llegadas a recepción: por el tablet o cargadas en el mostrador (desde el
+    // 01/10; antes solo existía el tablet y casi nadie se anotaba).
+
+    public function recepcion(Request $request): JsonResponse
+    {
+        [$from, $to] = $this->rango($request, 30);
+        $base = fn() => ColaAtencion::whereBetween('hora_llegada', [$from, $to]);
+
+        $porDia = $base()->selectRaw('DATE(hora_llegada) dia, origen, COUNT(*) n')->groupBy('dia', 'origen')->get();
+        $dias = [];
+        for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
+            if (!$d->isSunday()) $dias[$d->toDateString()] = ['tablet' => 0, 'mostrador' => 0];
+        }
+        foreach ($porDia as $r) $dias[$r->dia][$r->origen] = (int) $r->n;
+        ksort($dias);   // un domingo con llegadas entra en su lugar
+
+        $motivos = \App\Http\Controllers\RecepcionController::MOTIVOS_MOSTRADOR + ['muestras' => 'Muestras / estudios'];
+        $porMotivo = $base()->selectRaw('motivo, origen, COUNT(*) n')->groupBy('motivo', 'origen')->get()
+            ->groupBy('motivo')->map(fn($g, $m) => [
+                'motivo'    => $motivos[$m] ?? ucfirst((string) $m),
+                'tablet'    => (int) $g->where('origen', 'tablet')->sum('n'),
+                'mostrador' => (int) $g->where('origen', 'mostrador')->sum('n'),
+            ])->sortByDesc(fn($x) => $x['tablet'] + $x['mostrador'])->values();
+
+        $porPersona = $base()->where('origen', 'mostrador')->whereNotNull('registrado_por')
+            ->selectRaw("registrado_por, COUNT(*) n, SUM(estado = 'resuelto') atendidos, SUM(vuelve_de_id IS NOT NULL) regresos")
+            ->groupBy('registrado_por')->get();
+        $nombres = User::whereIn('id', $porPersona->pluck('registrado_por'))->pluck('nombre_completo', 'id');
+
+        $tot = $base()->selectRaw("COUNT(*) total, SUM(origen = 'tablet') tablet, SUM(origen = 'mostrador') mostrador,
+                SUM(vuelve_de_id IS NOT NULL) regresos, SUM(origen = 'mostrador' AND estado = 'resuelto') resueltos_mostrador")->first();
+
+        return response()->json([
+            'ok' => true, 'from' => $from->toDateString(), 'to' => $to->toDateString(),
+            'totales' => [
+                'total'      => (int) $tot->total,
+                'tablet'     => (int) $tot->tablet,
+                'mostrador'  => (int) $tot->mostrador,
+                'regresos'   => (int) $tot->regresos,
+                'resueltos_mostrador' => (int) $tot->resueltos_mostrador,
+            ],
+            'dias'      => $dias,
+            'motivos'   => $porMotivo,
+            'personas'  => $porPersona->map(fn($p) => [
+                'nombre' => $nombres[$p->registrado_por] ?? '—', 'n' => (int) $p->n,
+                'atendidos' => (int) $p->atendidos, 'regresos' => (int) $p->regresos,
+            ])->sortByDesc('n')->values(),
+        ]);
+    }
+
     private function rango(Request $r, int $diasDefault): array
     {
         $tz = self::TZ;

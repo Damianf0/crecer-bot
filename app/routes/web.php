@@ -134,6 +134,10 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/v2/recepcion',                       [$rc, 'indexV2']);
         // Cola de sala (ColaSecretaria)
         Route::get('/v2/recepcion/cola',                  [$rc, 'cola']);
+        // Atención en mostrador (pacientes que no se anotaron en el tablet)
+        Route::get('/v2/recepcion/mostrador/buscar',      [$rc, 'buscarMostrador']);
+        Route::post('/v2/recepcion/mostrador',            [$rc, 'registrarMostrador']);
+        Route::post('/v2/recepcion/cola/{id}/salio',      [$rc, 'salio'])->whereNumber('id');
         Route::post('/v2/recepcion/cola/reordenar',       [$rc, 'reordenar']);
         Route::post('/v2/recepcion/cola/{id}/abrir',      [$rc, 'abrirPaciente'])->whereNumber('id');
         Route::post('/v2/recepcion/cola/{id}/checklist',  [$rc, 'toggleChecklist'])->whereNumber('id');
@@ -329,6 +333,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/estadisticas/secretarias',  [EstadisticasController::class, 'secretarias']);
         Route::get('/estadisticas/tendencias',   [EstadisticasController::class, 'tendencias']);
         Route::get('/estadisticas/tipos',        [EstadisticasController::class, 'tiposConsulta']);
+        Route::get('/estadisticas/recepcion',    [EstadisticasController::class, 'recepcion']);
         Route::get('/estadisticas/tipos/detalle', [EstadisticasController::class, 'tiposDetalle']);
         Route::post('/estadisticas/tipos/{id}/corregir', [EstadisticasController::class, 'corregirTipo'])->whereNumber('id');
 

@@ -17,6 +17,7 @@ class ColaAtencion extends Model
         'hora_llegada', 'hora_llamado', 'hora_liberado',
         'llamado_consultorio_at', 'atendido_at',
         'presente_at', 'presente_por', 'presente_faltantes',
+        'origen', 'registrado_por', 'salio_at', 'vuelve_de_id',
     ];
 
     protected $casts = [
@@ -30,6 +31,7 @@ class ColaAtencion extends Model
         'checklist'     => 'array',
         'hora_llegada'  => 'datetime',
         'hora_llamado'  => 'datetime',
+        'salio_at'      => 'datetime',
         'hora_liberado' => 'datetime',
         'llamado_consultorio_at' => 'datetime',
         'atendido_at'   => 'datetime',
@@ -63,6 +65,7 @@ class ColaAtencion extends Model
         if ($this->primera_vez)  $flags[] = ['icon' => '⭐', 'label' => 'Primera vez', 'color' => 'yellow'];
         if ($this->sin_turno)    $flags[] = ['icon' => '⚡', 'label' => 'Sin turno',    'color' => 'red'];
         if ($this->derivado_bot) $flags[] = ['icon' => '💬', 'label' => 'WhatsApp',     'color' => 'green'];
+        if ($this->origen === 'mostrador') $flags[] = ['icon' => '🧾', 'label' => 'Mostrador', 'color' => 'blue'];
         if ($this->alerta_espera) $flags[] = ['icon' => '⚠️', 'label' => 'Espera larga', 'color' => 'orange'];
         return $flags;
     }

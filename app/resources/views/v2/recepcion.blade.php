@@ -92,8 +92,12 @@
     <div class="rec-pane active" id="pane-sala">
         <div class="rec-cols no-ficha" id="cols-sala">
             <div class="rec-list">
-                <div class="rec-list-head">Cola de recepción <span class="cnt" id="cnt-sala">0</span> <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--v2-text-mute);">en tiempo real</span></div>
+                <div class="rec-list-head">Cola de recepción <span class="cnt" id="cnt-sala">0</span> <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--v2-text-mute);">en tiempo real</span>
+                    <button class="v2-btn sm primary" style="margin-left:auto;text-transform:none;letter-spacing:0;" onclick="abrirMostrador()" title="Registrar a un paciente que se atendió en el mostrador sin anotarse en el tablet">+ Atención en mostrador</button></div>
+                <div id="hoy-sala" style="font-size:11.5px;color:var(--v2-text-mute);padding:0 12px 6px;"></div>
                 <div id="lista-sala"><div class="rec-empty">Cargando…</div></div>
+                {{-- Liberados al consultorio en las últimas horas: por si vuelven al mostrador --}}
+                <div id="en-clinica"></div>
             </div>
             <div class="rec-ficha" id="ficha-sala" style="display:none;"></div>
         </div>
@@ -113,6 +117,36 @@
         </div>
     </div>
 </div>
+
+{{-- Atención en mostrador: pacientes atendidos sin anotarse en el tablet --}}
+<dialog class="v2-dialog" id="dlg-mostrador" style="width:min(520px,calc(100vw - 40px));">
+    <h3>Atención en mostrador</h3>
+    <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:8px;">Para los pacientes que se atienden en el mostrador sin anotarse en el tablet: así queda registro.</div>
+    <label class="v2-label">DNI</label>
+    <div style="display:flex;gap:6px;">
+        <input class="v2-field" id="mo-dni" inputmode="numeric" placeholder="Sin puntos" onkeydown="if(event.key==='Enter'){event.preventDefault();buscarMostrador();}">
+        <button type="button" class="v2-btn" onclick="buscarMostrador()" id="mo-buscar">Buscar</button>
+    </div>
+    <div id="mo-encontrado" style="font-size:12px;margin-top:6px;"></div>
+    <div id="mo-turnos"></div>
+    <div class="v2-grid2">
+        <div><label class="v2-label">Nombre *</label><input class="v2-field" id="mo-nombre" maxlength="100"></div>
+        <div><label class="v2-label">Apellido</label><input class="v2-field" id="mo-apellido" maxlength="100"></div>
+    </div>
+    <label class="v2-label">Obra social</label>
+    <input class="v2-field" id="mo-os" maxlength="150">
+    <label class="v2-label">Motivo *</label>
+    <select class="v2-field" id="mo-motivo">
+        @foreach($motivosMostrador as $k => $v)<option value="{{ $k }}">{{ $v }}</option>@endforeach
+    </select>
+    <label class="v2-label">Nota</label>
+    <textarea class="v2-field" id="mo-nota" rows="2" maxlength="1000" placeholder="Opcional: qué se resolvió o qué necesita"></textarea>
+    <div class="v2-dialog-foot">
+        <button type="button" class="v2-btn" onclick="$('dlg-mostrador').close()">Cancelar</button>
+        <button type="button" class="v2-btn" onclick="guardarMostrador('sala')" title="Entra a la cola de la sala, como si se hubiera anotado en el tablet">Pasa a la sala</button>
+        <button type="button" class="v2-btn primary" onclick="guardarMostrador('atendido')" title="Se resolvió en el mostrador: queda registrado como atendido">Ya lo atendí</button>
+    </div>
+</dialog>
 @endsection
 
 @push('scripts')
@@ -150,6 +184,111 @@ function recTab(t) {
     if (t === 'sala') cargarSala(); else cargarBot();
 }
 
+// ════════════════════ ATENCIÓN EN MOSTRADOR ════════════════════
+let MO = { paciente: null, turnos: [], turno: null, vuelveDe: null };
+let EN_CLINICA = [];
+
+// prefill: un paciente de "En la clínica" que volvió al mostrador (no se anota de nuevo).
+function abrirMostrador(prefill = null) {
+    MO = { paciente: null, turnos: [], turno: null, vuelveDe: prefill?.id || null };
+    ['mo-dni', 'mo-nombre', 'mo-apellido', 'mo-os', 'mo-nota'].forEach(i => $(i).value = '');
+    $('mo-motivo').value = prefill ? 'regreso' : 'consulta';
+    $('mo-encontrado').innerHTML = prefill ? `<span style="color:var(--v2-ok);">Vuelve del consultorio${prefill.profesional ? ' (' + esc(prefill.profesional) + ')' : ''}</span>` : '';
+    $('mo-turnos').innerHTML = '';
+    if (prefill) {
+        $('mo-dni').value = prefill.dni || '';
+        $('mo-nombre').value = prefill.nombre_solo || prefill.nombre || '';
+        $('mo-apellido').value = prefill.apellido || '';
+        $('mo-os').value = prefill.obra_social || '';
+    }
+    $('dlg-mostrador').showModal();
+    setTimeout(() => (prefill ? $('mo-nota') : $('mo-dni')).focus(), 50);
+}
+
+function renderEnClinica(lista, horas) {
+    EN_CLINICA = lista;
+    const c = $('en-clinica');
+    if (!lista.length) { c.innerHTML = ''; return; }
+    c.innerHTML = `<div class="rec-list-head" style="margin-top:14px;">En la clínica <span class="cnt">${lista.length}</span>
+            <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--v2-text-mute);">liberados al consultorio · salen solos a las ${horas} h</span></div>`
+        + lista.map(p => `
+        <div class="rec-card" style="cursor:default;">
+            <div class="rec-card-head">
+                <div class="rec-card-name">${esc(p.nombre)}</div>
+                ${p.atendido ? `<span class="rec-flag green">Atendido ${esc(p.atendido)}</span>` : ''}
+                <span class="rec-espera">${p.minutos}m</span>
+            </div>
+            <div class="rec-card-meta">
+                ${p.profesional ? `<span>${esc(p.profesional)}</span>` : '<span>Consultorio</span>'}
+                <span>· desde ${esc(p.desde || '')}</span>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+                <button class="v2-btn sm primary" onclick='abrirMostrador(EN_CLINICA.find(x => x.id === ${p.id}))'>Volvió al mostrador</button>
+                <button class="v2-btn sm" onclick="seFue(${p.id})" title="Ya se fue de la clínica: sale de esta lista">Se fue</button>
+            </div>
+        </div>`).join('');
+}
+
+async function seFue(id) {
+    const j = await postJSON(`/v2/recepcion/cola/${id}/salio`);
+    if (!j.ok) { v2toast(j._err || 'No se pudo', 'err'); return; }
+    cargarSala();
+}
+
+async function buscarMostrador() {
+    const dni = $('mo-dni').value.replace(/\D/g, '');
+    if (dni.length < 7) { v2toast('Ingresá el DNI completo', 'err'); return; }
+    $('mo-buscar').disabled = true; $('mo-encontrado').textContent = 'Buscando en Omnia…';
+    const j = await call('/v2/recepcion/mostrador/buscar?dni=' + dni);
+    $('mo-buscar').disabled = false;
+    if (!j.ok) { $('mo-encontrado').textContent = j._err || 'No se pudo buscar'; return; }
+    MO.paciente = j.paciente; MO.turnos = j.turnos || []; MO.turno = null;
+    if (!j.paciente) {
+        $('mo-encontrado').innerHTML = '<span style="color:var(--v2-warn);">No está en Omnia ni en contactos: cargá el nombre a mano.</span>';
+        $('mo-turnos').innerHTML = '';
+        $('mo-nombre').focus();
+        return;
+    }
+    $('mo-nombre').value = j.paciente.nombre || '';
+    $('mo-apellido').value = j.paciente.apellido || '';
+    $('mo-os').value = j.paciente.obra_social || '';
+    $('mo-encontrado').innerHTML = `<span style="color:var(--v2-ok);">✓ ${j.origen === 'omnia' ? 'Encontrado en Omnia' : 'Encontrado en contactos'}</span>`;
+    if (MO.turnos.length) {
+        $('mo-turnos').innerHTML = '<label class="v2-label">Turno de hoy</label>' + MO.turnos.map((t, i) =>
+            `<label style="display:flex;gap:6px;align-items:center;font-size:13px;margin:3px 0;"><input type="radio" name="mo-turno" value="${i}" onchange="elegirTurnoMostrador(${i})">
+             <b>${esc(t.hora || '')}</b> ${esc(t.practica || '')} <span style="color:var(--v2-text-mute);">${esc(t.profesional || '')}</span></label>`).join('')
+            + `<label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--v2-text-mute);margin:3px 0;"><input type="radio" name="mo-turno" value="" checked onchange="elegirTurnoMostrador(null)"> No viene por un turno de hoy</label>`;
+    } else {
+        $('mo-turnos').innerHTML = '<div style="font-size:12px;color:var(--v2-text-mute);margin-top:4px;">Sin turnos para hoy.</div>';
+    }
+}
+
+function elegirTurnoMostrador(i) {
+    MO.turno = i === null ? null : MO.turnos[i];
+    if (MO.turno) $('mo-motivo').value = 'turno';
+}
+
+async function guardarMostrador(accion) {
+    const nombre = $('mo-nombre').value.trim();
+    if (!nombre) { v2toast('Falta el nombre', 'err'); return; }
+    const j = await postJSON('/v2/recepcion/mostrador', {
+        accion,
+        dni: $('mo-dni').value,
+        nombre, apellido: $('mo-apellido').value.trim(),
+        obra_social: $('mo-os').value.trim() || null,
+        plan: MO.paciente?.plan || null,
+        financiador: MO.paciente?.financiador || null,
+        motivo: $('mo-motivo').value,
+        turno: MO.turno,
+        nota: $('mo-nota').value.trim() || null,
+        vuelve_de_id: MO.vuelveDe,
+    });
+    if (!j.ok) { v2toast(j._err || 'No se pudo registrar', 'err'); return; }
+    $('dlg-mostrador').close();
+    v2toast(accion === 'sala' ? 'Agregado a la sala' : 'Atención registrada');
+    cargarSala();
+}
+
 // ════════════════════════ SALA DE ESPERA ════════════════════════
 let SALA = [];          // cola actual
 let selPac = null;      // paciente seleccionado
@@ -160,6 +299,8 @@ async function cargarSala() {
     SALA = j.cola || [];
     $('badge-sala').textContent = j.stats?.total ?? SALA.length;
     $('cnt-sala').textContent = SALA.length;
+    $('hoy-sala').textContent = `Hoy: ${j.stats?.hoy_tablet ?? 0} por el tablet · ${j.stats?.hoy_mostrador ?? 0} en el mostrador`;
+    renderEnClinica(j.en_clinica || [], j.en_clinica_horas || 4);
     renderSala();
     // Si hay ficha abierta, refrescarla con datos frescos (o cerrarla si ya salió de la cola).
     if (selPac != null) {

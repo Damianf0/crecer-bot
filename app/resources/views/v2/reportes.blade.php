@@ -66,6 +66,7 @@
         <button class="rp-tab"        data-tab="secretarias">Por secretaria</button>
         <button class="rp-tab"        data-tab="tendencias">Tendencias</button>
         <button class="rp-tab"        data-tab="tipos">Tipos de consulta</button>
+        <button class="rp-tab"        data-tab="recepcion">Recepción</button>
     </div>
 
     {{-- ── Tab: Hoy ──────────────────────────────────────────── --}}
@@ -175,6 +176,31 @@
         </div>
     </div>
 
+    {{-- ── Tab: Recepción ───────────────────────────────────────── --}}
+    <div class="rp-section" id="sec-recepcion">
+        <div class="rp-filtros">
+            <select id="rc-rango" class="v2-field">
+                <option value="7">Últimos 7 días</option>
+                <option value="30" selected>Últimos 30 días</option>
+                <option value="90">Últimos 90 días</option>
+            </select>
+            <button class="v2-btn primary" onclick="cargarRecepcion()">Aplicar</button>
+            <span style="font-size:11px;color:var(--v2-text-mute);">Llegadas por el tablet y atenciones cargadas en el mostrador (desde el 01/10).</span>
+        </div>
+        <div class="rp-loading" id="rc-loading">Cargando…</div>
+        <div id="rc-content" style="display:none;">
+            <div class="rp-cards" id="rc-cards"></div>
+            <div class="rp-block">
+                <h3>Llegadas por día</h3>
+                <canvas id="chart-recepcion" height="80"></canvas>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div class="rp-block"><h3>Por motivo</h3><div id="rc-motivos"></div></div>
+                <div class="rp-block"><h3>Cargadas en el mostrador, por persona</h3><div id="rc-personas"></div></div>
+            </div>
+        </div>
+    </div>
+
     {{-- ── Tab: Tipos de consulta ────────────────────────────── --}}
     <div class="rp-section" id="sec-tipos">
         <div class="rp-filtros">
@@ -257,6 +283,7 @@ function activarTab(tab) {
     if (tab === 'secretarias' && !window._secLoaded) cargarSecretarias();
     if (tab === 'tendencias' && !window._tenLoaded) cargarTendencias();
     if (tab === 'tipos' && !window._tpLoaded) cargarTipos();
+    if (tab === 'recepcion' && !window._rcLoaded) cargarRecepcion();
 }
 document.querySelectorAll('.rp-tab').forEach(b => b.onclick = () => activarTab(b.dataset.tab));
 
@@ -617,10 +644,63 @@ async function corregir(id, codigo) {
     cargarTipos();
 }
 
+// ── Recepción ─────────────────────────────────────────
+// Colores fijos por origen: slots 1 y 2 de la paleta categórica validada (claro / oscuro).
+const RC_COLOR = { tablet: ['#2a78d6', '#3987e5'], mostrador: ['#eb6834', '#d95926'] };
+const rcColor = k => RC_COLOR[k][document.documentElement.dataset.theme === 'dark' ? 1 : 0];
+let chartRecepcion = null;
+
+async function cargarRecepcion() {
+    window._rcLoaded = true;
+    const d0 = parseInt(document.getElementById('rc-rango').value, 10);
+    const f = x => x.toLocaleDateString('en-CA');
+    let d;
+    try {
+        const r = await fetch(`/admin/estadisticas/recepcion?from=${f(new Date(Date.now() - d0 * 86400000))}&to=${f(new Date())}`, { headers: { Accept: 'application/json' } });
+        d = await r.json();
+        if (!r.ok) throw new Error(d.message || 'HTTP ' + r.status);
+    } catch (e) { document.getElementById('rc-loading').textContent = 'No se pudo cargar: ' + e.message; return; }
+    document.getElementById('rc-loading').style.display = 'none';
+    document.getElementById('rc-content').style.display = 'block';
+
+    const T = d.totales;
+    const pctMost = T.total ? fmtPct(Math.round(1000 * T.mostrador / T.total) / 10) : '—';
+    document.getElementById('rc-cards').innerHTML = [
+        ['Llegadas', fmtN(T.total), 'tablet + mostrador'],
+        ['Por el tablet', fmtN(T.tablet), ''],
+        ['En el mostrador', fmtN(T.mostrador), pctMost + ' del total'],
+        ['Resueltas en el mostrador', fmtN(T.resueltos_mostrador), 'sin pasar a la sala'],
+        ['Volvieron del consultorio', fmtN(T.regresos), 'sin anotarse de nuevo'],
+    ].map(([l, v, s]) => `<div class="rp-card"><div class="label">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
+
+    const dias = Object.keys(d.dias);
+    if (chartRecepcion) chartRecepcion.destroy();
+    chartRecepcion = new Chart(document.getElementById('chart-recepcion'), {
+        type: 'bar',
+        data: {
+            labels: dias.map(s => s.slice(8, 10) + '/' + s.slice(5, 7)),
+            datasets: ['tablet', 'mostrador'].map(k => ({
+                label: k === 'tablet' ? 'Tablet' : 'Mostrador', backgroundColor: rcColor(k),
+                borderColor: css('--v2-bg-card'), borderWidth: 1, data: dias.map(s => d.dias[s][k] || 0),
+            })),
+        },
+        options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+                   scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } } },
+    });
+
+    const tabla = (cab, filas) => filas.length
+        ? `<table class="rp-table"><thead><tr>${cab.map((c, i) => `<th${i ? ' class="num"' : ''}>${c}</th>`).join('')}</tr></thead><tbody>${filas.join('')}</tbody></table>`
+        : '<div class="rp-empty">Sin datos en el período.</div>';
+    document.getElementById('rc-motivos').innerHTML = tabla(['Motivo', 'Tablet', 'Mostrador'],
+        d.motivos.map(m => `<tr><td>${escapeHtml(m.motivo)}</td><td class="num">${fmtN(m.tablet)}</td><td class="num">${fmtN(m.mostrador)}</td></tr>`));
+    document.getElementById('rc-personas').innerHTML = tabla(['Persona', 'Cargadas', 'Resueltas ahí', 'Regresos'],
+        d.personas.map(p => `<tr><td>${escapeHtml(p.nombre)}</td><td class="num">${fmtN(p.n)}</td><td class="num">${fmtN(p.atendidos)}</td><td class="num">${fmtN(p.regresos)}</td></tr>`));
+}
+
 // Init: respetar la tab del hash (#secretarias / #tendencias) al recargar.
 cargarHoy();
 const hashTab = location.hash.replace('#', '');
-if (hashTab === 'secretarias' || hashTab === 'tendencias' || hashTab === 'tipos') activarTab(hashTab);
+if (['secretarias', 'tendencias', 'tipos', 'recepcion'].includes(hashTab)) activarTab(hashTab);
 
 // Auto-refresh de "Hoy" cada 60s (alineado con el cache del endpoint), solo
 // si la pestaña del browser está visible y la tab activa es Hoy — es una

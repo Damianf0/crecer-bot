@@ -30,6 +30,7 @@ class RecepcionController extends Controller
             'modulo'    => 'Recepción',
             'title'     => 'Recepción',
             'navActive' => 'recepcion',
+            'motivosMostrador' => self::MOTIVOS_MOSTRADOR,
         ]);
     }
 
@@ -79,14 +80,38 @@ class RecepcionController extends Controller
 
         $cola = ColaAtencion::activos()->get();
 
+        // En la clínica: liberados al consultorio hoy, en las últimas EN_CLINICA_HORAS.
+        $enClinica = ColaAtencion::where('estado', 'liberado')->whereNull('salio_at')
+            ->whereDate('hora_llegada', today())
+            ->where(fn ($q) => $q->where('hora_liberado', '>=', now()->subHours(self::EN_CLINICA_HORAS))
+                ->orWhere(fn ($q) => $q->whereNull('hora_liberado')->where('hora_llegada', '>=', now()->subHours(self::EN_CLINICA_HORAS))))
+            ->orderByDesc('hora_liberado')->get();
+
         return response()->json([
             'ok'   => true,
             'cola' => $cola->map(fn ($p) => $this->mapPaciente($p))->values(),
+            'en_clinica' => $enClinica->map(fn ($p) => [
+                'id'          => $p->id,
+                'nombre'      => $p->nombre_completo,
+                'dni'         => $p->dni,
+                'nombre_solo' => $p->nombre,
+                'apellido'    => $p->apellido,
+                'obra_social' => $p->obra_social,
+                'profesional' => $p->profesional,
+                'practica'    => $p->practica,
+                'desde'       => ($p->hora_liberado ?? $p->hora_llegada)?->format('H:i'),
+                'minutos'     => (int) ($p->hora_liberado ?? $p->hora_llegada)?->diffInMinutes(now()),
+                'atendido'    => $p->atendido_at?->format('H:i'),   // el médico ya lo marcó atendido
+            ])->values(),
+            'en_clinica_horas' => self::EN_CLINICA_HORAS,
             'stats' => [
                 'total'       => $cola->count(),
                 'esperando'   => $cola->where('estado', 'esperando')->count(),
                 'en_atencion' => $cola->where('estado', 'en_atencion')->count(),
                 'alertas'     => $cola->where('alerta_espera', true)->count(),
+                // Registro del día: cuántos llegaron por el tablet y cuántos se cargaron en el mostrador.
+                'hoy_tablet'    => ColaAtencion::whereDate('hora_llegada', today())->where('origen', 'tablet')->count(),
+                'hoy_mostrador' => ColaAtencion::whereDate('hora_llegada', today())->where('origen', 'mostrador')->count(),
             ],
         ]);
     }
@@ -176,6 +201,117 @@ class RecepcionController extends Controller
     }
 
     /** Resuelve sin liberar (gestión pura, no pasa a sala). */
+    // ── Atención en mostrador (pacientes que no se anotaron en el tablet) ──
+
+    /**
+     * Horas que un paciente liberado al consultorio sigue en la lista "En la
+     * clínica" de recepción (por si vuelve al mostrador). Hasta que el médico
+     * marque la salida desde su panel (etapa futura), sale sola por tiempo.
+     */
+    public const EN_CLINICA_HORAS = 4;
+
+    public const MOTIVOS_MOSTRADOR = [
+        'regreso'        => 'Vuelve del consultorio',
+        'turno'          => 'Viene a su turno',
+        'turnos'         => 'Pedir o cambiar un turno',
+        'recetas'        => 'Recetas',
+        'muestras'       => 'Muestras / estudios',
+        'consulta'       => 'Consulta / información',
+        'administrativo' => 'Pagos / trámites',
+        'otro'           => 'Otro',
+    ];
+
+    /**
+     * GET /v2/recepcion/mostrador/buscar?dni= — como el tablet: el paciente en
+     * Omnia y sus turnos de hoy; si Omnia no lo tiene, la ficha del directorio.
+     */
+    public function buscarMostrador(Request $r): JsonResponse
+    {
+        $dni = preg_replace('/\D/', '', (string) $r->query('dni'));
+        if (strlen($dni) < 7) return response()->json(['ok' => false, 'error' => 'DNI incompleto'], 422);
+
+        $omnia = app(\App\Services\OmniaService::class);
+        $p = $omnia->buscarPaciente($dni);
+        if ($p) {
+            return response()->json(['ok' => true, 'origen' => 'omnia', 'paciente' => $p, 'turnos' => $omnia->turnosHoy($p['id'])]);
+        }
+        $c = \App\Models\Contacto::where('dni', $dni)->first();
+        return response()->json(['ok' => true, 'origen' => $c ? 'contactos' : null,
+            'paciente' => $c ? ['id' => null, 'nombre' => $c->nombre, 'apellido' => '', 'obra_social' => null, 'plan' => null, 'financiador' => null] : null,
+            'turnos' => []]);
+    }
+
+    /**
+     * POST /v2/recepcion/mostrador — registra una atención en el mostrador.
+     * accion=atendido: queda como resuelta (se atendió ahí mismo).
+     * accion=sala: entra a la cola como si se hubiera anotado en el tablet.
+     */
+    public function registrarMostrador(Request $r): JsonResponse
+    {
+        $d = $r->validate([
+            'dni'         => 'nullable|string|max:20',
+            'nombre'      => 'required|string|max:100',
+            'apellido'    => 'nullable|string|max:100',
+            'obra_social' => 'nullable|string|max:150',
+            'plan'        => 'nullable|string|max:100',
+            'financiador' => 'nullable|string|max:191',
+            'motivo'      => 'required|in:' . implode(',', array_keys(self::MOTIVOS_MOSTRADOR)),
+            'turno'       => 'nullable|array',
+            'nota'        => 'nullable|string|max:1000',
+            'accion'      => 'required|in:atendido,sala',
+            'vuelve_de_id' => 'nullable|integer|exists:cola_atencion,id',
+        ]);
+        $turno = $d['turno'] ?? null;
+        $practicas = $turno ? ($turno['practicas'] ?? array_filter([$turno['practica'] ?? null])) : [];
+        $financiador = $d['financiador'] ?? $d['obra_social'] ?? null;
+
+        $fila = ColaAtencion::create([
+            'dni'            => preg_replace('/\D/', '', (string) ($d['dni'] ?? '')),   // columna NOT NULL: sin DNI queda ''
+            'nombre'         => $d['nombre'],
+            'apellido'       => $d['apellido'] ?? '',
+            'obra_social'    => $d['obra_social'] ?? null,
+            'plan'           => $d['plan'] ?? null,
+            'financiador'    => $financiador,
+            'omnia_turno_id' => $turno['id'] ?? null,
+            'profesional'    => $turno['profesional'] ?? null,
+            'practica'       => $turno['practica'] ?? null,
+            'practicas'      => $practicas,
+            'turno_hora'     => $turno['hora'] ?? null,
+            'planta'         => $turno['planta'] ?? null,
+            'motivo'         => $d['motivo'],
+            'origen'         => 'mostrador',
+            'registrado_por' => auth()->id(),
+            'vuelve_de_id'   => $d['vuelve_de_id'] ?? null,
+            'sin_turno'      => !$turno,
+            'checklist'      => ChecklistRecepcion::para($financiador, $d['plan'] ?? null, $practicas),
+            'nota'           => $d['nota'] ?? null,
+            'estado'         => $d['accion'] === 'sala' ? 'esperando' : 'resuelto',
+            'hora_llegada'   => now(),
+            'hora_llamado'   => $d['accion'] === 'atendido' ? now() : null,
+            'orden'          => ColaAtencion::max('orden') + 1,
+        ]);
+
+        // Volvió al mostrador: la visita anterior sale de "En la clínica" (la representa la nueva).
+        if (!empty($d['vuelve_de_id'])) {
+            ColaAtencion::where('id', $d['vuelve_de_id'])->whereNull('salio_at')->update(['salio_at' => now()]);
+        }
+
+        // Igual que el tablet: la obra social del TURNO (no la de la ficha), después de responder.
+        if (!empty($turno['id'])) {
+            $turnoId = $turno['id'];
+            \Illuminate\Support\defer(fn () => \App\Livewire\Tablet::corregirConFinanciadorDelTurno($fila, $turnoId, $practicas));
+        }
+
+        return response()->json(['ok' => true, 'id' => $fila->id, 'estado' => $fila->estado]);
+    }
+
+    /** POST /v2/recepcion/cola/{id}/salio — se fue de la clínica: sale de "En la clínica". */
+    public function salio(int $id): JsonResponse
+    {
+        ColaAtencion::findOrFail($id)->update(['salio_at' => now()]);
+        return response()->json(['ok' => true]);
+    }
+
     public function resolverPaciente(int $id): JsonResponse
     {
         ColaAtencion::findOrFail($id)->update(['estado' => 'resuelto']);
