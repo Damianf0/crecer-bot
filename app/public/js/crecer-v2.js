@@ -740,7 +740,7 @@ window.V2Conv = (function () {
         // ── Derivar a otra área (gap de paridad V1, restaurado 08/07) ──
         modalDerivarArea() {
             document.getElementById('v2-overlay-modal')?.remove();
-            const AREAS = { atencion: 'Clínica', administracion: 'Administración', ovodonacion: 'Ovodonación' };
+            const AREAS = { atencion: 'Secretaría', administracion: 'Administración', ovodonacion: 'Ovodonación' };
             const botones = Object.entries(AREAS)
                 .map(([k, l]) => `<button class="v2-btn" style="margin:3px;" onclick="V2Conv.confirmarDerivarArea('${k}')">${l}</button>`).join('');
             const div = document.createElement('div');

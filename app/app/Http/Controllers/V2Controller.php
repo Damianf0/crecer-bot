@@ -43,7 +43,7 @@ class V2Controller extends Controller
         return view('v2.mis-conversaciones', [
             'items'     => $items,
             'usuarios'  => $this->usuarios(),
-            'modulo'    => 'Atención',
+            'modulo'    => 'Secretaría',
             'title'     => 'Mis conversaciones',
             'navActive' => 'mis-conversaciones',
         ]);

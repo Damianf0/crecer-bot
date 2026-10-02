@@ -33,7 +33,7 @@
         <button class="tb-btn" id="sb-toggle" title="Colapsar menú">☰</button>
         <span class="brand">
             <img src="/logo.jpg" alt="Crecer">
-            Crecer <span class="mod">· {{ $modulo ?? 'Atención' }}</span>
+            Crecer <span class="mod">· {{ $modulo ?? 'Secretaría' }}</span>
         </span>
         <span class="spacer"></span>
         <span class="tb-item" id="bots-status" title="Estado de los bots WhatsApp">

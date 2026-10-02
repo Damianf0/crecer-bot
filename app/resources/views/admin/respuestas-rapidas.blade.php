@@ -117,7 +117,7 @@
 <script>
 const CSRF    = '{{ csrf_token() }}';
 const AREAS   = @json($areas);
-const AREA_LABELS = { atencion: 'Atención (clínica)', administracion: 'Administración', ovodonacion: 'Ovodonación', difusion: 'Difusiones' };
+const AREA_LABELS = { atencion: 'Secretaría', administracion: 'Administración', ovodonacion: 'Ovodonación', difusion: 'Difusiones' };
 
 let state = {
     area:    Object.keys(AREAS)[0],

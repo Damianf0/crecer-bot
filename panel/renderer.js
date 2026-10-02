@@ -146,7 +146,7 @@ const ACCESOS = [
   },
   {
     key: 'atencion',
-    label: 'Gestión de Atención',
+    label: 'Gestión de Secretaría',
     desc: 'Derivaciones y WhatsApp unificados',
     icon: '⊛',
     url: 'http://localhost/atencion',
@@ -411,7 +411,7 @@ const ROLES_LABEL = {
 
 const PERMISOS_LABELS = {
   secretaria: 'Cola recepción',
-  atencion:   'Atención / Mis tareas',
+  atencion:   'Secretaría / Mis tareas',
   contactos:  'Contactos',
   agenda:     'Agenda',
   historial:  'Ver historial',
@@ -660,7 +660,7 @@ document.getElementById('btnLimpiarPruebas').addEventListener('click', () => {
 // ── Sistema ───────────────────────────────────────────────
 
 const SISTEMA_SERVICES = [
-  { key: 'bot',                container: 'crecer-bot-1',                label: 'Bot WApp · Clínica',        icon: '◈', httpCheck: 'http://localhost:3001/status' },
+  { key: 'bot',                container: 'crecer-bot-1',                label: 'Bot WApp · Secretaría',     icon: '◈', httpCheck: 'http://localhost:3001/status' },
   { key: 'bot-administracion', container: 'crecer-bot-administracion-1', label: 'Bot WApp · Administración', icon: '◈', httpCheck: 'http://localhost:3002/status' },
   { key: 'bot-ovodonacion',    container: 'crecer-bot-ovodonacion-1',    label: 'Bot WApp · Ovodonación',    icon: '◈', httpCheck: 'http://localhost:3003/status' },
   { key: 'web',    container: 'crecer-web-1',    label: 'Web / Laravel',  icon: '◫', httpCheck: null },

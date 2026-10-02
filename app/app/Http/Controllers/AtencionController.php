@@ -71,7 +71,7 @@ class AtencionController extends Controller
             'itemsData' => $itemsData,
             'area'      => $area,
             'areaLabel' => $areaLabel,
-            'modulo'    => 'Atención',
+            'modulo'    => 'Secretaría',
             'title'     => 'Conversaciones',
         ]);
     }
@@ -1255,7 +1255,7 @@ class AtencionController extends Controller
             if (!$resp->ok() || $resp->json('ok') !== true) {
                 return response()->json([
                     'ok'    => false,
-                    'error' => 'No se pudo enviar el primer mensaje. La conversación quedó creada y podés reintentar desde Atención.',
+                    'error' => 'No se pudo enviar el primer mensaje. La conversación quedó creada y podés reintentar desde Secretaría.',
                     'conv_id' => $conv->id,
                 ], 502);
             }

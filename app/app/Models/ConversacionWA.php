@@ -27,7 +27,7 @@ class ConversacionWA extends Model
 
     /** Áreas válidas (= números de WhatsApp). 'atencion' es el bot original. */
     public const AREAS = [
-        'atencion'       => 'Atención',
+        'atencion'       => 'Secretaría',
         'administracion' => 'Administración',
         'ovodonacion'    => 'Ovodonación',
     ];

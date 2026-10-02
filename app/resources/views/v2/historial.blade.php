@@ -281,7 +281,7 @@ async function reabrir(tipo, id, btn) {
     btn.textContent = '…';
     try {
         await post('/atencion/reabrir', { id, tipo });
-        v2toast('Reabierto — aparece en Atención');
+        v2toast('Reabierto — aparece en Secretaría');
         const row = document.getElementById(`row-${tipo}-${id}`);
         const det = document.getElementById(`detail-${tipo}-${id}`);
         row.style.opacity = '.4';

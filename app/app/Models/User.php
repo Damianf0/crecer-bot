@@ -113,7 +113,7 @@ class User extends Authenticatable
 
     public const PERMISOS_LABELS = [
         'secretaria' => 'Cola de recepción',
-        'atencion'   => 'Atención y mis tareas',
+        'atencion'   => 'Secretaría y mis tareas',
         'contactos'  => 'Contactos',
         'agenda'     => 'Agenda',
         'historial'  => 'Ver historial',
