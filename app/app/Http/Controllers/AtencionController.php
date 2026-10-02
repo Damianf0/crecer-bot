@@ -221,6 +221,8 @@ class AtencionController extends Controller
             'ts'          => $m->created_at->timestamp,
             'usuario'     => $m->usuario_id ? ($userMap[$m->usuario_id] ?? null) : null,
             'wa_id'       => $m->wa_id,
+            // Se puede reenviar suelto: texto con contenido, o adjunto que esté en disco.
+            'reenviable'  => self::esReenviable($m),
             // Reply (solo lectura): el panel renderea el bubble citado arriba del
             // mensaje cuando quoted_wa_id no es null. quoted_preview es el texto
             // (o un emoji + tipo para media). autor es nullable: lo poblamos si
@@ -312,6 +314,7 @@ class AtencionController extends Controller
                 'urgente'           => (bool) $conv->urgente,
                 'es_huerfana'       => $esHuerfana,
                 'jid'               => $conv->contacto,
+                'area'              => $conv->area,
                 'telefono_sugerido' => $telefonoSugerido,
                 'avatar_url'        => $avatarUrl,
                 'contacto_id'       => $contactoMatch?->id,
@@ -703,6 +706,222 @@ class AtencionController extends Controller
         ]);
 
         return response()->json(['ok' => true, 'destino' => $destinoModel->nombre, 'chunks' => $chunkCount]);
+    }
+
+    private const TIPOS_ADJUNTO = ['imagen', 'video', 'audio', 'documento', 'sticker'];
+
+    private static function esReenviable(MensajeWA $m): bool
+    {
+        if ($m->direccion === 'nota_interna') return false;
+        if (in_array($m->tipo, self::TIPOS_ADJUNTO, true)) {
+            return (bool) WaMediaController::rutaLocal($m->archivo_url);
+        }
+        return trim((string) $m->contenido) !== '';
+    }
+
+    /**
+     * POST /atencion/conversacion/{id}/reenviar-mensajes — reenvía SOLO los
+     * mensajes elegidos (fotos, archivos, audios o textos) a un contacto, como
+     * el "Reenviar" de WhatsApp. A diferencia de reenviarExterno no arma el hilo
+     * ni archiva la conversación.
+     *
+     * Body: { mensaje_ids: int[], contacto_id: int, area?: string, comentario?: string }
+     *
+     * Los adjuntos se vuelven a mandar desde el archivo guardado en el servidor
+     * (no llevan la etiqueta "Reenviado" de WhatsApp). Lo enviado queda como
+     * saliente en la conversación del destino, y en el origen una nota interna.
+     */
+    public function reenviarMensajes(Request $request, int $id): JsonResponse
+    {
+        $areas = array_keys(ConversacionWA::AREAS);
+        $data = $request->validate([
+            'mensaje_ids'   => 'required|array|min:1|max:20',
+            'mensaje_ids.*' => 'integer',
+            'contacto_id'   => 'required|integer|exists:contactos,id',
+            'area'          => 'nullable|in:' . implode(',', $areas),
+            'comentario'    => 'nullable|string|max:1000',
+        ]);
+
+        $conv    = ConversacionWA::findOrFail($id);
+        $area    = $data['area'] ?? (in_array($conv->area, $areas, true) ? $conv->area : 'atencion');
+        $destino = \App\Models\Contacto::findOrFail($data['contacto_id']);
+
+        $mensajes = MensajeWA::where('conversacion_id', $conv->id)
+            ->whereIn('id', $data['mensaje_ids'])
+            ->orderBy('created_at')->orderBy('id')
+            ->get();
+        if ($mensajes->count() !== count(array_unique($data['mensaje_ids']))) {
+            return response()->json(['ok' => false, 'error' => 'Algún mensaje no pertenece a esta conversación.'], 422);
+        }
+        $noDisponibles = $mensajes->reject(fn ($m) => self::esReenviable($m));
+        if ($noDisponibles->isNotEmpty()) {
+            return response()->json(['ok' => false, 'error' => 'Hay mensajes que no se pueden reenviar (notas internas o archivos que no están en el servidor). Sacalos de la selección.'], 422);
+        }
+
+        $botUrl    = ConversacionWA::botUrlPara($area);
+        $botTok    = config('app.bot_ingress_token');
+        $areaLabel = ConversacionWA::areas()[$area] ?? $area;
+        try {
+            $st = Http::timeout(6)->get("{$botUrl}/status");
+            if (!$st->ok() || $st->json('status') !== 'listo') {
+                return response()->json(['ok' => false, 'error' => "El bot de {$areaLabel} no está conectado a WhatsApp. Probá desde otro número o reintentá en unos minutos."], 503);
+            }
+        } catch (\Throwable) {
+            return response()->json(['ok' => false, 'error' => "El bot de {$areaLabel} no responde."], 502);
+        }
+
+        // Destino: el WhatsApp vinculado a la ficha; si no tiene, se verifica el teléfono.
+        $destinoJid = $destino->wa_id ?: null;
+        if (!$destinoJid) {
+            $tel = \App\Models\Contacto::normalizarTelefono($destino->telefono ?? '');
+            if (!$tel) {
+                return response()->json(['ok' => false, 'error' => 'El contacto destino no tiene un teléfono válido.'], 422);
+            }
+            try {
+                $check = Http::timeout(15)->withToken($botTok)->post("{$botUrl}/check-numero", ['numero' => $tel]);
+                if (!$check->ok() || !$check->json('ok')) {
+                    return response()->json(['ok' => false, 'error' => 'No se pudo verificar el número del destino.'], 502);
+                }
+                if (!$check->json('registered')) {
+                    return response()->json(['ok' => false, 'error' => 'El teléfono del destino no está registrado en WhatsApp.'], 422);
+                }
+                $destinoJid = $check->json('normalizedId');
+            } catch (\Throwable) {
+                return response()->json(['ok' => false, 'error' => 'No se pudo verificar el número del destino.'], 502);
+            }
+        }
+
+        // Conversación del destino en el número que envía: lo reenviado queda a la
+        // vista ahí. Si no existía nace archivada (no ocupa la cola); se reactiva
+        // sola si el destino contesta.
+        $convDestino = ConversacionWA::firstOrNew(['contacto' => $destinoJid, 'area' => $area]);
+        if (!$convDestino->exists) {
+            $convDestino->fill(['estado' => 'archivada', 'no_leidos' => 0, 'nombre' => $destino->nombre]);
+        }
+        $convDestino->ultima_actividad = now();
+        $convDestino->save();
+
+        $enviar = function (string $ruta, array $payload) use ($botUrl, $botTok): ?array {
+            try {
+                $r = Http::timeout(30)->withToken($botTok)->post("{$botUrl}{$ruta}", $payload);
+                return ($r->ok() && $r->json('ok') === true) ? ['wa_id' => $r->json('wa_id')] : null;
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+
+        $comentario = trim($data['comentario'] ?? '');
+        $enviados = [];
+        $fallo = false;
+
+        if ($comentario !== '') {
+            $r = $enviar('/enviar', ['contacto' => $destinoJid, 'texto' => $comentario]);
+            if (!$r) {
+                return response()->json(['ok' => false, 'error' => 'No se pudo enviar. No se reenvió nada.'], 502);
+            }
+            MensajeWA::create(['conversacion_id' => $convDestino->id, 'direccion' => 'saliente', 'tipo' => 'texto',
+                'contenido' => $comentario, 'wa_id' => $r['wa_id'], 'usuario_id' => Auth::id(), 'leido' => true]);
+        }
+
+        foreach ($mensajes as $m) {
+            if (in_array($m->tipo, self::TIPOS_ADJUNTO, true)) {
+                $abs = WaMediaController::rutaLocal($m->archivo_url);
+                [$filename, $caption] = self::nombreYLeyenda($m, $abs);
+                $r = $enviar('/enviar-archivo', [
+                    'contacto' => $destinoJid,
+                    'base64'   => base64_encode(file_get_contents($abs)),
+                    'mimetype' => mime_content_type($abs) ?: 'application/octet-stream',
+                    'filename' => $filename,
+                    'caption'  => $caption,
+                ]);
+                $contenido = $caption ?: ($m->tipo === 'documento' ? $filename : null);
+            } else {
+                $r = $enviar('/enviar', ['contacto' => $destinoJid, 'texto' => $m->contenido]);
+                $contenido = $m->contenido;
+            }
+            if (!$r) { $fallo = true; break; }
+
+            MensajeWA::create([
+                'conversacion_id' => $convDestino->id,
+                'direccion'       => 'saliente',
+                'tipo'            => $m->tipo,
+                'contenido'       => $contenido,
+                'archivo_url'     => $m->getRawOriginal('archivo_url'),
+                'wa_id'           => $r['wa_id'],
+                'usuario_id'      => Auth::id(),
+                'leido'           => true,
+            ]);
+            $enviados[] = $m;
+        }
+
+        if ($enviados) {
+            $operador = Auth::user()->nombre_completo ?? '—';
+            $nota = '🔁 Reenviado a ' . $destino->nombre
+                . ($destino->telefono ? " ({$destino->telefono})" : '')
+                . " desde {$areaLabel}: " . self::describirMensajes(collect($enviados))
+                . " — por {$operador}"
+                . ($comentario !== '' ? " — comentario: {$comentario}" : '');
+            MensajeWA::create(['conversacion_id' => $conv->id, 'direccion' => 'nota_interna', 'tipo' => 'texto',
+                'contenido' => $nota, 'usuario_id' => Auth::id(), 'leido' => true]);
+            $this->logEvento($conv->id, 'reenvio_mensajes');
+        }
+
+        if ($fallo) {
+            $total = $mensajes->count();
+            return response()->json([
+                'ok'        => false,
+                'enviados'  => count($enviados),
+                'error'     => count($enviados)
+                    ? 'Se cortó a mitad: se reenviaron ' . count($enviados) . " de {$total}. Revisá en la conversación del destino qué falta."
+                    : 'No se pudo reenviar. Verificá que el bot esté conectado.',
+            ], 502);
+        }
+
+        return response()->json([
+            'ok'       => true,
+            'enviados' => count($enviados),
+            'destino'  => $destino->nombre,
+            'conv_id'  => $convDestino->id,
+            'area'     => $area,
+        ]);
+    }
+
+    /**
+     * Nombre de archivo y leyenda con que se reenvía un adjunto. En los audios
+     * el contenido es la transcripción: no viaja. En los documentos el
+     * contenido es el nombre original o el texto que vino con el archivo.
+     */
+    private static function nombreYLeyenda(MensajeWA $m, string $abs): array
+    {
+        $guardado  = basename($abs);
+        $ext       = pathinfo($guardado, PATHINFO_EXTENSION);
+        $contenido = trim((string) $m->contenido);
+
+        if ($m->tipo === 'audio' || $m->tipo === 'sticker') return [$guardado, ''];
+
+        if ($m->tipo === 'documento') {
+            if ($contenido !== '' && preg_match('/\.[A-Za-z0-9]{2,5}$/', $contenido) && mb_strlen($contenido) <= 150) {
+                return [$contenido, ''];
+            }
+            // Salientes: "<timestamp>_<nombre original>"; entrantes: "<ts>_<jid>.<ext>".
+            $nombre = $m->direccion === 'saliente'
+                ? preg_replace('/^\d+_/', '', $guardado)
+                : 'documento' . ($ext ? ".{$ext}" : '');
+            return [$nombre, $contenido];
+        }
+
+        return [$guardado, $contenido];
+    }
+
+    private static function describirMensajes(\Illuminate\Support\Collection $ms): string
+    {
+        $nombres = ['imagen' => ['foto', 'fotos'], 'video' => ['video', 'videos'], 'audio' => ['audio', 'audios'],
+                    'documento' => ['archivo', 'archivos'], 'sticker' => ['sticker', 'stickers']];
+        return $ms->countBy(fn ($m) => isset($nombres[$m->tipo]) ? $m->tipo : 'texto')
+            ->map(function ($n, $tipo) use ($nombres) {
+                [$uno, $varios] = $nombres[$tipo] ?? ['mensaje', 'mensajes'];
+                return $n . ' ' . ($n === 1 ? $uno : $varios);
+            })->implode(', ');
     }
 
     /**

@@ -27,20 +27,29 @@ class WaMediaController extends Controller
             abort(400);
         }
 
-        $candidatos = [
-            '/bot-media/' . $filename,
-            storage_path('app/private/public/wa-media/' . $filename),
-        ];
+        $abs = self::rutaLocal($filename);
+        if (!$abs) abort(404);
 
-        foreach ($candidatos as $abs) {
-            if (is_file($abs)) {
-                return response()->file($abs, [
-                    'Content-Type'  => mime_content_type($abs) ?: 'application/octet-stream',
-                    'Cache-Control' => 'private, max-age=86400',
-                ]);
-            }
+        return response()->file($abs, [
+            'Content-Type'  => mime_content_type($abs) ?: 'application/octet-stream',
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
+    }
+
+    /**
+     * Ruta en disco del adjunto de un mensaje, o null si no está (p. ej. los
+     * que se perdieron entre el 17/07 y el 23/09). Acepta el nombre del archivo
+     * o la archivo_url del mensaje (/wa-media/<nombre>).
+     */
+    public static function rutaLocal(?string $archivo): ?string
+    {
+        $filename = basename((string) $archivo);
+        if ($filename === '' || !preg_match('/^[A-Za-z0-9._@-]+$/', $filename) || str_contains($filename, '..')) {
+            return null;
         }
-
-        abort(404);
+        foreach (['/bot-media/' . $filename, storage_path('app/private/public/wa-media/' . $filename)] as $abs) {
+            if (is_file($abs)) return $abs;
+        }
+        return null;
     }
 }

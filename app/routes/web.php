@@ -161,6 +161,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/atencion/conversacion/{id}/agregar-contacto', [AtencionController::class, 'agregarContactoDesdeConv']);
         Route::post('/atencion/conversacion/{id}/derivar-area',     [AtencionController::class, 'derivarArea']);
         Route::post('/atencion/conversacion/{id}/reenviar',         [AtencionController::class, 'reenviarExterno']);
+        Route::post('/atencion/conversacion/{id}/reenviar-mensajes', [AtencionController::class, 'reenviarMensajes']);
         Route::get('/atencion/contactos/buscar',                    [AtencionController::class, 'buscarContactos']);
         Route::get('/atencion/derivacion/{id}',   [AtencionController::class, 'derivacion']);
         Route::post('/atencion/tomar',            [AtencionController::class, 'tomar']);

@@ -60,7 +60,7 @@ window.V2Conv = (function () {
     const EVENTO_LBL = {
         tomada: 'tomó la conversación', delegada: 'la delegó', resuelta: 'la resolvió',
         reabierta: 'la reabrió', urgente_on: 'la marcó urgente', urgente_off: 'le sacó urgente',
-        iniciada: 'inició la conversación', derivada_area: 'la derivó de área', reenviada: 'la reenvió',
+        iniciada: 'inició la conversación', derivada_area: 'la derivó de área', reenviada: 'la reenvió', reenvio_mensajes: 'reenvió mensajes',
         archivada_auto: 'la archivó por inactividad',   // usuario null → renderiza "Sistema la archivó…"
     };
 
@@ -112,13 +112,54 @@ window.V2Conv = (function () {
             </div>`;
         }
         const dir  = m.direccion === 'entrante' ? 'in' : 'out';
+        const meta = dir === 'out' ? `${esc(m.usuario || 'Bot')} · ${esc(m.hora)}` : esc(m.hora);
+
+        // Modo selección (reenviar mensajes sueltos): la fila entera marca/desmarca.
+        if (state.sel) {
+            const marcado = state.sel.has(m.id);
+            const caja = m.reenviable
+                ? `<span class="v2-sel-chk${marcado ? ' on' : ''}">${marcado ? '✓' : ''}</span>`
+                : `<span class="v2-sel-chk off" title="${m.archivo_url || m.tipo !== 'texto' ? 'El archivo no está en el servidor: no se puede reenviar' : 'No se puede reenviar'}">–</span>`;
+            return `<div class="v2-msg ${dir} v2-selectable${marcado ? ' sel' : ''}${m.reenviable ? '' : ' no-sel'}" ${m.reenviable ? `onclick="V2Conv.selToggle(${m.id})"` : ''}>
+                ${caja}<div style="max-width:70%;width:fit-content;min-width:0;">
+                <div class="v2-bubble">${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
+                <div class="v2-msg-meta">${meta}</div>
+            </div></div>`;
+        }
+
         // Solo se puede citar un mensaje que WhatsApp conoce (tiene wa_id).
         const reply = m.wa_id ? `<button class="v2-reply-btn" title="Responder a este mensaje" onclick="V2Conv.responderA(${m.id})">↩</button>` : '';
-        const meta = dir === 'out' ? `${esc(m.usuario || 'Bot')} · ${esc(m.hora)}` : esc(m.hora);
+        const fwd   = m.reenviable ? `<button class="v2-reply-btn" title="Reenviar este mensaje a otro contacto" onclick="V2Conv.selIniciar(${m.id})">↪</button>` : '';
         return `<div class="v2-msg ${dir}"><div style="max-width:70%;width:fit-content;min-width:0;">
             <div class="v2-bubble">${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
-            <div class="v2-msg-meta">${meta} ${reply}</div>
+            <div class="v2-msg-meta">${meta} ${reply}${fwd}</div>
         </div></div>`;
+    }
+
+    // Re-pinta el chat en modo selección sin mover el scroll. `completo` = entrar
+    // o salir del modo (cambia compose ↔ barra); si no, solo timeline y contador.
+    function selRepintar(completo) {
+        const list = document.getElementById('msgs');
+        const top = list ? list.scrollTop : 0;
+        if (completo) {
+            renderDetalle(state.conv);
+        } else if (list) {
+            list.innerHTML = renderTimeline(state.conv);
+            const w = document.getElementById('v2-sel-wrap');
+            if (w) w.innerHTML = selBarHtml();
+        }
+        const nl = document.getElementById('msgs');
+        if (nl) nl.scrollTop = top;
+    }
+
+    // Barra inferior del modo selección (reemplaza al compose mientras dura).
+    function selBarHtml() {
+        const n = state.sel.size;
+        return `<div class="v2-sel-bar">
+            <button class="v2-btn" onclick="V2Conv.selSalir()">Cancelar</button>
+            <span class="n">${n === 0 ? 'Tocá los mensajes a reenviar' : n === 1 ? '1 seleccionado' : `${n} seleccionados`}</span>
+            <button class="v2-btn accent" onclick="V2Conv.modalReenvioSel()" ${n ? '' : 'disabled'}>↪ Reenviar</button>
+        </div>`;
     }
 
     function renderEvento(e) {
@@ -244,8 +285,8 @@ window.V2Conv = (function () {
                 <div class="acciones">${acciones.join('')}</div>
             </div>
             ${c.resumen ? `<div class="v2-resumen"><span class="tag">Resumen IA</span>${esc(c.resumen)}</div>` : ''}
-            <div class="v2-msgs" id="msgs">${renderTimeline(d)}</div>
-            ${compose}`;
+            <div class="v2-msgs${state.sel ? ' seleccionando' : ''}" id="msgs">${renderTimeline(d)}</div>
+            ${state.sel ? `<div id="v2-sel-wrap">${selBarHtml()}</div>` : compose}`;
 
         const list = document.getElementById('msgs');
         list.scrollTop = list.scrollHeight;
@@ -426,6 +467,7 @@ window.V2Conv = (function () {
             state.modo     = 'mensaje';
             state.archivo  = null;
             state.olderMsgs = []; state.hasOlder = false; state.cargandoOlder = false;
+            state.sel = null;
             document.getElementById('det-empty').style.display = 'none';
             const body = document.getElementById('det-body');
             body.style.display = 'flex';
@@ -443,7 +485,7 @@ window.V2Conv = (function () {
         },
 
         cerrar() {
-            state.panelId = null; state.conv = null;
+            state.panelId = null; state.conv = null; state.sel = null;
             document.getElementById('det-body').style.display = 'none';
             document.getElementById('det-empty').style.display = '';
             const leg = document.getElementById('leg-body');
@@ -726,6 +768,93 @@ window.V2Conv = (function () {
             } catch (e) {
                 modal?.remove();
                 v2toast('No se pudo derivar', 'err');
+            }
+        },
+
+        // ── Reenviar mensajes sueltos (como el "Reenviar" de WhatsApp, 01/10) ──
+        // ↪ en un mensaje entra en modo selección con ese mensaje marcado; la
+        // barra de abajo reemplaza al compose (lo tipeado se guarda y vuelve).
+        selIniciar(id) {
+            if (!state.conv) return;
+            state.selBorrador = document.getElementById('compose')?.value || '';
+            state.sel = new Set([id]);
+            selRepintar(true);
+        },
+
+        selToggle(id) {
+            if (!state.sel || !msgIndex[id]?.reenviable) return;
+            state.sel.has(id) ? state.sel.delete(id) : state.sel.add(id);
+            selRepintar(false);
+        },
+
+        selSalir() {
+            state.sel = null;
+            selRepintar(true);
+            const ta = document.getElementById('compose');
+            if (ta && state.selBorrador) ta.value = state.selBorrador;
+            state.selBorrador = '';
+        },
+
+        modalReenvioSel() {
+            if (!state.sel || !state.sel.size) return;
+            document.getElementById('v2-overlay-modal')?.remove();
+            state.rxContacto = null;
+            const n = state.sel.size;
+            const areaConv = (state.conv?.conv?.area) || cfg.area || window.V2_AREA_DEFAULT;
+            const opciones = Object.entries(window.V2_AREAS).filter(([k]) => k !== 'difusion')
+                .map(([k, l]) => `<option value="${k}" ${k === areaConv ? 'selected' : ''}>WhatsApp de ${esc(l)}</option>`).join('');
+            const div = document.createElement('div');
+            div.id = 'v2-overlay-modal';
+            div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
+            div.innerHTML = `<div style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:22px;width:min(520px,92vw);max-height:calc(100vh - 64px);overflow-y:auto;">
+                <div style="font-weight:650;font-size:15px;margin-bottom:6px;">↪ Reenviar ${n === 1 ? '1 mensaje' : `${n} mensajes`}</div>
+                <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">Le llegan solo los mensajes elegidos, en orden. Esta conversación no se cierra: queda una nota interna con lo que se reenvió.</div>
+                <label class="v2-label" style="margin-top:0;">Enviar desde</label>
+                <select id="v2-rs-area" class="v2-field" style="width:100%;margin-bottom:10px;">${opciones}</select>
+                <input type="text" id="v2-rx-buscar" class="v2-field" style="width:100%;" placeholder="Buscar contacto destino: nombre o teléfono…" autocomplete="off"
+                    oninput="V2Conv.rxBuscarDebounced()">
+                <div id="v2-rx-resultados" style="margin-top:6px;max-height:200px;overflow-y:auto;border:1px solid var(--v2-border);border-radius:6px;display:none;"></div>
+                <div id="v2-rx-sel" style="margin-top:10px;padding:8px 12px;border:1px solid var(--v2-accent);border-radius:6px;display:none;font-size:13px;"></div>
+                <textarea id="v2-rx-comentario" class="v2-field" style="width:100%;margin-top:12px;min-height:56px;" placeholder="Mensaje antes de lo reenviado (opcional)"></textarea>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+                    <button class="v2-btn" onclick="document.getElementById('v2-overlay-modal').remove()">Cancelar</button>
+                    <button class="v2-btn accent" id="v2-rx-confirmar" onclick="V2Conv.confirmarReenvioSel()" disabled>Reenviar</button>
+                </div>
+            </div>`;
+            div.onclick = (e) => { if (e.target === div) div.remove(); };
+            document.body.appendChild(div);
+            document.getElementById('v2-rx-buscar').focus();
+        },
+
+        async confirmarReenvioSel() {
+            if (!state.rxContacto || !state.panelId || !state.sel) return;
+            const btn = document.getElementById('v2-rx-confirmar');
+            btn.disabled = true;
+            btn.textContent = 'Reenviando…';
+            let r;
+            try {
+                r = await post(`/atencion/conversacion/${state.panelId}/reenviar-mensajes`, {
+                    mensaje_ids: [...state.sel],
+                    contacto_id: state.rxContacto.id,
+                    area: document.getElementById('v2-rs-area')?.value,
+                    comentario: document.getElementById('v2-rx-comentario')?.value.trim() || null,
+                });
+                document.getElementById('v2-overlay-modal')?.remove();
+                v2toast(`Reenviado a ${r.destino}`);
+                state.sel = null; state.selBorrador = '';
+                await V2Conv.refrescar();
+                return;
+            } catch (e) {
+                r = e.data || {};
+                v2toast(e.message || 'No se pudo reenviar — ¿bot conectado?', 'err');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Reenviar';
+            // Si se cortó a mitad, lo enviado ya quedó registrado: salir de la selección.
+            if (r.enviados) {
+                document.getElementById('v2-overlay-modal')?.remove();
+                state.sel = null;
+                await V2Conv.refrescar();
             }
         },
 

@@ -509,3 +509,28 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
 }
 .v2-reply-bar .rb-tag  { color: var(--v2-accent); font-weight: 600; white-space: nowrap; }
 .v2-reply-bar .rb-prev { flex: 1; color: var(--v2-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Reenviar mensajes sueltos (01/10) ───────────────────────────── */
+.v2-msg.v2-selectable { cursor: pointer; align-items: center; gap: 8px; border-radius: 8px; padding: 2px 4px; }
+.v2-msg.v2-selectable:hover { background: var(--v2-bg-hover); }
+.v2-msg.v2-selectable.sel { background: color-mix(in srgb, var(--v2-accent) 10%, transparent); }
+.v2-msg.v2-selectable.no-sel { cursor: default; opacity: .45; }
+.v2-msg.v2-selectable.no-sel:hover { background: none; }
+.v2-msgs.seleccionando .v2-bubble, .v2-msgs.seleccionando .v2-bubble * { pointer-events: none; }
+.v2-sel-chk {
+    order: -1; flex: 0 0 auto;
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid var(--v2-text-mute);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff;
+}
+.v2-sel-chk.on  { background: var(--v2-accent); border-color: var(--v2-accent); }
+.v2-sel-chk.off { border-style: dashed; color: var(--v2-text-mute); }
+.v2-msg.in.v2-selectable .v2-sel-chk { margin-right: 2px; }
+.v2-msg.out.v2-selectable .v2-sel-chk { margin-right: auto; }
+.v2-sel-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-top: 1px solid var(--v2-border);
+    background: var(--v2-bg-card);
+}
+.v2-sel-bar .n { flex: 1; font-size: 13px; color: var(--v2-text-2); }
