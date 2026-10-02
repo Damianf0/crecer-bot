@@ -44,6 +44,12 @@ class ProcedimientoController extends Controller
 
         $base = Procedimiento::query();
 
+        // Papelera: solo para quien puede restaurar.
+        $eliminados = $request->boolean('eliminados') && $this->puedeEditar();
+        if ($eliminados) {
+            $base->onlyTrashed();
+        }
+
         if (!$this->puedeEditar()) {
             $base->publicados();
         }
@@ -69,7 +75,7 @@ class ProcedimientoController extends Controller
         $procs = $base->ordenados()
             ->withCount('pasos')
             ->with('codigos:id,procedimiento_id,codigo')
-            ->get(['id', 'titulo', 'slug', 'area', 'resumen', 'estado', 'orden', 'revisado_at', 'updated_at'])
+            ->get(['id', 'titulo', 'slug', 'area', 'resumen', 'estado', 'orden', 'revisado_at', 'updated_at', 'deleted_at'])
             ->map(fn($p) => [
                 'id'          => $p->id,
                 'titulo'      => $p->titulo,
@@ -79,6 +85,7 @@ class ProcedimientoController extends Controller
                 'pasos_count' => $p->pasos_count,
                 'casos'       => $p->codigos->map(fn($c) => Procedimiento::CODIGOS_BOT[$c->codigo] ?? $c->codigo)->all(),
                 'sin_revisar' => $p->necesitaRevision(),
+                'eliminado'   => $p->deleted_at?->format('d/m/Y'),
             ]);
 
         return response()->json([
@@ -88,6 +95,7 @@ class ProcedimientoController extends Controller
             'areas'       => Procedimiento::AREAS,
             'codigos_bot' => Procedimiento::CODIGOS_BOT,
             'puede_editar' => $this->puedeEditar(),
+            'eliminados_count' => $this->puedeEditar() ? Procedimiento::onlyTrashed()->count() : 0,
         ]);
     }
 
@@ -257,10 +265,57 @@ class ProcedimientoController extends Controller
         )]);
     }
 
-    /** DELETE /procedimientos/{id} — borrado reversible (softDeletes). */
+    /**
+     * POST /procedimientos/{id}/estado — publicar o retirar sin pasar por el
+     * editor. Retirar (volver a borrador) lo saca de la vista del equipo sin
+     * perder el contenido: es lo que hay que hacer con uno viejo o erróneo
+     * mientras se corrige.
+     */
+    public function cambiarEstado(Request $request, int $id): JsonResponse
+    {
+        $datos = $request->validate(['estado' => 'required|string|in:borrador,publicado']);
+
+        $proc = Procedimiento::findOrFail($id);
+        $proc->update(['estado' => $datos['estado'], 'actualizado_por' => Auth::id()]);
+        Cache::forget('procedimientos.opciones');
+
+        return response()->json(['ok' => true, 'estado' => $proc->estado]);
+    }
+
+    /**
+     * DELETE /procedimientos/{id} — borrado reversible (softDeletes): queda en
+     * "Eliminados" y se puede restaurar.
+     *
+     * La excepción es el borrador vacío que deja "+ Nuevo" cuando se sale sin
+     * escribir nada: ese se borra del todo, no hay nada que recuperar.
+     */
     public function destroy(int $id): JsonResponse
     {
-        Procedimiento::findOrFail($id)->delete();
+        $proc = Procedimiento::findOrFail($id);
+
+        $vacio = $proc->estado === 'borrador' && !$proc->pasos()->exists() && !$proc->adjuntos()->exists();
+        if ($vacio) {
+            $proc->codigos()->delete();
+            $proc->forceDelete();
+        } else {
+            $proc->update(['actualizado_por' => Auth::id()]);
+            $proc->delete();
+        }
+        Cache::forget('procedimientos.opciones');
+
+        return response()->json(['ok' => true, 'definitivo' => $vacio]);
+    }
+
+    /**
+     * POST /procedimientos/{id}/restaurar — vuelve de "Eliminados". Siempre
+     * como borrador: si se había eliminado por erróneo, que no reaparezca
+     * publicado sin que alguien lo mire antes.
+     */
+    public function restaurar(int $id): JsonResponse
+    {
+        $proc = Procedimiento::onlyTrashed()->findOrFail($id);
+        $proc->restore();
+        $proc->update(['estado' => 'borrador', 'actualizado_por' => Auth::id()]);
         Cache::forget('procedimientos.opciones');
 
         return response()->json(['ok' => true]);

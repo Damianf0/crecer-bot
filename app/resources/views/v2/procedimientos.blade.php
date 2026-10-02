@@ -111,8 +111,12 @@
             <button class="v2-btn sm" onclick="volver()">← Volver</button>
             <button class="v2-btn sm" style="margin-left:auto;" onclick="copiarLink()"
                     title="Copiar el link de este procedimiento">🔗 Copiar link</button>
-            <button class="v2-btn sm primary" id="btn-editar" style="display:none;"
-                    onclick="editarActual()">Editar</button>
+            {{-- Acciones de supervisión: retirar/publicar y eliminar sin entrar al editor --}}
+            <span id="acc-editor" style="display:none;gap:8px;">
+                <button class="v2-btn sm danger" onclick="eliminarActual()">Eliminar</button>
+                <button class="v2-btn sm" id="btn-estado" onclick="cambiarEstadoActual()"></button>
+                <button class="v2-btn sm primary" onclick="editarActual()">Editar</button>
+            </span>
         </div>
         <div id="detalle"></div>
     </div>
@@ -198,6 +202,8 @@ const state = {
     q: '',
     puedeEditar: false,
     areas: {},
+    eliminados: false,    // viendo la papelera (solo supervisión)
+    nEliminados: 0,
 };
 
 let _reqSeq = 0;
@@ -215,6 +221,7 @@ async function cargar() {
     const params = new URLSearchParams();
     if (state.q)    params.set('q', state.q);
     if (state.area) params.set('area', state.area);
+    if (state.eliminados) params.set('eliminados', '1');
 
     let r;
     try {
@@ -230,10 +237,11 @@ async function cargar() {
 
     state.puedeEditar = r.puede_editar;
     document.getElementById('btn-nuevo').style.display = r.puede_editar ? '' : 'none';
-    if (!Object.keys(state.areas).length) {
-        state.areas = r.areas;
-        renderChips();
-    }
+    state.areas = r.areas;
+    state.nEliminados = r.eliminados_count || 0;
+    // Se restauró el último: no tiene sentido quedarse en una papelera vacía.
+    if (state.eliminados && !state.nEliminados) { state.eliminados = false; return cargar(); }
+    renderChips();
     renderLista(r.data);
 }
 
@@ -244,6 +252,12 @@ function renderChips() {
         chips.push('<button class="v2-vista' + (state.area === k ? ' active' : '') +
                    '" onclick="setArea(\'' + esc(k) + '\')">' + esc(label) + '</button>');
     }
+    // Papelera: aparece solo si hay algo para restaurar.
+    if (state.puedeEditar && (state.nEliminados || state.eliminados)) {
+        chips.push('<button class="v2-vista' + (state.eliminados ? ' active' : '') +
+                   '" style="margin-left:auto;" onclick="verEliminados()">🗑 Eliminados<span class="n">' +
+                   state.nEliminados + '</span></button>');
+    }
     document.getElementById('chips-area').innerHTML = chips.join('');
 }
 
@@ -253,12 +267,26 @@ function setArea(a) {
     cargar();
 }
 
+function verEliminados() {
+    state.eliminados = !state.eliminados;
+    renderChips();
+    cargar();
+}
+
+async function restaurar(id) {
+    try { await api('POST', '/procedimientos/' + id + '/restaurar'); }
+    catch (e) { v2toast(e.message, 'err'); return; }
+    v2toast('Restaurado como borrador: revisalo antes de publicarlo');
+    cargar();
+}
+
 function renderLista(items) {
     const cont = document.getElementById('lista');
 
     if (!items.length) {
         cont.innerHTML = '<div class="v2-empty"><span class="ico">📘</span>' +
             (state.q ? 'Ningún procedimiento coincide con la búsqueda.'
+                     : state.eliminados ? 'No hay procedimientos eliminados en esta área.'
                      : 'Todavía no hay procedimientos cargados.') + '</div>';
         return;
     }
@@ -266,6 +294,17 @@ function renderLista(items) {
     cont.innerHTML = '<div class="pr-grid">' + items.map(p => {
         const pills = [];
         pills.push('<span class="v2-pill neutral">' + esc(state.areas[p.area] ?? p.area) + '</span>');
+        // Papelera: la tarjeta no abre nada, solo ofrece restaurar.
+        if (state.eliminados) {
+            return '<div class="pr-card" style="cursor:default;opacity:.85;">' +
+                     '<h3>' + esc(p.titulo) + '</h3>' +
+                     (p.resumen ? '<p>' + esc(p.resumen) + '</p>' : '') +
+                     '<div class="pr-card-foot">' + pills.join('') +
+                       '<span>Eliminado el ' + esc(p.eliminado || '—') + '</span>' +
+                       '<button class="v2-btn sm" style="margin-left:auto;" onclick="restaurar(' + p.id + ')">Restaurar</button>' +
+                     '</div>' +
+                   '</div>';
+        }
         if (p.estado !== 'publicado') pills.push('<span class="v2-pill espera">Borrador</span>');
         // Solo se avisa de la falta de revisión a quien puede hacer algo al respecto
         if (p.sin_revisar && state.puedeEditar) pills.push('<span class="v2-pill urgente">Sin revisar</span>');
@@ -304,7 +343,7 @@ async function abrir(id, sinUrl) {
     if (!sinUrl) urlDetalle(id);
     document.getElementById('vista-lista').style.display    = 'none';
     document.getElementById('vista-detalle').style.display  = '';
-    document.getElementById('btn-editar').style.display     = state.puedeEditar ? '' : 'none';
+    document.getElementById('acc-editor').style.display     = 'none';
     document.getElementById('detalle').innerHTML = '<div class="pr-loading">Cargando...</div>';
 
     let r;
@@ -312,11 +351,46 @@ async function abrir(id, sinUrl) {
         r = await get('/procedimientos/' + id);
     } catch (e) {
         document.getElementById('detalle').innerHTML =
-            '<div class="v2-empty"><span class="ico">⚠️</span>No se pudo abrir el procedimiento.</div>';
+            '<div class="v2-empty"><span class="ico">⚠️</span>No se pudo abrir el procedimiento. Puede que lo hayan retirado o eliminado.</div>';
         return;
     }
 
+    pintarAcciones(r.procedimiento.estado);
     renderDetalle(r.procedimiento);
+}
+
+// ── Retirar / publicar / eliminar desde el detalle (solo supervisión) ──
+
+let estadoActual = null;
+
+function pintarAcciones(estado) {
+    estadoActual = estado;
+    document.getElementById('acc-editor').style.display = state.puedeEditar ? 'inline-flex' : 'none';
+    const b = document.getElementById('btn-estado');
+    const publicado = estado === 'publicado';
+    b.textContent = publicado ? 'Retirar' : 'Publicar';
+    b.title = publicado
+        ? 'Lo saca de la vista del equipo sin borrarlo (vuelve a borrador)'
+        : 'Lo deja a la vista de todo el equipo';
+}
+
+async function cambiarEstadoActual() {
+    if (!procActual) return;
+    const nuevo = estadoActual === 'publicado' ? 'borrador' : 'publicado';
+    if (nuevo === 'borrador' && !confirm('¿Retirar este procedimiento? El equipo deja de verlo; queda como borrador para corregirlo o volver a publicarlo.')) return;
+    try { await api('POST', '/procedimientos/' + procActual + '/estado', { estado: nuevo }); }
+    catch (e) { v2toast(e.message, 'err'); return; }
+    v2toast(nuevo === 'borrador' ? 'Procedimiento retirado' : 'Procedimiento publicado');
+    abrir(procActual, true);
+}
+
+async function eliminarActual() {
+    if (!procActual) return;
+    if (!confirm('¿Eliminar este procedimiento? El equipo deja de verlo. Queda en "Eliminados" y se puede restaurar.')) return;
+    try { await api('DELETE', '/procedimientos/' + procActual); }
+    catch (e) { v2toast(e.message, 'err'); return; }
+    v2toast('Procedimiento eliminado');
+    volver();
 }
 
 function renderDetalle(p) {
@@ -454,7 +528,9 @@ function marcarSucio() {
 async function nuevoProcedimiento() {
     try {
         const r = await api('POST', '/procedimientos', { titulo: 'Procedimiento sin título' });
-        abrirEditor(r.id);
+        await abrirEditor(r.id);
+        // Si se sale sin guardar nunca, el borrador vacío se descarta solo.
+        if (edit && edit.id === r.id) edit.sinEstrenar = true;
     } catch (e) { v2toast(e.message, 'err'); }
 }
 
@@ -501,7 +577,8 @@ async function abrirEditor(id) {
     // Pasos
     document.getElementById('lista-pasos').innerHTML = '';
     if (!p.pasos.length) {
-        agregarPaso();
+        // Paso en blanco de cortesía: todavía no hay nada que perder.
+        pintarPaso({});
     } else {
         p.pasos.forEach(paso => pintarPaso(paso));
     }
@@ -717,6 +794,7 @@ async function guardar() {
     // Marca nueva: si no se refresca, el segundo guardado seguido daría 409
     // contra uno mismo.
     edit.updatedAt = r.procedimiento.updated_at;
+    edit.sinEstrenar = false;
 
     sucio = false;
     document.getElementById('ed-sucio').style.display = 'none';
@@ -747,7 +825,7 @@ function avisarConflicto(msg) {
 }
 
 async function eliminarProc() {
-    if (!confirm('¿Eliminar este procedimiento? Se puede recuperar desde la base de datos.')) return;
+    if (!confirm('¿Eliminar este procedimiento? El equipo deja de verlo. Queda en "Eliminados" y se puede restaurar.')) return;
     try {
         await api('DELETE', '/procedimientos/' + edit.id);
         v2toast('Procedimiento eliminado');
@@ -756,8 +834,14 @@ async function eliminarProc() {
     } catch (e) { v2toast(e.message, 'err'); }
 }
 
-function cancelarEdicion() {
+async function cancelarEdicion() {
     if (sucio && !confirm('Hay cambios sin guardar. ¿Salir igual?')) return;
+    // "+ Nuevo" crea el procedimiento antes de editarlo (hace falta el id para
+    // los adjuntos). Si nunca se guardó, se descarta: si no, cada clic deja un
+    // "Procedimiento sin título" vacío en el listado.
+    if (edit && edit.sinEstrenar) {
+        try { await api('DELETE', '/procedimientos/' + edit.id); } catch (e) { /* queda como borrador */ }
+    }
     salirDelEditor();
     volver();
 }

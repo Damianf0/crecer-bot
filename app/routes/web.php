@@ -266,6 +266,8 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/procedimientos',                 [ProcedimientoController::class, 'store']);
         Route::post('/procedimientos/{id}',            [ProcedimientoController::class, 'save'])->whereNumber('id');
         Route::delete('/procedimientos/{id}',          [ProcedimientoController::class, 'destroy'])->whereNumber('id');
+        Route::post('/procedimientos/{id}/estado',     [ProcedimientoController::class, 'cambiarEstado'])->whereNumber('id');
+        Route::post('/procedimientos/{id}/restaurar',  [ProcedimientoController::class, 'restaurar'])->whereNumber('id');
         Route::post('/procedimientos/{id}/adjuntos',   [ProcedimientoController::class, 'subirAdjunto'])->whereNumber('id');
         Route::delete('/procedimientos/adjunto/{id}',  [ProcedimientoController::class, 'borrarAdjunto'])->whereNumber('id');
     });

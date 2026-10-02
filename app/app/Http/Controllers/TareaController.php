@@ -144,7 +144,8 @@ class TareaController extends Controller
             'prioridad'       => $t->prioridad ?? 'normal',
             'ref_tipo'        => $t->ref_tipo,
             'ref_id'          => $t->ref_id,
-            'procedimiento_id'     => $t->procedimiento_id,
+            // Si el procedimiento fue eliminado, la tarea no ofrece un link muerto.
+            'procedimiento_id'     => $t->procedimiento ? $t->procedimiento_id : null,
             'procedimiento_titulo' => $t->procedimiento?->titulo,
             'hace'            => $t->created_at->diffForHumans(),
             'comentarios'     => $t->comentarios->map(fn($c) => [

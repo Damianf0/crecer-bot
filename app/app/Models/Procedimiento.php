@@ -121,7 +121,8 @@ class Procedimiento extends Model
         $slug = $base;
         $n    = 1;
 
-        while (static::where('slug', $slug)
+        // withTrashed: el índice único de slug también cuenta a los eliminados.
+        while (static::withTrashed()->where('slug', $slug)
             ->when($ignorarId, fn($q) => $q->where('id', '!=', $ignorarId))
             ->exists()
         ) {
