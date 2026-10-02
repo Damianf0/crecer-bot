@@ -80,7 +80,7 @@
         </div>
         <div>
             <label class="v2-label" style="margin-top:0;">Buscar</label>
-            <input type="text" name="q" class="v2-field" style="height:34px;min-width:180px;" placeholder="Contacto / título…" value="{{ $q }}">
+            <input type="text" name="q" class="v2-field" style="height:34px;min-width:230px;" placeholder="Nombre, teléfono, DNI o tema…" value="{{ $q }}">
         </div>
         <div style="display:flex;gap:8px;">
             <button type="submit" class="v2-btn primary" style="height:34px;">Filtrar</button>

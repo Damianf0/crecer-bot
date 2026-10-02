@@ -1026,99 +1026,137 @@ class AtencionController extends Controller
         $hasta = $request->input('hasta')
             ? \Carbon\Carbon::parse($request->input('hasta'))->endOfDay()
             : null;
-        $tipo  = $request->input('tipo', 'todos'); // todos | bot | wa | tarea
-        $q     = $request->input('q', '');
-        $area  = $request->input('area', 'todas'); // todas | atencion | administracion | ovodonacion (solo aplica a WA)
+        $tipo  = $request->input('tipo', 'todos') ?: 'todos'; // todos | bot | wa | tarea
+        $q     = trim((string) $request->input('q', ''));
+        $area  = $request->input('area', 'todas') ?: 'todas'; // todas | atencion | administracion | ovodonacion (solo aplica a WA)
 
-        $items = collect();
+        // Búsqueda: por lo que la persona ve en pantalla (nombre, teléfono, DNI,
+        // resumen), no por el identificador interno de WhatsApp — la mayoría de
+        // los chats son "@lid", un código que nadie conoce.
+        $like    = '%' . addcslashes($q, '%_\\') . '%';
+        $digitos = preg_replace('/\D/', '', $q);
+        $likeTel = strlen($digitos) >= 5 ? '%' . $digitos . '%' : null;
+
+        $perPage = max(10, min((int) $request->input('per_page', 50), 200));
+        $page    = max(1, (int) $request->input('page', 1));
+
+        // Tres fuentes, cada una con sus filtros ya aplicados y su columna de fecha.
+        $fuentes = [];
 
         // Tareas y derivaciones-bot no tienen área → si se filtra por área, no se incluyen.
         if (($tipo === 'tarea' || $tipo === 'todos') && $area === 'todas') {
-            $query = Tarea::where('estado', 'completada')
-                ->with(['asignadaA:id,nombre_completo', 'creadaPor:id,nombre_completo', 'comentarios.user:id,nombre_completo'])
-                ->orderByDesc('updated_at');
+            $query = Tarea::where('estado', 'completada');
             if ($desde) $query->where('updated_at', '>=', $desde);
             if ($hasta) $query->where('updated_at', '<=', $hasta);
-            if ($q)     $query->where('titulo', 'like', "%{$q}%");
-
-            $items = $items->concat(
-                $query->limit(200)->get()->map(fn($t) => [
-                    'id'          => $t->id,
-                    'tipo'        => 'tarea',
-                    'contacto'    => $t->titulo,
-                    'etiqueta'    => 'Tarea',
-                    'resumen'     => $t->descripcion ? Str::limit($t->descripcion, 120) : '—',
-                    'asig_name'   => $t->asignadaA?->nombre_completo,
-                    'creado_por'  => $t->creadaPor?->nombre_completo,
-                    'prioridad'   => $t->prioridad,
-                    'resuelto_at' => $t->updated_at?->format('d/m/Y H:i'),
-                    'ts'          => $t->updated_at?->timestamp ?? 0,
-                    'comentarios' => $t->comentarios->map(fn($c) => [
-                        'usuario'   => $c->user?->nombre_completo,
-                        'contenido' => $c->contenido,
-                        'hora'      => $c->created_at->format('d/m H:i'),
-                    ])->toArray(),
-                ])
-            );
+            if ($q !== '') $query->where(fn ($w) => $w->where('titulo', 'like', $like)->orWhere('descripcion', 'like', $like));
+            $fuentes['tarea'] = [$query, 'updated_at'];
         }
 
-        if ($tipo !== 'wa' && $tipo !== 'tarea' && $area === 'todas') {
-            $query = Derivacion::where('estado', 'resuelto')
-                ->with('asignadaA:id,nombre_completo')
-                ->orderByDesc('atendido_at');
+        if (($tipo === 'bot' || $tipo === 'todos') && $area === 'todas') {
+            $query = Derivacion::where('estado', 'resuelto');
             if ($desde) $query->where('atendido_at', '>=', $desde);
             if ($hasta) $query->where('atendido_at', '<=', $hasta);
-            if ($q)     $query->where('contacto', 'like', "%{$q}%");
-
-            $items = $items->concat(
-                $query->limit(200)->get()->map(fn($d) => [
-                    'id'          => $d->id,
-                    'tipo'        => 'bot',
-                    'contacto'    => $d->telefono,
-                    'etiqueta'    => $d->etiqueta,
-                    'resumen'     => $d->resumen_llm ?: Str::limit($d->texto, 120),
-                    'texto'       => $d->texto,
-                    'asig_name'   => $d->asignadaA?->nombre_completo,
-                    'resuelto_at' => $d->atendido_at?->format('d/m/Y H:i'),
-                    'ts'          => $d->atendido_at?->timestamp ?? 0,
-                ])
-            );
+            if ($q !== '') $query->where(function ($w) use ($like, $likeTel) {
+                $w->where('contacto', 'like', $like)->orWhere('resumen_llm', 'like', $like)->orWhere('texto', 'like', $like);
+                if ($likeTel) $w->orWhere('contacto', 'like', $likeTel);
+            });
+            $fuentes['bot'] = [$query, 'atendido_at'];
         }
 
-        if ($tipo !== 'bot' && $tipo !== 'tarea') {
-            $query = ConversacionWA::where('estado', 'archivada')
-                ->with(['ultimoMensaje', 'asignadaA:id,nombre_completo', 'contactoVinculado:id,wa_id,avatar_path'])
-                ->orderByDesc('updated_at');
+        if ($tipo === 'wa' || $tipo === 'todos') {
+            $query = ConversacionWA::where('estado', 'archivada');
             if ($desde) $query->where('updated_at', '>=', $desde);
             if ($hasta) $query->where('updated_at', '<=', $hasta);
-            if ($q)     $query->where('contacto', 'like', "%{$q}%");
             if ($area !== 'todas') $query->where('area', $area);
-
-            $areaLabels = ConversacionWA::areas();
-            $items = $items->concat(
-                $query->limit(200)->get()->map(fn($c) => [
-                    'id'          => $c->id,
-                    'tipo'        => 'wa',
-                    'contacto'    => $c->nombreOTelefono,
-                    'etiqueta'    => 'WhatsApp',
-                    'resumen'     => $c->resumen_llm ?: ($c->ultimoMensaje?->snippet ?? '—'),
-                    'asig_name'   => $c->asignadaA?->nombre_completo,
-                    'area'        => $c->area,
-                    'area_label'  => $areaLabels[$c->area] ?? $c->area,
-                    'resuelto_at' => $c->updated_at?->format('d/m/Y H:i'),
-                    'ts'          => $c->updated_at?->timestamp ?? 0,
-                ])
-            );
+            if ($q !== '') $query->where(function ($w) use ($like, $likeTel) {
+                $w->where('nombre', 'like', $like)
+                  ->orWhere('nombre_wa', 'like', $like)
+                  ->orWhere('resumen_llm', 'like', $like)
+                  ->orWhere('contacto', 'like', $like)
+                  ->orWhereHas('contactoVinculado', fn ($c) => $c->where('nombre', 'like', $like)->orWhere('dni', 'like', $like));
+                if ($likeTel) {
+                    $w->orWhere('telefono_wa', 'like', $likeTel)
+                      ->orWhere('contacto', 'like', $likeTel)
+                      ->orWhereHas('contactoVinculado', fn ($c) => $c->where('telefono', 'like', $likeTel));
+                }
+            });
+            $fuentes['wa'] = [$query, 'updated_at'];
         }
 
-        $items = $items->sortByDesc('ts')->values();
+        // Paginación real sobre las tres fuentes juntas. Antes cada una traía sus
+        // últimas 200 y se paginaba eso: sin filtro de fechas el historial llegaba
+        // solo a los últimos dos días. Ahora se cuenta el total y de cada fuente se
+        // piden solo id + fecha de lo necesario para armar la página pedida.
+        $total = 0;
+        $orden = collect();
+        foreach ($fuentes as $t => [$query, $col]) {
+            $total += (clone $query)->count();
+            $orden = $orden->concat(
+                (clone $query)->orderByDesc($col)->orderByDesc('id')->limit($page * $perPage)->toBase()->get(['id', "{$col} as f"])
+                    ->map(fn ($r) => ['tipo' => $t, 'id' => $r->id, 'f' => (string) $r->f])
+            );
+        }
+        $pages  = max(1, (int) ceil($total / $perPage));
+        $pagina = $orden->sort(fn ($a, $b) => [$b['f'], $b['id']] <=> [$a['f'], $a['id']])
+            ->slice(($page - 1) * $perPage, $perPage)->values();
+        $ids = $pagina->groupBy('tipo')->map(fn ($g) => $g->pluck('id')->all());
 
-        // Paginación en memoria sobre la colección mergeada (3 fuentes con tope 200 cada una).
-        $perPage = max(10, min((int) $request->input('per_page', 50), 200));
-        $page    = max(1, (int) $request->input('page', 1));
-        $total   = $items->count();
-        $pages   = max(1, (int) ceil($total / $perPage));
-        $items   = $items->slice(($page - 1) * $perPage, $perPage)->values();
+        // Recién ahora se cargan completas las filas de esta página.
+        $filas = [];
+
+        foreach (Tarea::whereIn('id', $ids['tarea'] ?? [])
+            ->with(['asignadaA:id,nombre_completo', 'creadaPor:id,nombre_completo', 'comentarios.user:id,nombre_completo'])->get() as $t) {
+            $filas["tarea-{$t->id}"] = [
+                'id'          => $t->id,
+                'tipo'        => 'tarea',
+                'contacto'    => $t->titulo,
+                'etiqueta'    => 'Tarea',
+                'resumen'     => $t->descripcion ? Str::limit($t->descripcion, 120) : '—',
+                'asig_name'   => $t->asignadaA?->nombre_completo,
+                'creado_por'  => $t->creadaPor?->nombre_completo,
+                'prioridad'   => $t->prioridad,
+                'resuelto_at' => $t->updated_at?->format('d/m/Y H:i'),
+                'ts'          => $t->updated_at?->timestamp ?? 0,
+                'comentarios' => $t->comentarios->map(fn($c) => [
+                    'usuario'   => $c->user?->nombre_completo,
+                    'contenido' => $c->contenido,
+                    'hora'      => $c->created_at->format('d/m H:i'),
+                ])->toArray(),
+            ];
+        }
+
+        foreach (Derivacion::whereIn('id', $ids['bot'] ?? [])->with('asignadaA:id,nombre_completo')->get() as $d) {
+            $filas["bot-{$d->id}"] = [
+                'id'          => $d->id,
+                'tipo'        => 'bot',
+                'contacto'    => $d->telefono,
+                'etiqueta'    => $d->etiqueta,
+                'resumen'     => $d->resumen_llm ?: Str::limit($d->texto, 120),
+                'texto'       => $d->texto,
+                'asig_name'   => $d->asignadaA?->nombre_completo,
+                'resuelto_at' => $d->atendido_at?->format('d/m/Y H:i'),
+                'ts'          => $d->atendido_at?->timestamp ?? 0,
+            ];
+        }
+
+        $areaLabels = ConversacionWA::areas();
+        foreach (ConversacionWA::whereIn('id', $ids['wa'] ?? [])
+            ->with(['ultimoMensaje', 'asignadaA:id,nombre_completo', 'contactoVinculado:id,wa_id,avatar_path'])->get() as $c) {
+            $filas["wa-{$c->id}"] = [
+                'id'          => $c->id,
+                'tipo'        => 'wa',
+                'contacto'    => $c->nombreOTelefono,
+                'etiqueta'    => 'WhatsApp',
+                'resumen'     => $c->resumen_llm ?: ($c->ultimoMensaje?->snippet ?? '—'),
+                'asig_name'   => $c->asignadaA?->nombre_completo,
+                'area'        => $c->area,
+                'area_label'  => $areaLabels[$c->area] ?? $c->area,
+                'resuelto_at' => $c->updated_at?->format('d/m/Y H:i'),
+                'ts'          => $c->updated_at?->timestamp ?? 0,
+            ];
+        }
+
+        $items = $pagina->map(fn ($p) => $filas["{$p['tipo']}-{$p['id']}"] ?? null)->filter()->values();
 
         if ($request->wantsJson()) {
             return response()->json([
