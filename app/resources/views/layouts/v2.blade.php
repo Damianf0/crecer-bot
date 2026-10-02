@@ -90,8 +90,9 @@
                 <span class="ico">📘</span><span class="lbl">Procedimientos</span>
             </a>
 
-            @if($u && $u->hasPermiso('secretaria'))
+            @if($u && ($u->hasPermiso('secretaria') || $u->hasPermiso('atencion')))
             <div class="v2-nav-sec">Recepción</div>
+            @if($u->hasPermiso('secretaria'))
             <a class="v2-nav-item {{ $navActiva === 'recepcion' ? 'active' : '' }}" href="/v2/recepcion">
                 <span class="ico">🪑</span><span class="lbl">Recepción</span>
             </a>
@@ -100,6 +101,11 @@
                 <span class="ico">☑️</span><span class="lbl">Checklist por obra social</span>
             </a>
             @endif
+            @endif
+            {{-- Registro de pacientes de primera vez: lo carga cualquiera que atienda --}}
+            <a class="v2-nav-item {{ $navActiva === 'primera-vez' ? 'active' : '' }}" href="/v2/primera-vez">
+                <span class="ico">🌱</span><span class="lbl">Primera vez</span>
+            </a>
             @endif
 
             @if($u && $u->hasPermiso('medico'))

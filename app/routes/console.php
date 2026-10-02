@@ -1268,3 +1268,107 @@ Artisan::command('contactos:corregir-identidad {--apply}', function () {
     $this->info(sprintf('Desatadas %d fichas · %d conversaciones renombradas · %d documentos fuera de legajos ajenos', count($registro), $convs, $docs));
     return 0;
 })->purpose('Desata las fichas atadas al WhatsApp de otra persona (según la agenda de los celulares de la clínica)');
+
+/**
+ * Importa la planilla "Motivo del turno" (pacientes de primera vez) exportada
+ * como CSV. Columnas: Date, Fecha, Año, Mes, Nombre y Apellido, Motivo, Medico
+ * Asignado, Detalle. La planilla solo tiene el mes: cada registro entra con
+ * fecha día 1 y solo_mes=true. Sin --apply solo muestra qué haría.
+ *
+ * Se puede volver a correr: lo ya importado (mismo mes, nombre, motivo y
+ * médico) se saltea.
+ */
+Artisan::command('primera-vez:importar {archivo} {--apply} {--muestra=12}', function () {
+    $ruta = $this->argument('archivo');
+    if (!is_file($ruta)) { $this->error("No existe el archivo: {$ruta}"); return 1; }
+
+    $meses = ['ene' => 1, 'feb' => 2, 'mar' => 3, 'abr' => 4, 'may' => 5, 'jun' => 6,
+              'jul' => 7, 'ago' => 8, 'sep' => 9, 'set' => 9, 'oct' => 10, 'nov' => 11, 'dic' => 12,
+              'jan' => 1, 'apr' => 4, 'aug' => 8, 'dec' => 12];
+    $motivos = ['toma turno' => 'turno', 'derivad' => 'derivado', 'espontane' => 'espontaneo'];
+
+    // "Jun 2025", "-jun-25", "12-jun-25" o "12/06/2025" → [fecha, ¿solo mes?]
+    $fecha = function (string ...$celdas) use ($meses): ?array {
+        foreach ($celdas as $c) {
+            $c = mb_strtolower(trim($c));
+            if (preg_match('#^(\d{1,2})/(\d{1,2})/(\d{2,4})$#', $c, $m)) {
+                $a = (int) $m[3]; if ($a < 100) $a += 2000;
+                if (checkdate((int) $m[2], (int) $m[1], $a)) return [sprintf('%04d-%02d-%02d', $a, $m[2], $m[1]), false];
+            }
+            if (preg_match('/^(\d{1,2})?[-\s]*([a-zñ]{3})[a-zñ]*\.?[-\s]+(\d{2,4})$/', $c, $m) && isset($meses[$m[2]])) {
+                $a = (int) $m[3]; if ($a < 100) $a += 2000;
+                $dia = (int) ($m[1] ?: 0);
+                if ($dia && checkdate($meses[$m[2]], $dia, $a)) return [sprintf('%04d-%02d-%02d', $a, $meses[$m[2]], $dia), false];
+                return [sprintf('%04d-%02d-01', $a, $meses[$m[2]]), true];
+            }
+        }
+        return null;
+    };
+
+    $fh = fopen($ruta, 'r');
+    $cab = fgetcsv($fh);
+    $cab[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $cab[0]);
+    $col = array_flip(array_map(fn ($c) => mb_strtolower(trim((string) $c)), $cab));
+    foreach (['date', 'fecha', 'nombre y apellido', 'motivo', 'medico asignado'] as $req) {
+        if (!isset($col[$req])) { $this->error("Falta la columna «{$req}» en el CSV."); return 1; }
+    }
+    $celda = fn (array $f, string $c) => isset($col[$c]) ? trim((string) ($f[$col[$c]] ?? '')) : '';
+
+    $nuevos = []; $salteados = ['vacía' => 0, 'sin fecha' => 0, 'motivo desconocido' => 0, 'ya importada' => 0];
+    $vistos = [];
+    while (($f = fgetcsv($fh)) !== false) {
+        $nombre = preg_replace('/\s+/', ' ', $celda($f, 'nombre y apellido'));
+        $motivoTxt = mb_strtolower($celda($f, 'motivo'));
+        if ($nombre === '' && $motivoTxt === '') { $salteados['vacía']++; continue; }
+
+        $fe = $fecha($celda($f, 'date'), $celda($f, 'fecha'));
+        if (!$fe) { $salteados['sin fecha']++; continue; }
+
+        $motivo = null;
+        foreach ($motivos as $patron => $clave) if (str_contains($motivoTxt, $patron)) { $motivo = $clave; break; }
+        if (!$motivo) { $salteados['motivo desconocido']++; continue; }
+
+        $medico  = preg_replace('/\s+/', ' ', $celda($f, 'medico asignado')) ?: null;
+        $detalle = preg_replace('/\s+/', ' ', $celda($f, 'detalle')) ?: null;
+        // En los derivados el detalle es quién deriva: se normaliza para poder contarlo.
+        $derivante = null;
+        if ($motivo === 'derivado' && $detalle) {
+            $d = mb_strtoupper(str_replace('.', '', $detalle));
+            $d = preg_replace('/^(LA |LO |LE )?(DERIV[A-ZÓ]*|RECOMEND[A-ZÓ]*)( POR| DEL?| LA| EL| SU)* /u', '', $d);
+            $derivante = trim(preg_replace('/\s+/', ' ', $d)) ?: null;
+        }
+
+        $nombre = $nombre !== '' ? $nombre : '(sin nombre)';
+        $clave = "{$fe[0]}|" . mb_strtolower($nombre) . "|{$motivo}|" . mb_strtolower((string) $medico);
+        $ya = isset($vistos[$clave]) || \App\Models\PrimeraVez::where('origen', 'planilla')->whereDate('fecha', $fe[0])
+            ->where('nombre', $nombre)->where('motivo', $motivo)->where('medico', $medico)->exists();
+        if ($ya) { $salteados['ya importada']++; continue; }
+        $vistos[$clave] = true;
+
+        $nuevos[] = ['fecha' => $fe[0], 'solo_mes' => $fe[1], 'nombre' => mb_substr($nombre, 0, 160), 'motivo' => $motivo,
+                     'medico' => $medico ? mb_substr($medico, 0, 80) : null, 'derivante' => $derivante ? mb_substr($derivante, 0, 160) : null,
+                     'detalle' => $detalle ? mb_substr($detalle, 0, 500) : null, 'origen' => 'planilla'];
+    }
+    fclose($fh);
+
+    $c = collect($nuevos);
+    $this->info(($this->option('apply') ? 'IMPORTANDO' : 'SIMULACIÓN (sin --apply no se escribe nada)') . ': ' . $c->count() . ' registros nuevos');
+    $this->line('Salteados: ' . collect($salteados)->map(fn ($n, $k) => "{$k} {$n}")->implode(' · '));
+    $this->line('Con día exacto: ' . $c->where('solo_mes', false)->count() . ' · solo mes: ' . $c->where('solo_mes', true)->count());
+    $this->table(['Mes', 'Registros'], $c->countBy(fn ($r) => substr($r['fecha'], 0, 7))->sortKeys()->map(fn ($n, $m) => [$m, $n])->values()->all());
+    $this->table(['Motivo', 'Registros'], $c->countBy('motivo')->map(fn ($n, $m) => [$m, $n])->values()->all());
+    $this->table(['Médico', 'Registros'], $c->countBy(fn ($r) => $r['medico'] ?? '(sin médico)')->sortDesc()->map(fn ($n, $m) => [$m, $n])->values()->all());
+    $this->table(['Derivante (normalizado)', 'Veces'], $c->whereNotNull('derivante')->countBy('derivante')->sortDesc()
+        ->take((int) $this->option('muestra'))->map(fn ($n, $d) => [$d, $n])->values()->all());
+
+    if (!$this->option('apply')) return 0;
+
+    \Illuminate\Support\Facades\DB::transaction(function () use ($c) {
+        foreach ($c->pluck('medico')->filter()->unique() as $m) {
+            \App\Models\PrimeraVezMedico::firstOrCreate(['nombre' => $m]);
+        }
+        foreach ($c as $r) \App\Models\PrimeraVez::create($r);
+    });
+    $this->info('Listo: ' . $c->count() . ' registros importados.');
+    return 0;
+});

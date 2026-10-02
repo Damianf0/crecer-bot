@@ -272,6 +272,19 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::delete('/procedimientos/adjunto/{id}',  [ProcedimientoController::class, 'borrarAdjunto'])->whereNumber('id');
     });
 
+    // Pacientes de primera vez (reemplaza la planilla de recepción): lo carga
+    // cualquier usuario del panel; reporte y lista de médicos, supervisión.
+    $pv = \App\Http\Controllers\PrimeraVezController::class;
+    Route::get('/v2/primera-vez',            [$pv, 'index']);
+    Route::get('/primera-vez/data',          [$pv, 'data']);
+    Route::post('/primera-vez',              [$pv, 'store']);
+    Route::post('/primera-vez/{id}',         [$pv, 'update'])->whereNumber('id');
+    Route::post('/primera-vez/{id}/borrar',  [$pv, 'destroy'])->whereNumber('id');
+    Route::middleware('permiso:admin')->group(function () use ($pv) {
+        Route::get('/primera-vez/reporte',   [$pv, 'reporte']);
+        Route::post('/primera-vez/medicos',  [$pv, 'guardarMedico']);
+    });
+
     // PoC V2 — admin con shell V2 reusando las vistas de producción.
     Route::middleware('permiso:admin')->get('/v2/admin/{pagina?}', [\App\Http\Controllers\V2Controller::class, 'admin'])
         ->where('pagina', '[a-z-]+');
