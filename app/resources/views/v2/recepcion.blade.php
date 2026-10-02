@@ -96,7 +96,7 @@
                     <button class="v2-btn sm primary" style="margin-left:auto;text-transform:none;letter-spacing:0;" onclick="abrirMostrador()" title="Registrar a un paciente que se atendió en el mostrador sin anotarse en el tablet">+ Atención en mostrador</button></div>
                 <div id="hoy-sala" style="font-size:11.5px;color:var(--v2-text-mute);padding:0 12px 6px;"></div>
                 <div id="lista-sala"><div class="rec-empty">Cargando…</div></div>
-                {{-- Liberados al consultorio en las últimas horas: por si vuelven al mostrador --}}
+                {{-- Liberados al consultorio en los últimos 45 min: por si vuelven al mostrador --}}
                 <div id="en-clinica"></div>
             </div>
             <div class="rec-ficha" id="ficha-sala" style="display:none;"></div>
@@ -205,12 +205,12 @@ function abrirMostrador(prefill = null) {
     setTimeout(() => (prefill ? $('mo-nota') : $('mo-dni')).focus(), 50);
 }
 
-function renderEnClinica(lista, horas) {
+function renderEnClinica(lista, minutos) {
     EN_CLINICA = lista;
     const c = $('en-clinica');
     if (!lista.length) { c.innerHTML = ''; return; }
     c.innerHTML = `<div class="rec-list-head" style="margin-top:14px;">En la clínica <span class="cnt">${lista.length}</span>
-            <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--v2-text-mute);">liberados al consultorio · salen solos a las ${horas} h</span></div>`
+            <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--v2-text-mute);">liberados al consultorio · salen solos a los ${minutos} min</span></div>`
         + lista.map(p => `
         <div class="rec-card" style="cursor:default;">
             <div class="rec-card-head">
@@ -300,7 +300,7 @@ async function cargarSala() {
     $('badge-sala').textContent = j.stats?.total ?? SALA.length;
     $('cnt-sala').textContent = SALA.length;
     $('hoy-sala').textContent = `Hoy: ${j.stats?.hoy_tablet ?? 0} por el tablet · ${j.stats?.hoy_mostrador ?? 0} en el mostrador`;
-    renderEnClinica(j.en_clinica || [], j.en_clinica_horas || 4);
+    renderEnClinica(j.en_clinica || [], j.en_clinica_minutos || 45);
     renderSala();
     // Si hay ficha abierta, refrescarla con datos frescos (o cerrarla si ya salió de la cola).
     if (selPac != null) {

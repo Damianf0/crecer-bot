@@ -80,11 +80,11 @@ class RecepcionController extends Controller
 
         $cola = ColaAtencion::activos()->get();
 
-        // En la clínica: liberados al consultorio hoy, en las últimas EN_CLINICA_HORAS.
+        // En la clínica: liberados al consultorio hoy, en los últimos EN_CLINICA_MINUTOS.
         $enClinica = ColaAtencion::where('estado', 'liberado')->whereNull('salio_at')
             ->whereDate('hora_llegada', today())
-            ->where(fn ($q) => $q->where('hora_liberado', '>=', now()->subHours(self::EN_CLINICA_HORAS))
-                ->orWhere(fn ($q) => $q->whereNull('hora_liberado')->where('hora_llegada', '>=', now()->subHours(self::EN_CLINICA_HORAS))))
+            ->where(fn ($q) => $q->where('hora_liberado', '>=', now()->subMinutes(self::EN_CLINICA_MINUTOS))
+                ->orWhere(fn ($q) => $q->whereNull('hora_liberado')->where('hora_llegada', '>=', now()->subMinutes(self::EN_CLINICA_MINUTOS))))
             ->orderByDesc('hora_liberado')->get();
 
         return response()->json([
@@ -103,7 +103,7 @@ class RecepcionController extends Controller
                 'minutos'     => (int) ($p->hora_liberado ?? $p->hora_llegada)?->diffInMinutes(now()),
                 'atendido'    => $p->atendido_at?->format('H:i'),   // el médico ya lo marcó atendido
             ])->values(),
-            'en_clinica_horas' => self::EN_CLINICA_HORAS,
+            'en_clinica_minutos' => self::EN_CLINICA_MINUTOS,
             'stats' => [
                 'total'       => $cola->count(),
                 'esperando'   => $cola->where('estado', 'esperando')->count(),
@@ -208,7 +208,7 @@ class RecepcionController extends Controller
      * clínica" de recepción (por si vuelve al mostrador). Hasta que el médico
      * marque la salida desde su panel (etapa futura), sale sola por tiempo.
      */
-    public const EN_CLINICA_HORAS = 4;
+    public const EN_CLINICA_MINUTOS = 45;
 
     public const MOTIVOS_MOSTRADOR = [
         'regreso'        => 'Vuelve del consultorio',
