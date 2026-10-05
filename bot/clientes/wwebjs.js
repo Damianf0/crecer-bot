@@ -335,6 +335,36 @@ function crearClienteWwebjs() {
 
   function resetActividad() { ultimaActividad = Date.now(); }
 
+  // Detector de operaciones trabadas (05/10). El watchdog prueba la página con
+  // un evaluate trivial, y eso puede contestar "ok" mientras las operaciones
+  // reales se vencen: el 05/10 atención estuvo 2 h sin guardar adjuntos ni
+  // mandar archivos con el watchdog diciendo "página: ok". Acá se cuentan esas
+  // fallas reales (descargas y envíos); un éxito pone la cuenta en cero.
+  const TRABADAS_MAX        = 3;
+  const TRABADAS_VENTANA_MS = 15 * 60_000;
+  const TRABADAS_PAUSA_MS   = 30 * 60_000;   // anti-loop: un reinicio cada 30 min como mucho
+  const ES_TRABADA = /timed out|timeout|media entry was not created|Target closed|Session closed/i;
+  let fallasTrabadas = [];
+  let ultimoReinicioPorTrabadas = -Infinity;
+
+  function registrarExitoOperacion() { fallasTrabadas = []; }
+
+  function registrarFalloOperacion(origen, err) {
+    const msg = (err && err.message) || String(err);
+    if (destruido || !ES_TRABADA.test(msg)) return;
+    const ahora = Date.now();
+    fallasTrabadas = fallasTrabadas.filter((t) => ahora - t < TRABADAS_VENTANA_MS);
+    fallasTrabadas.push(ahora);
+    if (fallasTrabadas.length < TRABADAS_MAX) return;
+    if (ahora - ultimoReinicioPorTrabadas < TRABADAS_PAUSA_MS) {
+      console.error(`[watchdog] ${fallasTrabadas.length} operaciones trabadas en 15 min (${origen}), pero ya reinicié hace menos de 30 min — espero`);
+      return;
+    }
+    ultimoReinicioPorTrabadas = ahora;
+    fallasTrabadas = [];
+    reiniciarPorWatchdog(`${TRABADAS_MAX} operaciones trabadas en 15 min (última: ${origen}: ${msg.slice(0, 80)})`);
+  }
+
   function programarReinicio(ms) {
     setTimeout(() => {
       iniciar().catch((e) => console.error('[whatsapp] Error en iniciar():', e.message));
@@ -539,14 +569,18 @@ function crearClienteWwebjs() {
       // Nunca en silencio: un catch mudo acá escondió dos meses sin adjuntos.
       downloadMedia: async () => {
         try {
-          const media = await descargarMedio(msg);
+          // Con la página trabada, el evaluate esperaba el protocolTimeout
+          // entero (6 min) por cada adjunto: se corta antes.
+          const media = await conTimeout(descargarMedio(msg), 120_000, 'downloadMedia');
           if (!media) {
             console.warn(`[whatsapp] downloadMedia sin datos (${tipo}, ${waId || 'sin id'})`);
             return null;
           }
+          registrarExitoOperacion();
           return { mimetype: media.mimetype, data: media.data };
         } catch (e) {
           console.warn(`[whatsapp] downloadMedia falló (${tipo}, ${waId || 'sin id'}): ${e.message}`);
+          registrarFalloOperacion('descarga', e);
           return null;
         }
       },
@@ -769,8 +803,15 @@ function crearClienteWwebjs() {
     // adentro la búsqueda en su store de Chromium. Si el original ya no está,
     // descarta silenciosamente el quote (el mensaje igual se envía).
     if (opts.quoted?.wa_id) sendOpts.quotedMessageId = opts.quoted.wa_id;
-    await asegurarParcheEnvio();
-    const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, texto, sendOpts), 45_000, 'sendText'));
+    let sent;
+    try {
+      await asegurarParcheEnvio();
+      sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, texto, sendOpts), 45_000, 'sendText'));
+    } catch (e) {
+      registrarFalloOperacion('envío de texto', e);
+      throw e;
+    }
+    registrarExitoOperacion();
     const waId = completarIdSerializado(sent?.id);
     marcarEnviado(waId);
     return { wa_id: waId };
@@ -779,8 +820,15 @@ function crearClienteWwebjs() {
   emitter.sendMedia = async (jid, { mimetype, base64, filename, caption }) => {
     const media = new MessageMedia(mimetype, base64, filename || 'archivo');
     const opts = caption ? { caption } : {};
-    await asegurarParcheEnvio();
-    const sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, media, opts), 90_000, 'sendMedia'));
+    let sent;
+    try {
+      await asegurarParcheEnvio();
+      sent = await enviarRegistrando(conTimeout(client.sendMessage(jid, media, opts), 90_000, 'sendMedia'));
+    } catch (e) {
+      registrarFalloOperacion('envío de archivo', e);
+      throw e;
+    }
+    registrarExitoOperacion();
     const waId = completarIdSerializado(sent?.id);
     marcarEnviado(waId);
     return { wa_id: waId };
