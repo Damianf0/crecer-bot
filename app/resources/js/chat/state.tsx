@@ -513,35 +513,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
-// ─── Notificación browser para DM entrante ─────────────────────────
-// Se dispara cuando llega un mensaje en un canal que NO es el activo y la
-// pestaña no está enfocada. Si nunca se pidió permiso, lo pedimos en el
-// primer caso (no en boot, para no molestar antes de que el operador
-// abra el chat).
-let _permisoSolicitado = false;
-
+// ─── Aviso de mensaje entrante del chat interno ────────────────────
+// Se dispara cuando llega un mensaje en un canal que NO es el activo. Lo
+// muestra el módulo global de avisos del panel (public/js/crecer-avisos.js:
+// cartel + sonido + número en el título, respetando "Mis avisos"). Antes usaba
+// notificaciones del sistema, que el navegador bloquea en el panel porque se
+// sirve por http (06/10: permiso "denied"), así que nunca se veían.
 function notificarMensajeEntrante(ev: EventoMensajeEnviado) {
-    // Si la pestaña está enfocada o no soporta Notification, no molestamos.
-    if (document.hasFocus()) return;
-    if (typeof Notification === 'undefined') return;
-
-    if (Notification.permission === 'default' && !_permisoSolicitado) {
-        _permisoSolicitado = true;
-        Notification.requestPermission().catch(() => {});
-        return;  // primer evento: solo pedimos permiso, no notificamos
-    }
-    if (Notification.permission !== 'granted') return;
-
-    try {
-        const n = new Notification(ev.mensaje.autor || 'Chat interno', {
-            body: ev.mensaje.texto || '',
-            tag: `chat-${ev.canal_id}`,         // coalescing: una sola notif por canal
-            silent: false,
-        });
-        n.onclick = () => { window.focus(); n.close(); };
-        // Auto-cerrar tras 6s si el operador no la toca.
-        setTimeout(() => { try { n.close(); } catch {} }, 6000);
-    } catch (e) {
-        console.warn('[chat] notification error:', e);
-    }
+    const texto = (ev.mensaje.texto || '').slice(0, 120);
+    document.dispatchEvent(new CustomEvent('crecer:aviso', {
+        detail: {
+            tipo:   'chat',
+            clave:  `chat-${ev.canal_id}-${ev.mensaje.id}`,
+            titulo: `Chat interno: ${ev.mensaje.autor || 'mensaje nuevo'}`,
+            texto,
+        },
+    }));
 }

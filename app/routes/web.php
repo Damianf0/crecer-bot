@@ -272,6 +272,10 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::delete('/procedimientos/adjunto/{id}',  [ProcedimientoController::class, 'borrarAdjunto'])->whereNumber('id');
     });
 
+    // "Mis avisos": qué avisos del panel recibe cada persona.
+    Route::get('/mis-avisos',  [\App\Http\Controllers\AvisosController::class, 'show']);
+    Route::post('/mis-avisos', [\App\Http\Controllers\AvisosController::class, 'update']);
+
     // Pacientes de primera vez (reemplaza la planilla de recepción): lo carga
     // cualquier usuario del panel; reporte y lista de médicos, supervisión.
     $pv = \App\Http\Controllers\PrimeraVezController::class;

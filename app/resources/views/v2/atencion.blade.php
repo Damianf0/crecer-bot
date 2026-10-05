@@ -186,100 +186,15 @@ async function pollItems() {
         if (r.status === 401 || r.redirected) { location.href = '/login'; return; }
         state.etag = r.headers.get('ETag');
         state.items = normalizar(await r.json());
-        detectarNotifs(state.items);
         renderBandeja();
         cargarFavoritos();   // la cola cambió: el número y el color de la pestaña Favoritos también
     } catch (e) {}
 }
 
-// ── Notificaciones browser (paridad V1): urgente nueva + delegada a mí ──
-// La primera pasada solo puebla los sets (evita la ráfaga al abrir la página).
-const ME_ID = {{ auth()->id() }};
-const _notifUrg = new Set();
-const _misConvs = new Set();
-const _favNoLeidos = new Map();   // conv favorita → no_leidos de la última pasada
-let _notifPrimera = true;
-
-function detectarNotifs(items) {
-    const urgentes = items.filter(i => i._estado === 'nueva' && i.urgente);
-    const mias     = items.filter(i => parseInt(i.asig_id) === ME_ID);
-    const favs     = items.filter(i => i.favorito);
-
-    if (_notifPrimera) {
-        urgentes.forEach(i => _notifUrg.add(i.id));
-        mias.forEach(i => _misConvs.add(i.id));
-        favs.forEach(i => _favNoLeidos.set(i.id, i.no_leidos || 0));
-        _notifPrimera = false;
-        return;
-    }
-
-    // Un favorito escribió (subieron sus no leídos, o apareció en la cola).
-    favs.forEach(i => {
-        const antes = _favNoLeidos.get(i.id);
-        _favNoLeidos.set(i.id, i.no_leidos || 0);
-        if ((i.no_leidos || 0) === 0 || (antes !== undefined && i.no_leidos <= antes)) return;
-        if (V2Conv.panelId === i.id) return;   // ya la estoy mirando
-        sonarPing();
-        v2toast(`★ Escribió ${i.contacto}`);
-        window.Notify?.disparar({
-            titulo: `★ Escribió ${i.contacto}`,
-            cuerpo: (i.resumen || '').slice(0, 80),
-            tag: `fav-${i.id}-${i.no_leidos}`,
-        });
-    });
-
-    urgentes.forEach(i => {
-        if (_notifUrg.has(i.id)) return;
-        _notifUrg.add(i.id);
-        sonarPing();
-        window.Notify?.disparar({
-            titulo: 'Crecer — mensaje urgente',
-            cuerpo: `${i.contacto}: ${(i.resumen || '').slice(0, 80)}`,
-            tag: `urg-${i.id}`,
-        });
-    });
-
-    mias.forEach(i => {
-        if (_misConvs.has(i.id)) return;
-        _misConvs.add(i.id);
-        // Si es la conv abierta en mi panel, la acabo de tomar yo: no avisar.
-        if (V2Conv.panelId === i.id) return;
-        window.Notify?.disparar({
-            titulo: 'Te delegaron una conversación',
-            cuerpo: `${i.contacto}: ${(i.resumen || '').slice(0, 80)}`,
-            tag: `deleg-${i.id}`,
-        });
-    });
-
-    // Limpiar las que dejaron de ser mías (resueltas / delegadas a otro) para
-    // que una re-delegación futura vuelva a avisar; cap del set de urgentes.
-    const clavesMias = new Set(mias.map(i => i.id));
-    for (const k of Array.from(_misConvs)) if (!clavesMias.has(k)) _misConvs.delete(k);
-    if (_notifUrg.size > 500) {
-        const keep = Array.from(_notifUrg).slice(-300);
-        _notifUrg.clear();
-        keep.forEach(k => _notifUrg.add(k));
-    }
-}
-
-// Tono de aviso corto generado con WebAudio (sin assets), igual que V1.
-function sonarPing() {
-    try {
-        const ctx = window._audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.frequency.value = 880;
-        g.gain.value = 0.0001;
-        o.connect(g); g.connect(ctx.destination);
-        o.start();
-        g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.04);
-        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45);
-        o.stop(ctx.currentTime + 0.5);
-    } catch {}
-}
+// Los avisos (favorito escribió, urgente nueva, conversación delegada) son
+// globales desde el 06/10: public/js/crecer-avisos.js, en cualquier pantalla.
 
 state.items = normalizar(@json($itemsData));
-detectarNotifs(state.items);
 renderBandeja();
 cargarFavoritos();
 // Tiempo real: cada aviso de Reverb re-pide la cola y, si la conversación

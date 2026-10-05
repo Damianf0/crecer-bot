@@ -39,6 +39,7 @@
         <span class="tb-item" id="bots-status" title="Estado de los bots WhatsApp">
             <span class="v2-dot warn" id="bots-dot"></span><span id="bots-txt">Bots…</span>
         </span>
+        <button class="tb-btn" id="avisos-btn" title="Mis avisos: qué te avisa el panel" onclick="window.Avisos?.abrirPreferencias()">🔔</button>
         <button class="tb-btn" id="theme-btn" title="Cambiar tema">🌙</button>
         @if(auth()->user()?->hasPermiso('secretaria'))
         <a class="tb-btn" href="/declarar-colas" style="text-decoration:none;" title="Cambiar mis colas">⇄</a>
@@ -200,6 +201,7 @@
             });
             pintarContador('mis_conv', c.mis_conv || 0);
             pintarContador('mis_tareas', c.mis_tareas || 0);
+            window.Avisos?.pulso(d.avisos);
         } catch { dot.className = 'v2-dot warn'; txt.textContent = 'Bots ?'; }
     }
     let pulsoTimer = null;
@@ -224,6 +226,7 @@ window.v2toast = function (msg, tipo = 'ok') {
 };
 </script>
 <script src="/js/crecer-notify.js?v={{ filemtime(public_path('js/crecer-notify.js')) }}"></script>
+<script src="/js/crecer-avisos.js?v={{ filemtime(public_path('js/crecer-avisos.js')) }}"></script>
 <script src="/js/crecer-v2.js?v={{ filemtime(public_path('js/crecer-v2.js')) }}"></script>
 @if($u && $u->hasPermiso('atencion'))
 <script>

@@ -71,6 +71,8 @@ class AdminController extends Controller
             'has_qr'     => (bool) array_filter($bots, fn($b) => $b['has_qr']),
             'bots'       => $bots,
             'contadores' => \App\Support\ContadoresNavbar::para((int) auth()->id()),
+            // Lo que hoy está "en" la persona: el panel avisa las novedades en cualquier pantalla.
+            'avisos'     => \App\Support\AvisosUsuario::para((int) auth()->id(), \App\Models\ConversacionWA::areasDeLaSesion()),
         ]);
     }
 
