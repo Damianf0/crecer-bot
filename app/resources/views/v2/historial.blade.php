@@ -146,7 +146,7 @@
             <td style="white-space:nowrap;">
                 <button class="v2-btn sm" onclick="toggleDetalle('{{ $item['tipo'] }}', {{ $item['id'] }}, {{ json_encode($item) }})">Ver ▾</button>
                 @if($item['tipo'] !== 'tarea')
-                <button class="v2-btn sm accent" onclick="reabrir('{{ $item['tipo'] }}', {{ $item['id'] }}, this)">↩ Reabrir</button>
+                <button class="v2-btn sm accent" onclick="reabrir('{{ $item['tipo'] }}', {{ $item['id'] }}, this, '{{ $item['area'] ?? '' }}')">↩ Reabrir</button>
                 @endif
             </td>
         </tr>
@@ -276,19 +276,26 @@ async function toggleDetalle(tipo, id, item) {
     } catch(e) { el.textContent = 'Error al cargar detalle.'; }
 }
 
-async function reabrir(tipo, id, btn) {
+// Las conversaciones de WhatsApp preguntan por qué línea seguir (06/10).
+function reabrir(tipo, id, btn, area) {
+    if (tipo !== 'wa') return reabrirEn(tipo, id, btn);
+    window.v2ElegirLineaReabrir(area, (elegida) => reabrirEn(tipo, id, btn, elegida));
+}
+
+async function reabrirEn(tipo, id, btn, area) {
     btn.disabled = true;
     btn.textContent = '…';
     try {
-        await post('/atencion/reabrir', { id, tipo });
-        v2toast('Reabierto — aparece en Secretaría');
+        const r = await post('/atencion/reabrir', { id, tipo, area });
+        if (r && r.otra_linea) { location.href = `/v2/atencion/${r.area}?conv=${r.conv_id}`; return; }
+        v2toast(tipo === 'wa' ? 'Reabierta — volvió a la cola de su área' : 'Reabierto — aparece en Secretaría');
         const row = document.getElementById(`row-${tipo}-${id}`);
         const det = document.getElementById(`detail-${tipo}-${id}`);
         row.style.opacity = '.4';
         det.classList.remove('open');
         btn.textContent = '✓';
     } catch(e) {
-        v2toast('Error al reabrir', 'err');
+        v2toast((e && e.message && !/^HTTP /.test(e.message)) ? e.message : 'Error al reabrir', 'err');
         btn.disabled = false;
         btn.textContent = '↩ Reabrir';
     }

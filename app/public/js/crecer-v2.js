@@ -45,6 +45,33 @@ window.V2 = (function () {
     };
 })();
 
+// Reabrir eligiendo la línea (06/10): pregunta por qué número de WhatsApp
+// seguir y llama a alElegir(area). Lo usan el panel de conversación y Historial.
+window.v2ElegirLineaReabrir = function (areaActual, alElegir) {
+    const lineas = Object.entries(window.V2_AREAS || {}).filter(([k]) => k !== 'difusion');
+    if (!areaActual || lineas.length < 2) return alElegir(areaActual || undefined);
+    document.getElementById('v2-overlay-modal')?.remove();
+    const div = document.createElement('div');
+    div.id = 'v2-overlay-modal';
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
+    const botones = lineas.map(([k, l]) =>
+        `<button class="v2-btn${k === areaActual ? ' accent' : ''}" style="margin:3px;" data-area="${k}">WhatsApp de ${V2.esc(l)}${k === areaActual ? ' (donde estaba)' : ''}</button>`).join('');
+    div.innerHTML = `<div style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:22px;width:min(460px,92vw);">
+        <div style="font-weight:650;font-size:15px;margin-bottom:6px;">↩ Reabrir: ¿por qué línea seguís?</div>
+        <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">Por la línea donde estaba, vuelve a esa cola con todo su historial. Por otra línea, seguís con el mismo contacto desde ese número: queda tomada por vos y el historial anterior se sigue viendo en Historial.</div>
+        <div style="display:flex;flex-wrap:wrap;">${botones}</div>
+        <div style="text-align:right;margin-top:14px;"><button class="v2-btn" data-cancelar="1">Cancelar</button></div>
+    </div>`;
+    div.onclick = (e) => {
+        if (e.target === div || e.target.dataset.cancelar) return div.remove();
+        const area = e.target.dataset.area;
+        if (!area) return;
+        div.remove();
+        alElegir(area);
+    };
+    document.body.appendChild(div);
+};
+
 window.V2Conv = (function () {
     const { esc, get, post, avatarHtml } = V2;
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
@@ -254,6 +281,7 @@ window.V2Conv = (function () {
                         <div class="v2-rr-menu" id="rr-menu" style="display:none;"></div>
                     </div>
                     <button type="button" class="v2-rr-btn" id="btn-adjuntar" onclick="document.getElementById('v2-file').click()" title="Adjuntar archivo">📎 Adjuntar</button>
+                    <button type="button" class="v2-rr-btn" id="btn-contacto" onclick="V2Conv.modalCompartirContacto()" title="Compartir un contacto de la agenda">👤 Contacto</button>
                 </div>
                 <input type="file" id="v2-file" style="display:none" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onchange="V2Conv.onFile(this)">
                 <div class="v2-file-preview" id="v2-file-preview" style="display:none;align-items:center;gap:8px;padding:6px 10px;margin:4px 0;background:var(--v2-bg-soft,#f4f5f7);border-radius:8px;font-size:12.5px;">
@@ -910,7 +938,7 @@ window.V2Conv = (function () {
             state.rxContacto = c;
             document.getElementById('v2-rx-resultados').style.display = 'none';
             const sel = document.getElementById('v2-rx-sel');
-            sel.innerHTML = `<b>Destino:</b> ${esc(c.nombre || '(sin nombre)')} · <span style="color:var(--v2-text-mute);">${esc(c.telefono || '')}</span>`;
+            sel.innerHTML = `<b>${esc(sel.dataset.etiqueta || 'Destino')}:</b> ${esc(c.nombre || '(sin nombre)')} · <span style="color:var(--v2-text-mute);">${esc(c.telefono || '')}</span>`;
             sel.style.display = 'block';
             document.getElementById('v2-rx-confirmar').disabled = false;
         },
@@ -1134,11 +1162,8 @@ window.V2Conv = (function () {
                 if (tipo === 'tomar')    await post('/atencion/tomar',    { id: state.panelId, tipo: 'wa' });
                 if (tipo === 'urgente')  await post('/atencion/urgente',  { id: state.panelId, tipo: 'wa' });
                 if (tipo === 'reabrir') {
-                    await post('/atencion/reabrir', { id: state.panelId, tipo: 'wa' });
-                    v2toast('Reabierta — volvió a la cola de su área');
-                    state.readOnly = false;
-                    await V2Conv.refrescar();
-                    if (cfg.onChanged) cfg.onChanged('reabrir');
+                    const areaConv = state.conv?.conv?.area || cfg.area;
+                    window.v2ElegirLineaReabrir(areaConv, (area) => V2Conv.reabrirEn(area));
                     return;
                 }
                 if (tipo === 'resolver') {
@@ -1152,6 +1177,64 @@ window.V2Conv = (function () {
                 await V2Conv.refrescar();
                 if (cfg.onChanged) cfg.onChanged(tipo);
             } catch (e) { v2toast('No se pudo aplicar la acción', 'err'); }
+        },
+
+        async reabrirEn(area) {
+            if (!state.panelId) return;
+            try {
+                const r = await post('/atencion/reabrir', { id: state.panelId, tipo: 'wa', area });
+                if (r.otra_linea) {
+                    v2toast(`Reabierta por ${r.area_label} — la tenés vos`);
+                    location.href = `/v2/atencion/${r.area}?conv=${r.conv_id}`;
+                    return;
+                }
+                v2toast('Reabierta — volvió a la cola de su área');
+                state.readOnly = false;
+                await V2Conv.refrescar();
+                if (cfg.onChanged) cfg.onChanged('reabrir');
+            } catch (e) { v2toast(e.message || 'No se pudo reabrir', 'err'); }
+        },
+
+        // ── Compartir un contacto de la agenda como tarjeta (06/10) ──
+        modalCompartirContacto() {
+            if (!state.panelId) return;
+            document.getElementById('v2-overlay-modal')?.remove();
+            state.rxContacto = null;
+            const div = document.createElement('div');
+            div.id = 'v2-overlay-modal';
+            div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center;';
+            div.innerHTML = `<div style="background:var(--v2-bg-card);border:1px solid var(--v2-border);border-radius:var(--v2-radius);padding:22px;width:min(520px,92vw);max-height:calc(100vh - 64px);overflow-y:auto;">
+                <div style="font-weight:650;font-size:15px;margin-bottom:6px;">👤 Compartir un contacto</div>
+                <div style="font-size:12px;color:var(--v2-text-mute);margin-bottom:12px;line-height:1.5;">Le llega como una tarjeta de contacto de WhatsApp, con el nombre y el número para guardarlo o escribirle.</div>
+                <input type="text" id="v2-rx-buscar" class="v2-field" style="width:100%;" placeholder="Buscar en la agenda: nombre o teléfono…" autocomplete="off"
+                    oninput="V2Conv.rxBuscarDebounced()">
+                <div id="v2-rx-resultados" style="margin-top:6px;max-height:200px;overflow-y:auto;border:1px solid var(--v2-border);border-radius:6px;display:none;"></div>
+                <div id="v2-rx-sel" data-etiqueta="Contacto" style="margin-top:10px;padding:8px 12px;border:1px solid var(--v2-accent);border-radius:6px;display:none;font-size:13px;"></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+                    <button class="v2-btn" onclick="document.getElementById('v2-overlay-modal').remove()">Cancelar</button>
+                    <button class="v2-btn accent" id="v2-rx-confirmar" onclick="V2Conv.confirmarCompartirContacto()" disabled>Enviar contacto</button>
+                </div>
+            </div>`;
+            div.onclick = (e) => { if (e.target === div) div.remove(); };
+            document.body.appendChild(div);
+            document.getElementById('v2-rx-buscar').focus();
+        },
+
+        async confirmarCompartirContacto() {
+            if (!state.rxContacto || !state.panelId) return;
+            const btn = document.getElementById('v2-rx-confirmar');
+            btn.disabled = true;
+            btn.textContent = 'Enviando…';
+            try {
+                const r = await post('/atencion/enviar-contacto', { conv_id: state.panelId, contacto_id: state.rxContacto.id });
+                document.getElementById('v2-overlay-modal')?.remove();
+                v2toast(`Contacto enviado: ${r.nombre}`);
+                await V2Conv.refrescar();
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'Enviar contacto';
+                v2toast(e.message || 'No se pudo enviar el contacto — ¿bot conectado?', 'err');
+            }
         },
 
         menuDelegar(ev) {

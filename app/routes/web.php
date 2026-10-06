@@ -170,6 +170,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/atencion/resolver',         [AtencionController::class, 'resolver']);
         Route::post('/atencion/enviar',           [AtencionController::class, 'enviarMensaje']);
         Route::post('/atencion/enviar-archivo',   [AtencionController::class, 'enviarArchivo']);
+        Route::post('/atencion/enviar-contacto',  [AtencionController::class, 'enviarContacto']);
         Route::post('/atencion/iniciar',          [AtencionController::class, 'iniciarConversacion']);
         Route::post('/atencion/reabrir',          [AtencionController::class, 'reabrir']);
         // Fase 4: página V1 por área retirada — redirect (la data /items sigue viva abajo).

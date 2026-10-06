@@ -1006,16 +1006,148 @@ class AtencionController extends Controller
 
     public function reabrir(Request $request): JsonResponse
     {
-        $data = $request->validate(['id' => 'required|integer', 'tipo' => 'required|in:bot,wa']);
+        $data = $request->validate([
+            'id'   => 'required|integer',
+            'tipo' => 'required|in:bot,wa',
+            'area' => 'nullable|in:' . implode(',', array_keys(ConversacionWA::areas())),
+        ]);
 
         if ($data['tipo'] === 'bot') {
             Derivacion::findOrFail($data['id'])->update(['estado' => 'pendiente', 'atendido_at' => null, 'asignada_a' => null]);
-        } else {
-            ConversacionWA::findOrFail($data['id'])->update(['estado' => 'activa', 'asignada_a' => null]);
-            $this->logEvento($data['id'], 'reabierta');
+            return response()->json(['ok' => true]);
         }
 
-        return response()->json(['ok' => true]);
+        $conv    = ConversacionWA::findOrFail($data['id']);
+        $destino = $data['area'] ?? $conv->area;
+        if ($destino !== $conv->area) {
+            return $this->reabrirEnOtraLinea($conv, $destino);
+        }
+
+        $conv->update(['estado' => 'activa', 'asignada_a' => null]);
+        $this->logEvento($conv->id, 'reabierta');
+
+        return response()->json(['ok' => true, 'conv_id' => $conv->id, 'area' => $conv->area]);
+    }
+
+    /**
+     * Reabrir eligiendo otra línea (06/10): la conversación archivada queda
+     * como está y se sigue con el mismo contacto por el número del área
+     * elegida, tomada por quien la reabre. El historial no se copia: cada
+     * línea es un chat distinto en WhatsApp.
+     */
+    private function reabrirEnOtraLinea(ConversacionWA $conv, string $destino): JsonResponse
+    {
+        $areas        = ConversacionWA::areas();
+        $destinoLabel = $areas[$destino] ?? $destino;
+        $origenLabel  = $areas[$conv->area] ?? $conv->area;
+
+        if (str_ends_with($conv->contacto, '@g.us')) {
+            return response()->json(['ok' => false, 'error' => "Es un grupo de WhatsApp del número de {$origenLabel}: solo se puede reabrir por esa línea."], 422);
+        }
+
+        $existente = ConversacionWA::where('contacto', $conv->contacto)->where('area', $destino)->first();
+
+        // Si esa línea nunca habló con el contacto, que su WhatsApp lo ubique
+        // por el número antes de dejar la conversación lista para escribir.
+        if (!$existente) {
+            $telefono = $conv->telefono_wa
+                ?: (str_ends_with($conv->contacto, '@c.us') ? preg_replace('/\D/', '', $conv->contacto) : null);
+            if ($telefono) {
+                try {
+                    $check = Http::timeout(15)->withToken(config('app.bot_ingress_token'))
+                        ->post(ConversacionWA::botUrlPara($destino) . '/check-numero', ['numero' => $telefono]);
+                    if (!$check->ok() || !$check->json('ok')) {
+                        return response()->json(['ok' => false, 'error' => "No se pudo verificar el número con el WhatsApp de {$destinoLabel}. No se reabrió."], 502);
+                    }
+                    if (!$check->json('registered')) {
+                        return response()->json(['ok' => false, 'error' => "El WhatsApp de {$destinoLabel} no encuentra ese número. No se reabrió."], 422);
+                    }
+                } catch (\Throwable) {
+                    return response()->json(['ok' => false, 'error' => "El WhatsApp de {$destinoLabel} no responde. No se reabrió."], 502);
+                }
+            }
+        }
+
+        $dest = $existente ?: new ConversacionWA([
+            'contacto'    => $conv->contacto,
+            'area'        => $destino,
+            'nombre'      => $conv->nombre,
+            'telefono_wa' => $conv->telefono_wa,
+            'nombre_wa'   => $conv->nombre_wa,
+            'wa_info_at'  => $conv->wa_info_at,
+            'no_leidos'   => 0,
+        ]);
+        $dest->fill(['estado' => 'activa', 'asignada_a' => Auth::id(), 'ultima_actividad' => now()]);
+        $dest->save();
+
+        MensajeWA::create([
+            'conversacion_id' => $dest->id,
+            'direccion'       => 'nota_interna',
+            'tipo'            => 'texto',
+            'contenido'       => "Reabierta por la línea de {$destinoLabel}. La conversación anterior con este contacto está en {$origenLabel} (Historial).",
+            'usuario_id'      => Auth::id(),
+            'leido'           => true,
+        ]);
+        $this->logEvento($dest->id, 'reabierta');
+
+        return response()->json([
+            'ok'         => true,
+            'conv_id'    => $dest->id,
+            'area'       => $destino,
+            'area_label' => $destinoLabel,
+            'otra_linea' => true,
+        ]);
+    }
+
+    /**
+     * POST /atencion/enviar-contacto { conv_id, contacto_id } — comparte un
+     * contacto de la agenda como tarjeta, igual que "Contacto" en WhatsApp. El
+     * bot la manda por /enviar: whatsapp-web.js convierte en tarjeta cualquier
+     * texto que empiece con BEGIN:VCARD.
+     */
+    public function enviarContacto(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'conv_id'     => 'required|integer',
+            'contacto_id' => 'required|integer|exists:contactos,id',
+        ]);
+        $conv     = ConversacionWA::findOrFail($data['conv_id']);
+        $contacto = \App\Models\Contacto::findOrFail($data['contacto_id']);
+
+        if ($contacto->wa_id && str_ends_with($contacto->wa_id, '@g.us')) {
+            return response()->json(['ok' => false, 'error' => 'Un grupo no se puede compartir como contacto.'], 422);
+        }
+        $telefono = \App\Models\Contacto::normalizarTelefono((string) $contacto->telefono);
+        if (!$telefono) {
+            return response()->json(['ok' => false, 'error' => 'Ese contacto no tiene un teléfono válido para compartir.'], 422);
+        }
+        $nombre = trim(preg_replace('/\s+/', ' ', (string) $contacto->nombre)) ?: "+{$telefono}";
+        $nombreVcard = addcslashes($nombre, '\\;,');
+        $vcard = "BEGIN:VCARD\nVERSION:3.0\nN:;{$nombreVcard};;;\nFN:{$nombreVcard}\n"
+            . "TEL;type=CELL;type=VOICE;waid={$telefono}:+{$telefono}\nEND:VCARD";
+
+        try {
+            $resp = Http::timeout(15)->withToken(config('app.bot_ingress_token'))
+                ->post($conv->botUrl() . '/enviar', ['contacto' => $conv->contacto, 'texto' => $vcard]);
+            if (!$resp->ok() || $resp->json('ok') !== true) {
+                return response()->json(['ok' => false, 'error' => 'El bot no pudo enviar el contacto. Verificá que esté conectado a WhatsApp.'], 502);
+            }
+        } catch (\Throwable) {
+            return response()->json(['ok' => false, 'error' => 'No se pudo contactar al bot. Reintentá en unos segundos.'], 502);
+        }
+
+        MensajeWA::create([
+            'conversacion_id' => $conv->id,
+            'direccion'       => 'saliente',
+            'tipo'            => 'texto',
+            'contenido'       => "👤 Contacto compartido: {$nombre}\n+{$telefono}",
+            'wa_id'           => $resp->json('wa_id'),
+            'usuario_id'      => Auth::id(),
+            'leido'           => true,
+        ]);
+        $conv->update(['ultima_actividad' => now()]);
+
+        return response()->json(['ok' => true, 'nombre' => $nombre]);
     }
 
     public function historial(Request $request)
