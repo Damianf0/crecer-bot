@@ -974,7 +974,8 @@ Artisan::command('alerta:mail {asunto_b64} {cuerpo_b64}', function () {
  *   - calidad: en las últimas --horas-calidad, más de la mitad de los
  *     entrantes sin wa_id o más de un cuarto de los adjuntos sin archivo (en
  *     días sanos se pierden cero; el 28/09 se perdía el 44 % y con el umbral
- *     de la mitad no avisó).
+ *     de la mitad no avisó). Lo de adjuntos no avisa si los últimos 3 del
+ *     área se guardaron bien: la falla ya terminó.
  *
  * Exit 0 = bien · 1 = hay alertas (líneas que empiezan con "- "). Lo corre el
  * watchdog una vez por hora en horario de clínica y avisa por WhatsApp y mail.
@@ -1017,6 +1018,17 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
             SUM(m.tipo IN ($tipos)) media, SUM(m.tipo IN ($tipos) AND m.archivo_url IS NULL) media_sin_archivo")
         ->groupBy('c.area')->get()->keyBy('area');
 
+    // Los adjuntos de esa ventana, del más nuevo al más viejo: con la cuenta
+    // sola no se distingue una falla que sigue de una que ya pasó (el 05/10
+    // avisó a las 15 h por adjuntos perdidos antes de las 10:20, con todo lo
+    // posterior guardado).
+    $adjuntos = $entrantes()->where('m.created_at', '>=', $ahora->copy()->subHours($hCal))
+        ->whereRaw("m.tipo IN ($tipos)")
+        ->orderByDesc('m.id')
+        ->selectRaw('c.area, m.created_at, (m.archivo_url IS NULL) sin_archivo')
+        ->get()->groupBy('area');
+    $ultimosBien = 3;   // con los últimos N guardados, la falla se da por terminada
+
     $alertas = [];
     foreach (ConversacionWA::areas() as $area => $nombre) {
         $n   = (int) ($recientes[$area] ?? 0);
@@ -1038,8 +1050,18 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
                 . '(el bot no lee el id de los mensajes: sin él no se deduplican reintentos ni se puede citar).';
         }
         if ($q && $q->media >= 4 && $q->media_sin_archivo * 4 > $q->media) {
-            $alertas[] = "{$nombre}: {$q->media_sin_archivo} de {$q->media} adjuntos de las últimas {$hCal} h sin archivo "
-                . '(no se están guardando imágenes, audios ni documentos de pacientes).';
+            $lista       = $adjuntos[$area] ?? collect();
+            $hora        = fn ($f) => $f ? \Carbon\Carbon::parse($f->created_at)->format('H:i') : null;
+            $ultimaFalla = $hora($lista->firstWhere('sin_archivo', 1));
+            $ultimoBien  = $hora($lista->firstWhere('sin_archivo', 0));
+            if ($lista->take($ultimosBien)->where('sin_archivo', 1)->isEmpty()) {
+                $this->line("  ({$q->media_sin_archivo} adjuntos sin archivo, el último a las {$ultimaFalla}; los últimos {$ultimosBien} se guardaron bien: falla terminada, no se avisa)");
+            } else {
+                $alertas[] = "{$nombre}: {$q->media_sin_archivo} de {$q->media} adjuntos de las últimas {$hCal} h sin archivo "
+                    . "(última falla a las {$ultimaFalla}; "
+                    . ($ultimoBien ? "último guardado bien a las {$ultimoBien}" : 'ninguno guardado en ese lapso')
+                    . '). No se están guardando imágenes, audios ni documentos de pacientes.';
+            }
         }
     }
 
