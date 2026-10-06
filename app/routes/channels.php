@@ -11,7 +11,7 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 // Colas de WhatsApp: aviso de "cambió la conversación {id}" por área (evento
 // ConversacionWAActualizada). Mismo permiso que las rutas /atencion/*.
 Broadcast::channel('wa.area.{area}', function ($user, $area) {
-    return array_key_exists($area, \App\Models\ConversacionWA::areas()) && $user->hasPermiso('atencion');
+    return array_key_exists($area, \App\Models\ConversacionWA::areasPara($user)) && $user->hasPermiso('atencion');
 });
 
 // Recepción: aviso de "cambió la sala / los mensajes del bot" (evento

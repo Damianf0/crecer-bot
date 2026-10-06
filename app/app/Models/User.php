@@ -119,6 +119,8 @@ class User extends Authenticatable
         'historial'  => 'Ver historial',
         'admin'      => 'Administración (panel)',
         'medico'     => 'Panel médico',
+        // Área restringida (config/lineas.php): nadie la tiene por defecto.
+        'area_criopreservacion' => 'WhatsApp de Criopreservación (ver y atender)',
     ];
 
     // Devuelve los permisos efectivos: los guardados en DB, o los default del rol si nunca se configuraron

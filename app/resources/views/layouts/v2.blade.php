@@ -23,6 +23,7 @@
     $uid = auth()->id() ?? 0;
     $cnt = \App\Support\ContadoresNavbar::para($uid);
     [$misConv, $misTareasCnt, $pendByArea] = [$cnt['mis_conv'], $cnt['mis_tareas'], $cnt['por_area']];
+    $procByArea = $cnt['en_proceso'] ?? [];   // tomadas por alguien del equipo, por cola
     $areaActiva = $area ?? null;
     $navActiva  = $navActive ?? null;   // mis-conversaciones | tareas | historial | contactos
     $u = auth()->user();
@@ -55,10 +56,11 @@
             </a>
 
             <div class="v2-nav-sec">WhatsApp</div>
-            @foreach(\App\Models\ConversacionWA::areas() as $aKey => $aLabel)
+            @foreach(\App\Models\ConversacionWA::areasPara($u) as $aKey => $aLabel)
             <a class="v2-nav-item {{ $areaActiva === $aKey ? 'active' : '' }}" href="/v2/atencion/{{ $aKey }}">
                 <span class="ico">💬</span><span class="lbl">{{ $aLabel }}</span>
-                <span class="v2-nav-badge" data-contador="area:{{ $aKey }}" @if(($pendByArea[$aKey] ?? 0) === 0) hidden @endif>{{ $pendByArea[$aKey] ?? 0 }}</span>
+                <span class="v2-nav-proc" data-contador="proc:{{ $aKey }}" title="En proceso: conversaciones que ya tomó alguien del equipo" @if(($procByArea[$aKey] ?? 0) === 0) hidden @endif>{{ $procByArea[$aKey] ?? 0 }}</span>
+                <span class="v2-nav-badge" title="Sin tomar, con mensajes sin leer" data-contador="area:{{ $aKey }}" @if(($pendByArea[$aKey] ?? 0) === 0) hidden @endif>{{ $pendByArea[$aKey] ?? 0 }}</span>
             </a>
             @endforeach
             <a class="v2-nav-item {{ $navActiva === 'mis-conversaciones' ? 'active' : '' }}" href="/v2/mis-conversaciones">
@@ -199,6 +201,9 @@
             document.querySelectorAll('[data-contador^="area:"]').forEach(el => {
                 if (!(el.dataset.contador.slice(5) in (c.por_area || {}))) pintarContador(el.dataset.contador, 0);
             });
+            document.querySelectorAll('[data-contador^="proc:"]').forEach(el => {
+                pintarContador(el.dataset.contador, (c.en_proceso || {})[el.dataset.contador.slice(5)] || 0);
+            });
             pintarContador('mis_conv', c.mis_conv || 0);
             pintarContador('mis_tareas', c.mis_tareas || 0);
             window.Avisos?.pulso(d.avisos);
@@ -212,7 +217,7 @@
 // Números de WhatsApp desde los que se puede iniciar una conversación, y el que
 // se ofrece primero: la primera cola que la persona declaró al entrar (antes
 // Contactos salía siempre por Atención aunque la persona atendiera otra cola).
-window.V2_AREAS = @json(\App\Models\ConversacionWA::areas());
+window.V2_AREAS = @json(\App\Models\ConversacionWA::areasPara(auth()->user()));
 window.V2_AREA_DEFAULT = @json(\App\Models\ConversacionWA::areasDeLaSesion()[0] ?? 'atencion');
 window.v2OpcionesArea = (elegida) => Object.entries(window.V2_AREAS)
     .map(([k, l]) => `<option value="${k}" ${k === elegida ? 'selected' : ''}>WhatsApp de ${l}</option>`).join('');
@@ -232,7 +237,7 @@ window.v2toast = function (msg, tipo = 'ok') {
 <script>
 // Cualquier cambio en una cola (mensaje nuevo, tomada, resuelta…) refresca los
 // contadores del menú en ~1,5 s, sin esperar al pulso de 15 s.
-V2Tiempo.escuchar(@json(array_keys(\App\Models\ConversacionWA::areas())), () => window.v2PulsoPronto());
+V2Tiempo.escuchar(@json(array_keys(\App\Models\ConversacionWA::areasPara(auth()->user()))), () => window.v2PulsoPronto());
 </script>
 @endif
 @stack('scripts')

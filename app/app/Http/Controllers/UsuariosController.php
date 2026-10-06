@@ -62,7 +62,7 @@ class UsuariosController extends Controller
             'activo'          => 'sometimes|boolean',
             'password'        => 'sometimes|string|min:8',
             'permisos'        => 'sometimes|array',
-            'permisos.*'      => 'string|in:secretaria,atencion,contactos,agenda,historial,admin',
+            'permisos.*'      => 'string|in:secretaria,atencion,contactos,agenda,historial,admin,area_criopreservacion',
         ]);
 
         if (isset($data['password'])) {

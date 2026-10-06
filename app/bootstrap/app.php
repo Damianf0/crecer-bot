@@ -17,6 +17,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permiso' => \App\Http\Middleware\CheckPermiso::class,
         ]);
+        // Áreas de WhatsApp restringidas (config/lineas.php): en todas las rutas web.
+        $middleware->web(append: [\App\Http\Middleware\AccesoAreaWA::class]);
 
         // Trust proxies: necesario cuando el panel se sirve detrás de un túnel
         // (ngrok, cloudflared, etc). Sin esto, Laravel genera redirects a APP_URL

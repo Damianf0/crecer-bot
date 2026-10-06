@@ -431,7 +431,11 @@ class AtencionController extends Controller
                 'estado'     => 'en_atencion',
             ]);
         } else {
-            ConversacionWA::findOrFail($data['id'])->update(['asignada_a' => $data['user_id']]);
+            $conv = ConversacionWA::findOrFail($data['id']);
+            if (!ConversacionWA::puedeVer(User::find($data['user_id']), $conv->area)) {
+                return response()->json(['ok' => false, 'error' => 'Esa persona no tiene acceso a esta área.'], 422);
+            }
+            $conv->update(['asignada_a' => $data['user_id']]);
             $this->logEvento($data['id'], 'delegada', $data['user_id']);
         }
 
@@ -1196,7 +1200,9 @@ class AtencionController extends Controller
         }
 
         if ($tipo === 'wa' || $tipo === 'todos') {
-            $query = ConversacionWA::where('estado', 'archivada');
+            // Las de un área restringida solo las ve quien tiene ese permiso.
+            $query = ConversacionWA::where('estado', 'archivada')
+                ->whereIn('area', array_keys(ConversacionWA::areasPara(Auth::user())));
             if ($desde) $query->where('updated_at', '>=', $desde);
             if ($hasta) $query->where('updated_at', '<=', $hasta);
             if ($area !== 'todas') $query->where('area', $area);

@@ -34,6 +34,7 @@ class PulsoTest extends TestCase
         $r = $this->actingAs($u)->withSession(['colas' => ['atencion']])->getJson('/bot-pulso')->assertOk();
 
         $this->assertSame(['atencion' => 2], $r->json('contadores.por_area'));   // sin tomar y con no leídos
+        $this->assertSame(['atencion' => 1], $r->json('contadores.en_proceso')); // tomadas por alguien, por cola
         $this->assertSame(1, $r->json('contadores.mis_conv'));
         $this->assertSame('sin_respuesta', $r->json('estado'));                  // administración caído
         $this->assertSame('listo', $r->json('bots.atencion.estado'));

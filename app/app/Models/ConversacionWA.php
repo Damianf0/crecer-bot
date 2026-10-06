@@ -43,9 +43,37 @@ class ConversacionWA extends Model
      */
     public static function areas(): array
     {
-        return config('difusion.activa')
-            ? self::AREAS + [self::AREA_DIFUSION => 'Difusiones']
-            : self::AREAS;
+        $areas = self::AREAS;
+        foreach ((array) config('lineas.restringidas') as $clave => $l) {
+            if (!empty($l['activa'])) $areas[$clave] = $l['nombre'];
+        }
+        return config('difusion.activa') ? $areas + [self::AREA_DIFUSION => 'Difusiones'] : $areas;
+    }
+
+    /**
+     * Áreas restringidas activas (config/lineas.php): clave → permiso que hace
+     * falta para verlas y atenderlas. Para el resto del equipo no existen.
+     * @return array<string,string>
+     */
+    public static function areasRestringidas(): array
+    {
+        $out = [];
+        foreach ((array) config('lineas.restringidas') as $clave => $l) {
+            if (!empty($l['activa'])) $out[$clave] = $l['permiso'];
+        }
+        return $out;
+    }
+
+    public static function puedeVer(?User $user, ?string $area): bool
+    {
+        $permiso = self::areasRestringidas()[$area] ?? null;
+        return $permiso === null || ($user !== null && $user->hasPermiso($permiso));
+    }
+
+    /** Las áreas que esa persona puede ver: usar esto (no areas()) en todo lo que se le muestra. */
+    public static function areasPara(?User $user): array
+    {
+        return array_filter(self::areas(), fn ($clave) => self::puedeVer($user, $clave), ARRAY_FILTER_USE_KEY);
     }
 
     /**
@@ -89,8 +117,9 @@ class ConversacionWA extends Model
     public static function areasDeLaSesion(): array
     {
         $colas = (array) session('colas', []);
-        $sel = array_values(array_intersect($colas, array_keys(self::areas())));
-        return $sel ?: array_keys(self::areas());
+        $mias = array_keys(self::areasPara(auth()->user()));
+        $sel = array_values(array_intersect($colas, $mias));
+        return $sel ?: $mias;
     }
 
     /** Invalida el cache de la cola de /atencion (una clave por área). */

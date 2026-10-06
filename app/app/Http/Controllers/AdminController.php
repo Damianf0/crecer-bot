@@ -60,6 +60,10 @@ class AdminController extends Controller
             return $out;
         });
 
+        // Un área restringida solo cuenta para quien la ve: su bot sin vincular
+        // no tiene que mostrarle "Caído" al resto del equipo.
+        $bots = array_intersect_key($bots, \App\Models\ConversacionWA::areasPara(auth()->user()));
+
         // Estado general = el peor: caído > iniciando/esperando QR > listo.
         $caidos   = array_filter($bots, fn($b) => !in_array($b['estado'], ['listo', 'iniciando'], true) && !$b['has_qr']);
         $noListos = array_filter($bots, fn($b) => $b['estado'] !== 'listo');

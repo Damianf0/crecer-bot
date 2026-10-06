@@ -76,6 +76,7 @@ return [
     'bot_url_administracion' => env('BOT_URL_ADMINISTRACION', 'http://bot-administracion:3002'),
     'bot_url_ovodonacion'    => env('BOT_URL_OVODONACION',    'http://bot-ovodonacion:3003'),
     'bot_url_difusion'       => env('BOT_URL_DIFUSION',       'http://bot-difusion:3004'),
+    'bot_url_criopreservacion' => env('BOT_URL_CRIOPRESERVACION', 'http://bot-criopreservacion:3005'),
     'bot_ingress_token' => env('BOT_INGRESS_TOKEN', ''),
 
     // Broker del Quick Tunnel de Cloudflare (corre en la host).

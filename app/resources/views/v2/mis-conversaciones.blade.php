@@ -35,7 +35,7 @@
 @push('scripts')
 <script>
 const { esc, get, avatarHtml } = V2;
-const AREA_LBL = @json(\App\Models\ConversacionWA::areas());
+const AREA_LBL = @json(\App\Models\ConversacionWA::areasPara(auth()->user()));
 
 V2Conv.init({
     usuarios: @json($usuarios),
@@ -119,7 +119,7 @@ renderBandeja();
 const _ult = { cola: Date.now(), panel: Date.now() };
 const colaAhora  = async () => { _ult.cola = Date.now(); await fetchItems(); renderBandeja(); };
 const panelAhora = () => { _ult.panel = Date.now(); V2Conv.refrescar(); };
-V2Tiempo.escuchar(@json(array_keys(\App\Models\ConversacionWA::areas())), ids => {
+V2Tiempo.escuchar(@json(array_keys(\App\Models\ConversacionWA::areasPara(auth()->user()))), ids => {
     colaAhora();
     if (V2Conv.panelId && (ids.has(V2Conv.panelId) || ids.has(null))) panelAhora();
 });

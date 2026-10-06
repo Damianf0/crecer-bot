@@ -73,7 +73,7 @@
             <label class="v2-label" style="margin-top:0;">Área</label>
             <select name="area" class="v2-field" style="height:34px;min-width:130px;">
                 <option value="todas" {{ ($area ?? 'todas') === 'todas' ? 'selected' : '' }}>Todas</option>
-                @foreach(\App\Models\ConversacionWA::areas() as $k => $v)
+                @foreach(\App\Models\ConversacionWA::areasPara(auth()->user()) as $k => $v)
                     <option value="{{ $k }}" {{ ($area ?? 'todas') === $k ? 'selected' : '' }}>{{ $v }}</option>
                 @endforeach
             </select>

@@ -8,7 +8,9 @@
 // de mensajesApi no guardan nada en BD (no-op), así el shadow no ensucia la
 // prod. Ver project_migracion_baileys.md.
 // 'difusion': 4º número, envíos masivos; las respuestas van a su propia cola.
-const AREAS_VALIDAS = ['atencion', 'administracion', 'ovodonacion', 'difusion', 'test'];
+// 'criopreservacion': 5º número (consultorio externo); misma conducta que las
+// tres áreas, pero en el panel solo lo ve quien tiene el permiso (app/config/lineas.php).
+const AREAS_VALIDAS = ['atencion', 'administracion', 'ovodonacion', 'difusion', 'criopreservacion', 'test'];
 
 const raw = (process.env.BOT_AREA || 'atencion').trim().toLowerCase();
 const BOT_AREA = AREAS_VALIDAS.includes(raw) ? raw : 'atencion';

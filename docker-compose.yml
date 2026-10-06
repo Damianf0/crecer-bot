@@ -263,6 +263,39 @@ services:
     networks:
       - clinica-net
 
+  # 5º número: Criopreservación, consultorio externo (06/10). Misma conducta que
+  # las tres áreas; en el panel es un área restringida (app/config/lineas.php:
+  # solo la ve quien tiene el permiso). Fuera del `up -d` normal:
+  #   docker compose --profile criopreservacion up -d bot-criopreservacion
+  #   QR en /v2/admin → Bots, o http://127.0.0.1:3005/qr?token=<BOT_INGRESS_TOKEN>
+  # y en app/.env: CRIOPRESERVACION_ACTIVA=true.
+  bot-criopreservacion:
+    build: ./docker/node-chrome
+    restart: unless-stopped
+    profiles: ["criopreservacion"]
+    volumes:
+      - ./bot:/app
+      - wa-session-criopreservacion:/app/.wwebjs_auth
+    ports:
+      - "3005:3005"
+    depends_on:
+      - web
+    environment:
+      - TZ=America/Argentina/Buenos_Aires
+      - BOT_AREA=criopreservacion
+      - PORT=3005
+      - BOT_PUBLIC_URL=http://192.168.1.115:3005
+    labels:
+      - autoheal=true
+    healthcheck:
+      test: ["CMD-SHELL", "sh /app/healthcheck.sh"]
+      interval: 30s
+      timeout: 12s
+      retries: 4
+      start_period: 300s
+    networks:
+      - clinica-net
+
   # Shadow de Baileys v7 (21/09): se vincula como un dispositivo MÁS del número
   # de administración, sin desvincular wwebjs. BOT_AREA=test → no escribe en la
   # BD ni deriva ni llama a Ollama; /enviar sí manda de verdad (es la prueba).
@@ -364,6 +397,7 @@ volumes:
   wa-session-administracion:   # sesión WhatsApp del bot de ADMINISTRACIÓN (wwebjs)
   wa-session-ovodonacion:      # sesión WhatsApp del bot de OVODONACIÓN (wwebjs)
   wa-session-difusion:         # sesión WhatsApp del bot de DIFUSIONES (wwebjs)
+  wa-session-criopreservacion: # sesión del número de Criopreservación (bot-criopreservacion)
   wa-baileys-test:             # sesión Baileys v7 del shadow (bot-baileys-test)
 
 networks:
