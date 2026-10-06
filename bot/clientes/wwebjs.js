@@ -242,7 +242,30 @@ function normalizarTipo(t) {
   if (t === 'video')              return 'video';
   if (t === 'document')           return 'documento';
   if (t === 'sticker')            return 'sticker';
+  // Tarjetas de contacto: entran como texto ("👤 Contacto: nombre + número",
+  // ver textoDeContactos). Antes se descartaban en silencio.
+  if (t === 'vcard' || t === 'multi_vcard') return 'texto';
   return null; // tipos no soportados
+}
+
+const esTarjetaContacto = (msg) => msg.type === 'vcard' || msg.type === 'multi_vcard';
+
+// Texto legible de una o varias tarjetas de contacto (vCard): nombre y
+// teléfonos, con el mismo encabezado que usa el panel cuando comparte uno.
+function textoDeContactos(msg) {
+  const tarjetas = Array.isArray(msg.vCards) && msg.vCards.length ? msg.vCards : [msg.body || ''];
+  const partes = tarjetas.map((v) => {
+    const lineas = String(v).split(/\r?\n/);
+    const fn = lineas.find((l) => /^FN[;:]/i.test(l));
+    const nombre = fn ? fn.slice(fn.indexOf(':') + 1).replace(/\\([;,\\])/g, '$1').trim() : '';
+    const tels = lineas.filter((l) => /^(item\d+\.)?TEL[;:]/i.test(l)).map((l) => {
+      const waid = l.match(/waid=(\d+)/i);
+      if (waid) return `+${waid[1]}`;
+      return l.slice(l.lastIndexOf(':') + 1).trim();
+    }).filter(Boolean);
+    return [nombre || '(sin nombre)', ...new Set(tels)].join('\n');
+  });
+  return `👤 Contacto${partes.length > 1 ? 's' : ''}: ${partes.join('\n\n')}`.slice(0, 2000);
 }
 
 function crearClienteWwebjs() {
@@ -490,7 +513,7 @@ function crearClienteWwebjs() {
       ]);
       if (!quoted) return null;
       const tipoQ = normalizarTipo(quoted.type) || 'texto';
-      let preview = quoted.body || '';
+      let preview = esTarjetaContacto(quoted) ? textoDeContactos(quoted) : (quoted.body || '');
       if (!preview) {
         if (tipoQ === 'audio')     preview = '🎤 Audio';
         else if (tipoQ === 'imagen')   preview = '🖼️ Imagen';
@@ -554,8 +577,9 @@ function crearClienteWwebjs() {
     if (!tipo) return null;
     const waId = completarIdSerializado(msg.id);   // antes que quoted y downloadMedia
     let body = null;
-    if (tipo === 'texto')   body = msg.body || null;
-    else                    body = msg.body || null; // caption (imagen/video/doc) o null
+    if (esTarjetaContacto(msg)) body = textoDeContactos(msg);
+    else if (tipo === 'texto')  body = msg.body || null;
+    else                        body = msg.body || null; // caption (imagen/video/doc) o null
     const quoted = await extraerQuoted(msg);
     return {
       from: msg.from,
