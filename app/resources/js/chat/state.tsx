@@ -438,9 +438,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     );
 
     // Refs estables para evitar resubscripciones cuando cambia un closure.
-    const canalActivoRef = useRef(state.canalActivo);
-    const yoRef          = useRef(state.yo);
+    const canalActivoRef  = useRef(state.canalActivo);
+    const panelAbiertoRef = useRef(state.panelAbierto);
+    const yoRef           = useRef(state.yo);
     useEffect(() => { canalActivoRef.current = state.canalActivo; }, [state.canalActivo]);
+    useEffect(() => { panelAbiertoRef.current = state.panelAbierto; }, [state.panelAbierto]);
     useEffect(() => { yoRef.current = state.yo; }, [state.yo]);
 
     useEffect(() => {
@@ -454,14 +456,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 // del lado server, pero por las dudas filtramos por user_id).
                 if (yoRef.current && ev.mensaje.user_id === yoRef.current.id) return;
 
-                if (canalActivoRef.current === ev.canal_id) {
-                    // Canal abierto: append directo + marcar leído.
-                    dispatch({ type: 'APPEND_MENSAJE', mensaje: ev.mensaje });
+                // El canal queda seleccionado aunque se cierre el panel: sin
+                // mirar si el panel está abierto, lo que llegaba a ese chat
+                // se marcaba leído en silencio, sin aviso ni contador (06/10).
+                const seleccionado = canalActivoRef.current === ev.canal_id;
+                if (seleccionado) dispatch({ type: 'APPEND_MENSAJE', mensaje: ev.mensaje });
+
+                if (seleccionado && panelAbiertoRef.current) {
+                    // Lo está viendo: marcar leído. Con la pestaña oculta igual avisa.
                     void ChatApi.marcarLeido(ev.canal_id);
+                    if (document.hidden) notificarMensajeEntrante(ev);
                 } else {
-                    // Canal no abierto: incrementar badge.
                     dispatch({ type: 'INCR_NO_LEIDOS', canalId: ev.canal_id });
-                    // Notificación browser si la pestaña no está enfocada y hay permiso.
                     notificarMensajeEntrante(ev);
                 }
             });
@@ -481,6 +487,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             for (const id of subs) echo.leave(`chat.canal.${id}`);
         };
     }, [canalIdsKey]);
+
+    // Al reabrir el panel con un chat seleccionado, lo que llegó mientras
+    // estaba cerrado pasa a leído.
+    useEffect(() => {
+        const canalId = state.canalActivo;
+        if (!state.panelAbierto || !canalId) return;
+        if (!state.canales.some(c => c.id === canalId && c.no_leidos > 0)) return;
+        dispatch({ type: 'MARCAR_CANAL_LEIDO', canalId });
+        void ChatApi.marcarLeido(canalId);
+    }, [state.panelAbierto, state.canalActivo, state.canales]);
 
     const value = useMemo<ChatContextValue>(() => ({
         state,
