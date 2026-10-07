@@ -12,7 +12,7 @@ use function Illuminate\Support\defer;
 
 class Tablet extends Component
 {
-    public string $paso = 'inicio';   // inicio | turno | sin_turno | confirmado | acercarse
+    public string $paso = 'inicio';   // inicio | turno | sin_turno | sin_registro | confirmado | acercarse
 
     public string $dni = '';
     public string $error = '';
@@ -21,7 +21,8 @@ class Tablet extends Component
     public array  $turnos = [];
     public ?array $turnoSeleccionado = null;
 
-    public string $motivo = '';       // turnos | recetas | muestras
+    public string $motivo = '';       // turnos | recetas | muestras (sin registro, además: turno | consulta)
+    public bool   $avisado = false;   // sin registro: ya dijo por qué viene y recepción lo ve en la sala
     public string $motivoDescripcion = '';
 
     public string $planta = '';
@@ -61,7 +62,9 @@ class Tablet extends Component
                 $this->paso = 'sin_turno';
                 return;
             }
-            $this->paso = 'acercarse';
+            // No figura con ese DNI: igual puede decir por qué viene, así
+            // recepción lo ve llegar antes de que se acerque al mostrador.
+            $this->paso = 'sin_registro';
             return;
         }
 
@@ -186,6 +189,44 @@ class Tablet extends Component
         $this->dispatch('iniciarReset', segundos: $this->resetSegundos, componentId: $this->getId());
     }
 
+    /** Motivos que puede elegir quien no figura con su DNI (clave → cómo lo ve recepción). */
+    public const MOTIVOS_SIN_REGISTRO = [
+        'turno'    => 'Dice que tiene turno hoy',
+        'turnos'   => 'Pedir un turno',
+        'recetas'  => 'Recetas',
+        'muestras' => 'Muestras',
+        'consulta' => 'Consulta / información',
+    ];
+
+    /**
+     * El DNI no está en Omnia ni en contactos (primera vez, un acompañante, un
+     * DNI mal cargado): queda anotado en la sala con el motivo que eligió y se
+     * le pide que se acerque al mostrador, donde le toman los datos. Antes el
+     * tablet solo decía "acercate al mostrador" y recepción no se enteraba.
+     */
+    public function confirmarSinRegistro(?string $motivo = null): void
+    {
+        if (strlen($this->dni) < 7 || !isset(self::MOTIVOS_SIN_REGISTRO[(string) $motivo])) return;
+        $this->motivo = $motivo;
+
+        ColaAtencion::create([
+            'dni'          => $this->dni,
+            'nombre'       => 'DNI ' . $this->dni,
+            'apellido'     => '',
+            'motivo'       => $motivo,
+            'primera_vez'  => false,
+            'sin_turno'    => true,
+            'checklist'    => ChecklistRecepcion::para(null, null),
+            'nota'         => 'No figura en Omnia con ese DNI: pedirle los datos. ' . self::MOTIVOS_SIN_REGISTRO[$motivo] . '.',
+            'hora_llegada' => now(),
+            'orden'        => ColaAtencion::max('orden') + 1,
+        ]);
+
+        $this->avisado = true;
+        $this->paso = 'acercarse';
+        $this->dispatch('iniciarReset', segundos: $this->resetSegundos, componentId: $this->getId());
+    }
+
     public function agregarDigito(string $d): void
     {
         if (strlen($this->dni) < 8) $this->dni .= $d;
@@ -206,6 +247,7 @@ class Tablet extends Component
         $this->turnoSeleccionado = null;
         $this->motivo = '';
         $this->motivoDescripcion = '';
+        $this->avisado = false;
         $this->planta = '';
     }
 

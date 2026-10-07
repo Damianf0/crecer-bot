@@ -137,6 +137,7 @@
     <input class="v2-field" id="mo-os" maxlength="150">
     <label class="v2-label">Motivo *</label>
     <select class="v2-field" id="mo-motivo">
+        <option value="">— ¿Por qué viene? —</option>
         @foreach($motivosMostrador as $k => $v)<option value="{{ $k }}">{{ $v }}</option>@endforeach
     </select>
     <label class="v2-label">Nota</label>
@@ -185,14 +186,15 @@ function recTab(t) {
 }
 
 // ════════════════════ ATENCIÓN EN MOSTRADOR ════════════════════
-let MO = { paciente: null, turnos: [], turno: null, vuelveDe: null };
+// buscado: el DNI que ya se consultó en Omnia · turnoElegido: ya contestó si viene por un turno de hoy.
+let MO = { paciente: null, turnos: [], turno: null, vuelveDe: null, buscado: null, turnoElegido: false };
 let EN_CLINICA = [];
 
 // prefill: un paciente de "En la clínica" que volvió al mostrador (no se anota de nuevo).
 function abrirMostrador(prefill = null) {
-    MO = { paciente: null, turnos: [], turno: null, vuelveDe: prefill?.id || null };
+    MO = { paciente: null, turnos: [], turno: null, vuelveDe: prefill?.id || null, buscado: null, turnoElegido: false };
     ['mo-dni', 'mo-nombre', 'mo-apellido', 'mo-os', 'mo-nota'].forEach(i => $(i).value = '');
-    $('mo-motivo').value = prefill ? 'regreso' : 'consulta';
+    $('mo-motivo').value = prefill ? 'regreso' : '';   // sin valor por defecto: hay que preguntarle por qué viene
     $('mo-encontrado').innerHTML = prefill ? `<span style="color:var(--v2-ok);">Vuelve del consultorio${prefill.profesional ? ' (' + esc(prefill.profesional) + ')' : ''}</span>` : '';
     $('mo-turnos').innerHTML = '';
     if (prefill) {
@@ -242,7 +244,7 @@ async function buscarMostrador() {
     const j = await call('/v2/recepcion/mostrador/buscar?dni=' + dni);
     $('mo-buscar').disabled = false;
     if (!j.ok) { $('mo-encontrado').textContent = j._err || 'No se pudo buscar'; return; }
-    MO.paciente = j.paciente; MO.turnos = j.turnos || []; MO.turno = null;
+    MO.paciente = j.paciente; MO.turnos = j.turnos || []; MO.turno = null; MO.buscado = dni; MO.turnoElegido = false;
     if (!j.paciente) {
         $('mo-encontrado').innerHTML = '<span style="color:var(--v2-warn);">No está en Omnia ni en contactos: cargá el nombre a mano.</span>';
         $('mo-turnos').innerHTML = '';
@@ -254,10 +256,10 @@ async function buscarMostrador() {
     $('mo-os').value = j.paciente.obra_social || '';
     $('mo-encontrado').innerHTML = `<span style="color:var(--v2-ok);">✓ ${j.origen === 'omnia' ? 'Encontrado en Omnia' : 'Encontrado en contactos'}</span>`;
     if (MO.turnos.length) {
-        $('mo-turnos').innerHTML = '<label class="v2-label">Turno de hoy</label>' + MO.turnos.map((t, i) =>
+        $('mo-turnos').innerHTML = '<label class="v2-label">Tiene turno hoy: ¿viene por ese turno? *</label>' + MO.turnos.map((t, i) =>
             `<label style="display:flex;gap:6px;align-items:center;font-size:13px;margin:3px 0;"><input type="radio" name="mo-turno" value="${i}" onchange="elegirTurnoMostrador(${i})">
              <b>${esc(t.hora || '')}</b> ${esc(t.practica || '')} <span style="color:var(--v2-text-mute);">${esc(t.profesional || '')}</span></label>`).join('')
-            + `<label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--v2-text-mute);margin:3px 0;"><input type="radio" name="mo-turno" value="" checked onchange="elegirTurnoMostrador(null)"> No viene por un turno de hoy</label>`;
+            + `<label style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--v2-text-mute);margin:3px 0;"><input type="radio" name="mo-turno" value="" onchange="elegirTurnoMostrador(null)"> No viene por un turno de hoy</label>`;
     } else {
         $('mo-turnos').innerHTML = '<div style="font-size:12px;color:var(--v2-text-mute);margin-top:4px;">Sin turnos para hoy.</div>';
     }
@@ -265,16 +267,28 @@ async function buscarMostrador() {
 
 function elegirTurnoMostrador(i) {
     MO.turno = i === null ? null : MO.turnos[i];
+    MO.turnoElegido = true;
     if (MO.turno) $('mo-motivo').value = 'turno';
+    else if ($('mo-motivo').value === 'turno') $('mo-motivo').value = '';
 }
 
 async function guardarMostrador(accion) {
-    const nombre = $('mo-nombre').value.trim();
-    if (!nombre) { v2toast('Falta el nombre', 'err'); return; }
+    // Con DNI cargado, primero se mira en Omnia si tiene turno hoy (aunque no hayan tocado Buscar).
+    const dni = $('mo-dni').value.replace(/\D/g, '');
+    if (!MO.vuelveDe && dni.length >= 7 && MO.buscado !== dni) {
+        await buscarMostrador();
+        if (MO.buscado === dni && (MO.turnos.length || !$('mo-motivo').value)) {
+            v2toast(MO.turnos.length ? 'Tiene turno hoy: indicá si viene por ese turno' : 'Indicá por qué viene', 'err');
+            return;
+        }
+    }
+    if (!$('mo-nombre').value.trim()) { v2toast('Falta el nombre', 'err'); return; }
+    if (MO.turnos.length && !MO.turnoElegido) { v2toast('Tiene turno hoy: indicá si viene por ese turno', 'err'); return; }
+    if (!$('mo-motivo').value) { v2toast('Indicá por qué viene', 'err'); $('mo-motivo').focus(); return; }
     const j = await postJSON('/v2/recepcion/mostrador', {
         accion,
         dni: $('mo-dni').value,
-        nombre, apellido: $('mo-apellido').value.trim(),
+        nombre: $('mo-nombre').value.trim(), apellido: $('mo-apellido').value.trim(),
         obra_social: $('mo-os').value.trim() || null,
         plan: MO.paciente?.plan || null,
         financiador: MO.paciente?.financiador || null,

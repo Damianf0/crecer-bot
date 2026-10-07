@@ -58,4 +58,29 @@ class TabletCheckinTest extends TestCase
         $this->assertSame('Osde Binario', $fila->financiador);
         $this->assertNotEmpty($fila->checklist);
     }
+
+    public function test_dni_que_no_figura_elige_motivo_y_queda_anotado_para_recepcion(): void
+    {
+        $omnia = Mockery::mock(OmniaService::class);
+        $omnia->shouldReceive('buscarPaciente')->with('99888777')->andReturn(null);
+        $this->app->instance(OmniaService::class, $omnia);
+
+        $t = Livewire::test(Tablet::class)->call('buscarDni', '99.888.777')->assertSet('paso', 'sin_registro');
+        $this->assertSame(0, ColaAtencion::count());            // todavía no eligió: no se anota nada
+
+        $t->call('confirmarSinRegistro', 'inventado')->assertSet('paso', 'sin_registro');
+        $this->assertSame(0, ColaAtencion::count());
+
+        $t->call('confirmarSinRegistro', 'recetas')->assertSet('paso', 'acercarse')->assertSet('avisado', true)
+            ->assertSee('Ya avisamos por qué venís');
+
+        $fila = ColaAtencion::sole();
+        $this->assertSame('99888777', $fila->dni);
+        $this->assertSame('DNI 99888777', $fila->nombre);
+        $this->assertSame('recetas', $fila->motivo);
+        $this->assertTrue((bool) $fila->sin_turno);
+        $this->assertStringContainsString('No figura en Omnia', $fila->nota);
+
+        $t->call('reset2')->assertSet('paso', 'inicio')->assertSet('avisado', false);
+    }
 }

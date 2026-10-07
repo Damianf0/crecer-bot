@@ -104,6 +104,35 @@
 </div>
 @endif
 
+{{-- ── PASO: sin_registro ────────────────────────────────── --}}
+{{-- El DNI no figura: igual elige por qué viene (lo ve recepción) y pasa al mostrador. --}}
+@if ($paso === 'sin_registro')
+<div class="two-col" x-data="{ motivo: '', confirmando: false }" wire:key="paso-sin-registro">
+    <div class="col-left">
+        <p class="step-title">No encontramos tu DNI</p>
+        <p class="step-sub">No te preocupes: contanos por qué venís<br>y te atendemos en el mostrador.</p>
+    </div>
+    <div class="col-right">
+        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'turno' }"
+                @click="motivo = 'turno'">🕑 Tengo turno hoy</button>
+        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'turnos' }"
+                @click="motivo = 'turnos'">📅 Pedir un turno</button>
+        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'recetas' }"
+                @click="motivo = 'recetas'">📋 Recetas</button>
+        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'muestras' }"
+                @click="motivo = 'muestras'">🧪 Muestras</button>
+        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'consulta' }"
+                @click="motivo = 'consulta'">💬 Otra consulta</button>
+        <button type="button" class="btn btn-primary"
+            @click="confirmando = true; $wire.confirmarSinRegistro(motivo)"
+            :disabled="!motivo || confirmando"
+            x-text="confirmando ? 'Confirmando…' : 'Confirmar →'">
+        </button>
+        <button type="button" class="btn btn-secondary" wire:click="reset2">Volver</button>
+    </div>
+</div>
+@endif
+
 {{-- ── PASO: confirmado ──────────────────────────────────── --}}
 @if ($paso === 'confirmado')
 <div class="full-step">
@@ -122,8 +151,13 @@
 <div class="full-step">
     <div style="font-size:56px;margin-bottom:16px;">👋</div>
     <p class="step-title">Acercate al mostrador</p>
-    <p class="step-sub">No encontramos tu DNI en el sistema.<br>Una de nuestras secretarias te va a ayudar.</p>
-    <button class="btn btn-secondary" style="max-width:260px;margin-top:24px;" wire:click="reset2">Volver al inicio</button>
+    @if ($avisado)
+        <p class="step-sub">Ya avisamos por qué venís.<br>Una de nuestras secretarias te va a pedir tus datos.</p>
+        <p class="countdown" id="countdown">Volviendo al inicio en 15s...</p>
+    @else
+        <p class="step-sub">No encontramos tu DNI en el sistema.<br>Una de nuestras secretarias te va a ayudar.</p>
+        <button class="btn btn-secondary" style="max-width:260px;margin-top:24px;" wire:click="reset2">Volver al inicio</button>
+    @endif
 </div>
 @endif
 
