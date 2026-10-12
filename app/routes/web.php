@@ -108,17 +108,14 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::get('/no-leidos',                     [ChatController::class, 'noLeidos']);
     });
 
-    // Checklist de recepción: requisitos y reglas por obra social / práctica.
+    // Checklist de recepción: una lista de pasos por obra social (y la General).
     // Lo gestionan supervisora y admin (permiso 'admin').
     Route::middleware('permiso:admin')->group(function () {
         $rr = \App\Http\Controllers\RecepcionReglasController::class;
         Route::get('/v2/recepcion/reglas',                         [$rr, 'index']);
         Route::get('/v2/recepcion/reglas/data',                    [$rr, 'data']);
-        Route::get('/v2/recepcion/reglas/probar',                  [$rr, 'probar']);
-        Route::post('/v2/recepcion/reglas/requisito',              [$rr, 'guardarRequisito']);
-        Route::post('/v2/recepcion/reglas/requisito/{id}/borrar',  [$rr, 'borrarRequisito'])->whereNumber('id');
-        Route::post('/v2/recepcion/reglas/regla',                  [$rr, 'guardarRegla']);
-        Route::post('/v2/recepcion/reglas/regla/{id}/borrar',      [$rr, 'borrarRegla'])->whereNumber('id');
+        Route::post('/v2/recepcion/reglas/checklist',              [$rr, 'guardarChecklist']);
+        Route::post('/v2/recepcion/reglas/checklist/{id}/borrar',  [$rr, 'borrarChecklist'])->whereNumber('id');
     });
 
     // Cola de recepción
