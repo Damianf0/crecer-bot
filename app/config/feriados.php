@@ -15,7 +15,6 @@ return [
         // 2026
         '2026-10-12',   // Diversidad Cultural
         '2026-11-23',   // Soberanía Nacional (20/11 trasladado)
-        '2026-12-07',   // puente turístico
         '2026-12-08',   // Inmaculada Concepción
         '2026-12-25',   // Navidad
 
