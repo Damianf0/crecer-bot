@@ -970,7 +970,9 @@ Artisan::command('alerta:mail {asunto_b64} {cuerpo_b64}', function () {
  *   - silencio: 0 entrantes en las últimas --horas, con el tramo entero dentro
  *     de lunes a viernes 08:30-18:30, cuando la mediana del mismo tramo en los
  *     días hábiles de las últimas 4 semanas (sin contar días en cero, que son
- *     caídas o feriados) es de al menos --minimo.
+ *     caídas) es de al menos --minimo. Los feriados de config/feriados.php
+ *     cuentan como un fin de semana: ni se mide el silencio ni entran en la
+ *     mediana.
  *   - calidad: en las últimas --horas-calidad, más de la mitad de los
  *     entrantes sin wa_id o más de un cuarto de los adjuntos sin archivo (en
  *     días sanos se pierden cero; el 28/09 se perdía el 44 % y con el umbral
@@ -993,7 +995,9 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
         ->join('conversaciones_wa as c', 'c.id', '=', 'm.conversacion_id')
         ->where('m.direccion', 'entrante');
 
-    $enHorario = $ahora->isWeekday() && $desde->isSameDay($ahora)
+    $feriados  = config('feriados.fechas', []);
+    $esFeriado = in_array($ahora->toDateString(), $feriados, true);
+    $enHorario = $ahora->isWeekday() && !$esFeriado && $desde->isSameDay($ahora)
         && $desde->format('H:i') >= '08:30' && $ahora->format('H:i') <= '18:30';
 
     $recientes = $entrantes()->where('m.created_at', '>=', $desde)
@@ -1009,7 +1013,7 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
                 [$desde->format('H:i:s'), $ahora->format('H:i:s')])
             ->groupBy('c.area', 'dia')->get();
         foreach ($filas as $f) {
-            if ($f->total > 0 && \Carbon\Carbon::parse($f->dia)->isWeekday()) $base[$f->area][] = (int) $f->tramo;
+            if ($f->total > 0 && \Carbon\Carbon::parse($f->dia)->isWeekday() && !in_array($f->dia, $feriados, true)) $base[$f->area][] = (int) $f->tramo;
         }
     }
 
@@ -1066,7 +1070,7 @@ Artisan::command('salud:ingesta {--horas=2} {--horas-calidad=6} {--minimo=6}', f
     }
 
     if (!$alertas) {
-        $this->info('Ingesta OK' . ($enHorario ? '' : ' (fuera de horario: solo se mide la calidad)'));
+        $this->info('Ingesta OK' . ($enHorario ? '' : ($esFeriado ? ' (feriado' : ' (fuera de horario') . ': solo se mide la calidad)'));
         return 0;
     }
     $this->newLine();

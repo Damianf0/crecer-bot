@@ -69,4 +69,37 @@ class SaludIngestaTest extends TestCase
             ->expectsOutputToContain('última falla a las 14:00')
             ->assertExitCode(1);
     }
+
+    /** Días hábiles previos con mensajes en el tramo 12:00-14:00: lo normal son 8. */
+    private function baseDeDiasHabiles(): void
+    {
+        foreach (['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09'] as $dia) {
+            for ($i = 0; $i < 8; $i++) {
+                DB::table('mensajes_wa')->insert([
+                    'conversacion_id' => $this->conv->id, 'direccion' => 'entrante', 'tipo' => 'texto', 'leido' => true,
+                    'wa_id' => 'false_111@lid_' . uniqid(), 'created_at' => "{$dia} 13:0{$i}:00", 'updated_at' => "{$dia} 13:0{$i}:00",
+                ]);
+            }
+        }
+    }
+
+    public function test_avisa_el_silencio_de_un_dia_habil(): void
+    {
+        $this->baseDeDiasHabiles();
+        Carbon::setTestNow('2026-10-13 14:00:00');   // martes
+
+        $this->artisan('salud:ingesta')
+            ->expectsOutputToContain('ningún mensaje entrante en las últimas 2 h')
+            ->assertExitCode(1);
+    }
+
+    public function test_no_avisa_el_silencio_de_un_feriado(): void
+    {
+        $this->baseDeDiasHabiles();
+        Carbon::setTestNow('2026-10-12 14:00:00');   // lunes feriado
+
+        $this->artisan('salud:ingesta')
+            ->expectsOutputToContain('feriado: solo se mide la calidad')
+            ->assertExitCode(0);
+    }
 }
