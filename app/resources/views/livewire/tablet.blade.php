@@ -35,8 +35,8 @@
 
 {{-- ── PASO: turno ───────────────────────────────────────── --}}
 @if ($paso === 'turno')
-<div class="two-col">
-    <div class="col-left">
+<div class="step">
+    <div class="step-main">
         @if ($paciente['primera_vez'] ?? false)
             <div class="primera-vez-badge">⭐ Primera consulta</div>
         @endif
@@ -48,14 +48,14 @@
         </p>
 
         @if (count($turnos) === 1)
-            <p class="step-sub" style="margin-bottom:12px;">Tu turno de hoy:</p>
+            <p class="step-sub" style="margin-bottom:1.4vh;">Tu turno de hoy:</p>
             <div class="turno-card selected">
                 <div class="turno-hora">{{ $turnos[0]['hora'] }}</div>
                 <div class="turno-practica">{{ $turnos[0]['practica'] }}</div>
                 <div class="turno-profesional">{{ $turnos[0]['profesional'] }}</div>
             </div>
         @else
-            <p class="step-sub" style="margin-bottom:12px;">Tenés {{ count($turnos) }} turnos hoy. ¿Para cuál venís?</p>
+            <p class="step-sub" style="margin-bottom:1.4vh;">Tenés {{ count($turnos) }} turnos hoy. ¿Para cuál venís?</p>
             @foreach ($turnos as $i => $t)
                 <div class="turno-card {{ $turnoSeleccionado && $turnoSeleccionado['id'] === $t['id'] ? 'selected' : '' }}"
                      wire:click="seleccionarTurno({{ $i }})">
@@ -66,13 +66,13 @@
             @endforeach
         @endif
     </div>
-    <div class="col-right">
+    <div class="step-actions">
+        <button class="btn btn-secondary" wire:click="reset2">← Volver</button>
         <button class="btn btn-primary"
             wire:click="confirmarLlegada"
             {{ count($turnos) > 1 && !$turnoSeleccionado ? 'disabled' : '' }}>
             Confirmar llegada →
         </button>
-        <button class="btn btn-secondary" wire:click="reset2">Volver</button>
     </div>
 </div>
 @endif
@@ -80,26 +80,30 @@
 {{-- ── PASO: sin_turno ───────────────────────────────────── --}}
 {{-- Selección de motivo en Alpine: feedback visual instantáneo, 1 solo POST al confirmar. --}}
 @if ($paso === 'sin_turno')
-<div class="two-col" x-data="{ motivo: '', confirmando: false }" wire:key="paso-sin-turno">
-    <div class="col-left">
+<div class="step" x-data="{ motivo: '', confirmando: false }" wire:key="paso-sin-turno">
+    <div>
         <p class="paciente-nombre">
             {{ $paciente['apellido'] ? $paciente['apellido'].', '.$paciente['nombre'] : $paciente['nombre'] }}
         </p>
-        <p class="step-sub">Hoy no tenés turnos agendados.<br>Contanos en qué te podemos ayudar:</p>
+        <p class="step-sub" style="margin-bottom:0;">Hoy no tenés turnos agendados. Contanos en qué te podemos ayudar:</p>
     </div>
-    <div class="col-right">
-        <button type="button" class="motivo-btn" :class="{ selected: motivo === 'turnos' }"
-                @click="motivo = 'turnos'">📅 Turnos</button>
-        <button type="button" class="motivo-btn" :class="{ selected: motivo === 'recetas' }"
-                @click="motivo = 'recetas'">📋 Recetas</button>
-        <button type="button" class="motivo-btn" :class="{ selected: motivo === 'muestras' }"
-                @click="motivo = 'muestras'">🧪 Muestras</button>
+    <div class="step-main">
+        <div class="opciones">
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'turnos' }"
+                    @click="motivo = 'turnos'">📅 Turnos</button>
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'recetas' }"
+                    @click="motivo = 'recetas'">📋 Recetas</button>
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'muestras' }"
+                    @click="motivo = 'muestras'">🧪 Muestras</button>
+        </div>
+    </div>
+    <div class="step-actions">
+        <button type="button" class="btn btn-secondary" wire:click="reset2">← Volver</button>
         <button type="button" class="btn btn-primary"
             @click="confirmando = true; $wire.confirmarSinTurno(motivo)"
             :disabled="!motivo || confirmando"
             x-text="confirmando ? 'Confirmando…' : 'Confirmar →'">
         </button>
-        <button type="button" class="btn btn-secondary" wire:click="reset2">Volver</button>
     </div>
 </div>
 @endif
@@ -107,28 +111,32 @@
 {{-- ── PASO: sin_registro ────────────────────────────────── --}}
 {{-- El DNI no figura: igual elige por qué viene (lo ve recepción) y pasa al mostrador. --}}
 @if ($paso === 'sin_registro')
-<div class="two-col" x-data="{ motivo: '', confirmando: false }" wire:key="paso-sin-registro">
-    <div class="col-left">
+<div class="step" x-data="{ motivo: '', confirmando: false }" wire:key="paso-sin-registro">
+    <div>
         <p class="step-title">No encontramos tu DNI</p>
-        <p class="step-sub">No te preocupes: contanos por qué venís<br>y te atendemos en el mostrador.</p>
+        <p class="step-sub" style="margin-bottom:0;">No te preocupes: contanos por qué venís y te atendemos en el mostrador.</p>
     </div>
-    <div class="col-right">
-        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'turno' }"
-                @click="motivo = 'turno'">🕑 Tengo turno hoy</button>
-        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'turnos' }"
-                @click="motivo = 'turnos'">📅 Pedir un turno</button>
-        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'recetas' }"
-                @click="motivo = 'recetas'">📋 Recetas</button>
-        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'muestras' }"
-                @click="motivo = 'muestras'">🧪 Muestras</button>
-        <button type="button" class="motivo-btn" style="padding:12px;" :class="{ selected: motivo === 'consulta' }"
-                @click="motivo = 'consulta'">💬 Otra consulta</button>
+    <div class="step-main">
+        <div class="opciones">
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'turno' }"
+                    @click="motivo = 'turno'">🕑 Tengo turno hoy</button>
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'turnos' }"
+                    @click="motivo = 'turnos'">📅 Pedir un turno</button>
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'recetas' }"
+                    @click="motivo = 'recetas'">📋 Recetas</button>
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'muestras' }"
+                    @click="motivo = 'muestras'">🧪 Muestras</button>
+            <button type="button" class="motivo-btn" :class="{ selected: motivo === 'consulta' }"
+                    @click="motivo = 'consulta'">💬 Otra consulta</button>
+        </div>
+    </div>
+    <div class="step-actions">
+        <button type="button" class="btn btn-secondary" wire:click="reset2">← Volver</button>
         <button type="button" class="btn btn-primary"
             @click="confirmando = true; $wire.confirmarSinRegistro(motivo)"
             :disabled="!motivo || confirmando"
             x-text="confirmando ? 'Confirmando…' : 'Confirmar →'">
         </button>
-        <button type="button" class="btn btn-secondary" wire:click="reset2">Volver</button>
     </div>
 </div>
 @endif
@@ -137,7 +145,7 @@
 @if ($paso === 'confirmado')
 <div class="full-step">
     <div class="check-icon">✓</div>
-    <p class="step-title" style="font-size:26px;">¡Listo! Ya te anotamos.</p>
+    <p class="step-title">¡Listo! Ya te anotamos.</p>
     <p class="step-sub">Tomá asiento en la sala de espera.<br>Te llamamos enseguida.</p>
     @if ($planta)
         <div class="planta-badge">Sala planta {{ $planta }}</div>
@@ -149,14 +157,14 @@
 {{-- ── PASO: acercarse ───────────────────────────────────── --}}
 @if ($paso === 'acercarse')
 <div class="full-step">
-    <div style="font-size:56px;margin-bottom:16px;">👋</div>
+    <div class="saludo-icon">👋</div>
     <p class="step-title">Acercate al mostrador</p>
     @if ($avisado)
         <p class="step-sub">Ya avisamos por qué venís.<br>Una de nuestras secretarias te va a pedir tus datos.</p>
         <p class="countdown" id="countdown">Volviendo al inicio en 15s...</p>
     @else
         <p class="step-sub">No encontramos tu DNI en el sistema.<br>Una de nuestras secretarias te va a ayudar.</p>
-        <button class="btn btn-secondary" style="max-width:260px;margin-top:24px;" wire:click="reset2">Volver al inicio</button>
+        <button class="btn btn-secondary" style="max-width:420px;margin-top:3vh;" wire:click="reset2">Volver al inicio</button>
     @endif
 </div>
 @endif
