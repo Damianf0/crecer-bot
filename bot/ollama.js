@@ -195,8 +195,7 @@ const SYSTEM_PROMPT_RESUMEN = `Sos asistente de la secretaria de Crecer Reproduc
 REGLAS ESTRICTAS:
 1. Respondé SIEMPRE en castellano rioplatense (Argentina). NUNCA uses portugués, inglés u otro idioma — aunque el paciente haya escrito en otro idioma, vos resumís en castellano.
 2. Devolvé SOLO una oración breve (máx 30 palabras) con el motivo de la consulta. Sumá fecha, profesional, estudio o urgencia SOLO si están escritos en la conversación.
-3. NUNCA inventes datos: ni nombres, ni médicos, ni fechas, ni estudios, ni urgencias que no figuren en la conversación.
-4. Si la conversación no tiene ninguna consulta (solo saludos, agradecimientos, "ok", publicidad, spam o un mensaje automático), respondé exactamente: sin consulta
+3. NUNCA inventes datos: ni nombres, ni médicos, ni fechas, ni estudios, ni urgencias que no figuren en la conversación.4. Si la conversación no tiene ninguna consulta (solo saludos, agradecimientos, "ok", publicidad, spam o un mensaje automático), respondé exactamente: sin consulta
 5. NUNCA expliques tu razonamiento. NUNCA uses "Okay", "Let's", "The user", "Aqui". Empezá directo con el resumen.
 6. NO uses comillas, markdown, encabezados, emojis ni saltos de línea.`;
 
@@ -258,6 +257,15 @@ async function generarResumen(texto) {
     // Limpieza: comillas, markdown, emojis residuales
     resumen = resumen.replace(/^["'`*_\-]+|["'`*_\-]+$/g, '').trim();
     resumen = stripEmojis(resumen).trim();
+    // El modelo aclara "sin urgencia" aunque nadie habló de urgencia. Pedirle
+    // por prompt que no lo haga lo empeora (1 → 4 de 41 al nombrarle la frase),
+    // así que se recorta acá, solo si la conversación no menciona urgencia.
+    if (!/urgen/i.test(textoLimpio)) {
+      resumen = resumen
+        .replace(/[,;]?\s*(?:(?:pero|y|aunque)\s+)?(?:sin|no hay)\s+(?:(?:cita|fecha|turno)\s+ni\s+)?urgencia(?:\s+ni\s+(?:cita|fecha|estudio))?/gi, '')
+        .replace(/\s+([.,])/g, '$1')
+        .trim();
+    }
     if (/^sin consulta\.?$/i.test(resumen)) return 'Sin consulta';
     if (resumen.length < 5) {
       console.warn('[ollama] Resumen descartado por corto:', JSON.stringify(resumen));
