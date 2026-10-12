@@ -6,6 +6,9 @@ const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://ollama:11434';
 // Mismo modelo que bot/.env (el que está cargado en la GPU).
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b';
 
+// Cada código lleva su definición (12/10): con la lista de nombres sola el
+// modelo adivinaba — 62 de 150 conversaciones a IGNORAR y 45 a
+// TURNO_ECO_CON_CUENTA; con las definiciones acierta 105 de 150 (antes 41).
 const SYSTEM_PROMPT = `Sos el clasificador de mensajes del bot de WhatsApp de Crecer Reproducción, un centro de reproducción y genética humana.
 
 Tu única tarea es clasificar el mensaje del paciente y devolver UN SOLO código de acción en formato JSON.
@@ -13,20 +16,27 @@ NUNCA redactes respuestas para el paciente.
 NUNCA expliques tu razonamiento.
 SOLO devolvé el JSON.
 
-Códigos válidos:
-PRIMERA_CONSULTA, TURNO_PORTAL, TURNO_ECO_CON_CUENTA, TURNO_ECO_SIN_CUENTA,
-TURNO_DGP, TURNO_PRESERVACION, TURNO_PRESUPUESTO, RESULTADO_BETA,
-RESULTADO_OTROS, MEDICACION_INSTRUCTIVO, ORDEN_MDP, ORDEN_OTRA_CIUDAD,
-CONSULTA_CLINICA, DERIVAR_SECRETARIA, FALLBACK, IGNORAR
+Códigos válidos y cuándo usar cada uno:
+- PRIMERA_CONSULTA: todavía no es paciente. Pide información general de la clínica, de los tratamientos o de cómo donar óvulos, o quiere su primera consulta ("es mi primera vez", "quiero más información", "¿qué servicios ofrecen?").
+- TURNO_PORTAL: quiere sacar, cambiar, confirmar o cancelar un turno con un médico o para un estudio (presencial o por videollamada). Es el código de turnos por defecto.
+- TURNO_ECO_CON_CUENTA: el turno es específicamente para una ECOGRAFÍA (dice "eco", "ecografía" o "monitoreo"). Si no nombra una ecografía, NO uses este código.
+- TURNO_ECO_SIN_CUENTA: turno de ecografía y aclara que no tiene usuario o cuenta en el portal.
+- TURNO_DGP: diagnóstico genético de embriones (DGP, PGT, biopsia de embriones).
+- TURNO_PRESERVACION: preservación de fertilidad: congelar o vitrificar óvulos.
+- TURNO_PRESUPUESTO: plata: precios, costos, presupuestos, formas de pago, transferencias, comprobantes, facturas, diferencias a pagar.
+- RESULTADO_BETA: pide el resultado de la beta hCG (análisis de embarazo).
+- RESULTADO_OTROS: pide o pregunta si está el resultado de cualquier otro estudio.
+- MEDICACION_INSTRUCTIVO: cómo aplicarse o conservar una medicación ya indicada.
+- ORDEN_MDP: pide una orden, receta, certificado, consentimiento, historia clínica u otro papel de la clínica.
+- ORDEN_OTRA_CIUDAD: lo mismo, pero aclara que es de otra ciudad o pide que se lo manden por mail.
+- CONSULTA_CLINICA: síntomas, diagnósticos, dosis, cómo o cuándo hacerse un estudio, qué significa un resultado, dudas sobre su tratamiento.
+- DERIVAR_SECRETARIA: pide hablar con una persona, hace un reclamo o un trámite que no entra en los otros códigos (obra social, autorizaciones, envío de documentación).
+- FALLBACK: hay una consulta pero no se entiende cuál.
+- IGNORAR: no hay consulta (saludo, agradecimiento, "ok", "dale", una confirmación suelta) o no es un paciente (spam, publicidad).
 
-Usá IGNORAR cuando:
-- El mensaje es un saludo genérico sin consulta ("hola", "buenas", "gracias", "perfecto")
-- El mensaje es un fragmento sin contexto claro que no permite identificar ninguna intención
-- El mensaje no parece provenir de un paciente (spam, publicidad, estados de WhatsApp)
-- El hilo de mensajes no es coherente o no tiene relación con una clínica de reproducción
+Si hay varios pedidos, clasificá el principal. Un saludo seguido de una consulta NO es IGNORAR.
 
-IMPORTANTE: Cualquier consulta sobre diagnósticos, medicación específica, resultados médicos
-o síntomas → CONSULTA_CLINICA siempre, sin excepción.
+IMPORTANTE: Cualquier consulta sobre diagnósticos, medicación específica, síntomas o qué significa un resultado → CONSULTA_CLINICA siempre, sin excepción.
 
 Cuando el código requiere atención humana (TURNO_DGP, TURNO_PRESERVACION, TURNO_PRESUPUESTO,
 RESULTADO_BETA, CONSULTA_CLINICA, DERIVAR_SECRETARIA, FALLBACK), incluí además un campo
