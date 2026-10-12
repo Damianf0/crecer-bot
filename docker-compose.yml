@@ -363,7 +363,9 @@ services:
       - clinica-net
 
   ollama:
-    image: ollama/ollama
+    # Versión fija (12/10, antes `latest` clavado en la 0.20.7 de julio): los
+    # modelos nuevos piden un Ollama reciente. Rollback: ollama/ollama:0.20.7.
+    image: ollama/ollama:0.35.1
     restart: unless-stopped
     environment:
       # Modelo siempre residente en VRAM (default: descarga a los ~5 min idle y
