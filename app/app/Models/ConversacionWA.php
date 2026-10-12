@@ -174,14 +174,19 @@ class ConversacionWA extends Model
     {
         if (!empty($this->resumen_llm)) return;
 
-        // Throttle: si ya se intentó en los últimos 10 min, no reintentar todavía
-        if ($this->resumen_intento_at && $this->resumen_intento_at->gt(now()->subMinutes(10))) return;
-
         if (!$this->ameritaResumen()) {
-            // No amerita: marcar para no recalcular cada vez que llegue un mensaje
+            // No amerita todavía: queda marcada como evaluada (Reportes separa
+            // "no amerita" de "nunca evaluada"), pero la marca no frena la
+            // próxima evaluación. El 12/10 entraron 4 mensajes en 12 segundos:
+            // el primero solo no ameritaba y los otros tres cayeron en la
+            // espera de 10 min, así que la conversación quedó sin resumen.
             $this->forceFill(['resumen_intento_at' => now()])->saveQuietly();
             return;
         }
+
+        // Throttle: un despacho cada 10 min por conversación, para no encolar
+        // uno por mensaje mientras el job espera o si el bot no devolvió nada.
+        if (!\Illuminate\Support\Facades\Cache::add("resumen-despachado:{$this->id}", 1, 600)) return;
 
         \App\Jobs\GenerarResumenLLM::dispatch($this->id)->onQueue('resumen');
     }
