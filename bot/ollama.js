@@ -4,7 +4,8 @@ const axios = require('axios');
 // por el puerto publicado en Windows, que queda mudo tras un wsl --shutdown.
 const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://ollama:11434';
 // Mismo modelo que bot/.env (el que está cargado en la GPU).
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b';
+// Es también el que precarga el contenedor de Ollama (docker-compose.yml).
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3.5:4b';
 
 // Cada código lleva su definición (12/10): con la lista de nombres sola el
 // modelo adivinaba — 62 de 150 conversaciones a IGNORAR y 45 a
@@ -182,14 +183,22 @@ function pareceEnPortugues(texto) {
  * Genera un resumen breve (1-2 frases) del intercambio paciente↔bot.
  * Usado para que la secretaria sepa de qué viene la conversación sin leerla entera.
  * Usa el mismo Ollama pero con prompt distinto al clasificador. Texto plano, no JSON.
+ *
+ * 12/10: el prompt pedía "datos útiles (fecha, profesional, estudio, urgencia)"
+ * y el modelo los inventaba cuando no estaban (un médico inexistente, un
+ * "urgente"). Ahora solo los suma si figuran, y cuando no hay nada que resumir
+ * (saludos, spam, mensajes automáticos) responde "sin consulta", que se guarda
+ * como resumen "Sin consulta".
  */
 const SYSTEM_PROMPT_RESUMEN = `Sos asistente de la secretaria de Crecer Reproducción Humana. Tu tarea es resumir conversaciones de pacientes.
 
 REGLAS ESTRICTAS:
 1. Respondé SIEMPRE en castellano rioplatense (Argentina). NUNCA uses portugués, inglés u otro idioma — aunque el paciente haya escrito en otro idioma, vos resumís en castellano.
-2. Devolvé SOLO una oración breve (máx 30 palabras) con el motivo de la consulta y datos útiles (fecha, profesional, estudio, urgencia).
-3. NUNCA expliques tu razonamiento. NUNCA uses "Okay", "Let's", "The user", "Aqui". Empezá directo con el resumen.
-4. NO uses comillas, markdown, encabezados, emojis ni saltos de línea.`;
+2. Devolvé SOLO una oración breve (máx 30 palabras) con el motivo de la consulta. Sumá fecha, profesional, estudio o urgencia SOLO si están escritos en la conversación.
+3. NUNCA inventes datos: ni nombres, ni médicos, ni fechas, ni estudios, ni urgencias que no figuren en la conversación.
+4. Si la conversación no tiene ninguna consulta (solo saludos, agradecimientos, "ok", publicidad, spam o un mensaje automático), respondé exactamente: sin consulta
+5. NUNCA expliques tu razonamiento. NUNCA uses "Okay", "Let's", "The user", "Aqui". Empezá directo con el resumen.
+6. NO uses comillas, markdown, encabezados, emojis ni saltos de línea.`;
 
 async function generarResumen(texto) {
   if (breakerAbierto()) {
@@ -249,6 +258,7 @@ async function generarResumen(texto) {
     // Limpieza: comillas, markdown, emojis residuales
     resumen = resumen.replace(/^["'`*_\-]+|["'`*_\-]+$/g, '').trim();
     resumen = stripEmojis(resumen).trim();
+    if (/^sin consulta\.?$/i.test(resumen)) return 'Sin consulta';
     if (resumen.length < 5) {
       console.warn('[ollama] Resumen descartado por corto:', JSON.stringify(resumen));
       return null;

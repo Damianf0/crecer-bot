@@ -370,8 +370,23 @@ services:
     environment:
       # Modelo siempre residente en VRAM (default: descarga a los ~5 min idle y
       # el primer mensaje después de un rato paga la recarga desde disco).
-      # La GTX 1660 (6 GB) está dedicada a esto; qwen3:4b ocupa 3.9 GB.
+      # La GTX 1660 (6 GB) está dedicada a esto; qwen3.5:4b ocupa 3,1 GB.
       - OLLAMA_KEEP_ALIVE=-1
+      # El mismo modelo que OLLAMA_MODEL en bot/.env.
+      - MODELO_PRECARGA=qwen3.5:4b
+    # Precarga (12/10): al arrancar deja el modelo en la placa antes de que lo
+    # pida un bot. Los bots cortan a los 25 s y este Ollama aborta la carga si
+    # el cliente corta; en frío tarda más que eso (33 s medidos), así que sin
+    # precarga las clasificaciones caen en FALLBACK. Insiste hasta verlo cargado.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        (until ollama list >/dev/null 2>&1; do sleep 1; done
+         until ollama ps | grep -q "$$MODELO_PRECARGA"; do
+           ollama run "$$MODELO_PRECARGA" "" >/dev/null 2>&1; sleep 3
+         done
+         echo "precarga: $$MODELO_PRECARGA en memoria") &
+        exec ollama serve
     deploy:
       resources:
         reservations:
