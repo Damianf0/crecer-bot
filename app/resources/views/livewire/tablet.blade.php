@@ -147,9 +147,7 @@
     <div class="check-icon">✓</div>
     <p class="step-title">¡Listo! Ya te anotamos.</p>
     <p class="step-sub">Tomá asiento en la sala de espera.<br>Te llamamos enseguida.</p>
-    @if ($planta)
-        <div class="planta-badge">Sala planta {{ $planta }}</div>
-    @endif
+    {{-- Sin cartel de planta (15/10): no hay mapeo servicio → planta y a todos les decía "planta baja". --}}
     <p class="countdown" id="countdown">Volviendo al inicio en 15s...</p>
 </div>
 @endif
