@@ -3,9 +3,14 @@
 // delegan una conversación, le asignan una tarea, le escribe el chat interno,
 // escribe un favorito o entra una urgente. Funciona en cualquier pantalla.
 //
-// No usa notificaciones del sistema: el panel se sirve por http://192.168.1.115
-// y el navegador las bloquea en sitios no seguros (verificado el 06/10:
-// permiso "denied"). Ver crecer-notify.js para el día que haya HTTPS.
+// Notificación de Windows (15/10): si el navegador está minimizado o tapado,
+// el aviso sale además como notificación del sistema. Chrome solo las permite
+// en sitios seguros y el panel va por http://192.168.1.115, así que en cada PC
+// hay que pasar una vez docs/chrome-panel-seguro.reg (ver ese archivo). Sin
+// eso, todo sigue como antes: cartel + sonido + título.
+//
+// Chat interno y favoritos son importantes: el cartel y la notificación de
+// Windows quedan hasta que la persona hace clic (pedido de Damián, 15/10).
 //
 // De dónde salen: /bot-pulso trae lo que hoy está "en" la persona (layout V2,
 // cada 15 s y al instante con cada cambio de una cola); acá se compara contra
@@ -15,6 +20,7 @@ window.Avisos = (function () {
     const CLAVE_CONOCIDO = 'avisos.conocido.v1';   // sessionStorage: por pestaña
     const PREFIJO_DEDUP  = 'avisos.dedup.';         // localStorage: entre pestañas
     let prefs = { chat: true, conv_delegada: true, tarea_asignada: true, favorito: true, urgente: true, sonido: true };
+    const IMPORTANTES = ['chat', 'favorito'];
     let pendientesTitulo = 0;
     const tituloBase = document.title;
 
@@ -44,7 +50,11 @@ window.Avisos = (function () {
         return ctx;
     }
     // Chrome no deja sonar hasta que la persona tocó algo en la página.
-    document.addEventListener('pointerdown', () => { const a = audio(); if (a && a.state === 'suspended') a.resume().catch(() => {}); }, { capture: true });
+    // El permiso de notificaciones de Windows también se pide con un gesto.
+    document.addEventListener('pointerdown', () => {
+        const a = audio(); if (a && a.state === 'suspended') a.resume().catch(() => {});
+        if (sistemaDisponible() && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+    }, { capture: true });
     function sonar() {
         const a = audio(); if (!a) return;
         try {
@@ -69,17 +79,42 @@ window.Avisos = (function () {
         }
         return p;
     }
-    function cartel(titulo, texto, url) {
+    /** fijo: queda hasta que la persona lo toca (importantes); si no, se va a los 9 s. */
+    function cartel(titulo, texto, url, fijo = false) {
         const el = document.createElement(url ? 'a' : 'div');
         if (url) el.href = url;
-        el.style.cssText = 'display:block;text-decoration:none;background:var(--v2-bg-card);color:var(--v2-text);border:1px solid var(--v2-border);' +
+        el.style.cssText = 'position:relative;display:block;text-decoration:none;background:var(--v2-bg-card);color:var(--v2-text);border:1px solid var(--v2-border);' +
             'border-left:3px solid var(--v2-accent);border-radius:var(--v2-radius,8px);padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.18);' +
-            'font-size:13px;line-height:1.4;' + (url ? 'cursor:pointer;' : '');
+            'font-size:13px;line-height:1.4;cursor:pointer;' + (fijo ? 'padding-right:30px;' : '');
         const t = document.createElement('div'); t.style.cssText = 'font-weight:650;margin-bottom:2px;'; t.textContent = titulo;
         el.appendChild(t);
         if (texto) { const d = document.createElement('div'); d.style.color = 'var(--v2-text-2)'; d.textContent = texto; el.appendChild(d); }
+        if (fijo) {
+            const x = document.createElement('span');
+            x.textContent = '×'; x.title = 'Cerrar';
+            x.style.cssText = 'position:absolute;top:4px;right:8px;font-size:17px;color:var(--v2-text-2);';
+            x.addEventListener('click', (e) => e.preventDefault());   // cerrar sin ir a la conversación
+            el.appendChild(x);
+        }
+        el.addEventListener('click', () => el.remove());
         pila().appendChild(el);
-        setTimeout(() => el.remove(), 9000);
+        if (!fijo) setTimeout(() => el.remove(), 9000);
+    }
+
+    // ── Notificación de Windows (solo si el navegador no está a la vista) ──
+    function sistemaDisponible() {
+        return 'Notification' in window && window.isSecureContext;
+    }
+    function notificacionSistema(titulo, texto, url, clave, fijo) {
+        if (!sistemaDisponible() || Notification.permission !== 'granted') return;
+        if (!document.hidden && document.hasFocus()) return;   // la está mirando: alcanza el cartel
+        try {
+            const n = new Notification(titulo, {
+                body: texto || '', tag: clave || undefined, icon: '/favicon.ico',
+                requireInteraction: fijo, silent: true,   // el sonido ya lo pone sonar()
+            });
+            n.onclick = () => { window.focus(); if (url) window.location.href = url; n.close(); };
+        } catch {}
     }
 
     // ── Título de la pestaña con el número de avisos sin ver ──
@@ -96,7 +131,9 @@ window.Avisos = (function () {
     function aviso({ tipo, clave, titulo, texto, url }) {
         if (prefs[tipo] === false) return;
         if (clave && !primeraVez(clave)) return;
-        cartel(titulo, texto, url);
+        const fijo = IMPORTANTES.includes(tipo);
+        cartel(titulo, texto, url, fijo);
+        notificacionSistema(titulo, texto, url, clave, fijo);
         if (prefs.sonido !== false) sonar();
         marcarTitulo();
     }
@@ -140,6 +177,14 @@ window.Avisos = (function () {
     // Avisos que no vienen del pulso (chat interno).
     document.addEventListener('crecer:aviso', (ev) => { if (ev.detail) aviso(ev.detail); });
 
+    function estadoSistema() {
+        if (!('Notification' in window)) return 'Notificaciones de Windows: este navegador no las tiene.';
+        if (!window.isSecureContext) return 'Notificaciones de Windows: <b>no habilitadas en esta PC</b> (falta pasarle el archivo de configuración de Chrome). Los avisos se ven solo con el panel a la vista.';
+        if (Notification.permission === 'denied') return 'Notificaciones de Windows: <b>bloqueadas</b>. Habilitalas desde el candado de la barra de direcciones → Notificaciones → Permitir.';
+        if (Notification.permission === 'default') return 'Notificaciones de Windows: tocá cualquier lugar del panel y aceptá el permiso que pide Chrome.';
+        return 'Notificaciones de Windows: <b>activas</b>. Con el navegador minimizado, los avisos salen abajo a la derecha de la pantalla. "Probar aviso" manda una a los 5 s.';
+    }
+
     // ── "Mis avisos" ──
     async function abrirPreferencias() {
         let r;
@@ -153,7 +198,8 @@ window.Avisos = (function () {
         const caja = document.createElement('form');
         caja.style.cssText = 'background:var(--v2-bg-card);color:var(--v2-text);border:1px solid var(--v2-border);border-radius:var(--v2-radius,10px);padding:20px 22px;width:min(420px,100%);display:grid;gap:10px;';
         caja.innerHTML = '<div style="font-weight:650;font-size:15px;">Mis avisos</div>' +
-            '<div style="font-size:12.5px;color:var(--v2-text-2);line-height:1.45;">Aparecen abajo a la derecha en cualquier pantalla del panel. Si estás en otra pestaña, el título muestra cuántos llegaron.</div>';
+            '<div style="font-size:12.5px;color:var(--v2-text-2);line-height:1.45;">Aparecen abajo a la derecha en cualquier pantalla del panel. Si estás en otra pestaña, el título muestra cuántos llegaron. Los del chat interno y los favoritos quedan hasta que los tocás.</div>' +
+            `<div style="font-size:12.5px;line-height:1.45;padding:7px 9px;border-radius:6px;background:var(--v2-bg-soft,rgba(0,0,0,.04));">${estadoSistema()}</div>`;
         Object.entries(r.etiquetas || {}).forEach(([k, l]) => {
             const lab = document.createElement('label');
             lab.style.cssText = 'display:flex;align-items:center;gap:9px;font-size:13.5px;cursor:pointer;' + (k === 'sonido' ? 'border-top:1px solid var(--v2-border);padding-top:10px;' : '');
@@ -177,6 +223,15 @@ window.Avisos = (function () {
                 const p = leer();
                 cartel('Así se ve un aviso', 'Los avisos reales llevan a la conversación o a la tarea al hacer clic.', null);
                 if (p.sonido) sonar();
+                // La de Windows sale a los 5 s, con tiempo de minimizar el navegador.
+                if (sistemaDisponible() && Notification.permission === 'granted') {
+                    setTimeout(() => {
+                        try {
+                            const n = new Notification('Así se ve un aviso del panel', { body: 'Clic para volver al panel.', icon: '/favicon.ico', silent: true });
+                            n.onclick = () => { window.focus(); n.close(); };
+                        } catch {}
+                    }, 5000);
+                }
             }
         });
         caja.addEventListener('submit', async (e) => {

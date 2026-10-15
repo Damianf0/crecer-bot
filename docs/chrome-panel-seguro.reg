@@ -1,0 +1,23 @@
+Windows Registry Editor Version 5.00
+
+; Panel Crecer: notificaciones de Windows para los avisos (chat interno, favoritos,
+; delegaciones, tareas, urgentes).
+;
+; Chrome y Edge solo muestran notificaciones en sitios seguros (https) y el panel
+; va por http://192.168.1.115. Esto le dice al navegador que trate al panel como
+; seguro. Se pasa una vez por PC y por usuario de Windows: doble clic -> Si.
+; Pide administrador (UAC): esas claves de Windows estan protegidas. Si en esa PC
+; no hay clave de administrador, la alternativa es en Chrome: chrome://flags ->
+; "Insecure origins treated as secure" -> agregar http://192.168.1.115 -> Enabled.
+; Despues hay que cerrar y abrir Chrome, entrar al panel, tocar cualquier lugar
+; y aceptar "Permitir notificaciones".
+;
+; Chrome va a decir "Tu navegador esta administrado por tu organizacion": es por
+; esta configuracion, es normal. Si cambia la IP del servidor hay que editar
+; este archivo y volver a pasarlo. Para sacarlo: borrar las dos claves de abajo.
+
+[HKEY_CURRENT_USER\Software\Policies\Google\Chrome\OverrideSecurityRestrictionsOnInsecureOrigin]
+"1"="http://192.168.1.115"
+
+[HKEY_CURRENT_USER\Software\Policies\Microsoft\Edge\OverrideSecurityRestrictionsOnInsecureOrigin]
+"1"="http://192.168.1.115"
