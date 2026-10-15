@@ -208,7 +208,7 @@ class RecepcionController extends Controller
      * clínica" de recepción (por si vuelve al mostrador). Hasta que el médico
      * marque la salida desde su panel (etapa futura), sale sola por tiempo.
      */
-    public const EN_CLINICA_MINUTOS = 45;
+    public const EN_CLINICA_MINUTOS = 60;
 
     public const MOTIVOS_MOSTRADOR = [
         'regreso'        => 'Vuelve del consultorio',

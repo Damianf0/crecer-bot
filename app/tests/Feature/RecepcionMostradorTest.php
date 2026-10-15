@@ -73,12 +73,12 @@ class RecepcionMostradorTest extends TestCase
         // Liberado al consultorio hace 20 min: está "en la clínica".
         $visita = ColaAtencion::create(['dni' => '30111222', 'nombre' => 'Ana', 'apellido' => 'López', 'motivo' => 'turno',
             'origen' => 'tablet', 'estado' => 'liberado', 'hora_llegada' => now()->subMinutes(40), 'hora_liberado' => now()->subMinutes(20), 'orden' => 1]);
-        // Liberado hace 1 h: ya salió de la lista por tiempo (45 min).
+        // Liberado hace 1,5 h: ya salió de la lista por tiempo (60 min).
         ColaAtencion::create(['dni' => '20111222', 'nombre' => 'Viejo', 'apellido' => 'Pérez', 'motivo' => 'turno', 'origen' => 'tablet', 'estado' => 'liberado',
-            'hora_llegada' => now()->startOfDay()->addMinute(), 'hora_liberado' => now()->subHour(), 'orden' => 2]);
+            'hora_llegada' => now()->startOfDay()->addMinute(), 'hora_liberado' => now()->subMinutes(90), 'orden' => 2]);
 
         $enClinica = $this->sesion()->getJson('/v2/recepcion/cola')->json('en_clinica');
-        if (now()->subHour()->isToday()) $this->assertSame([$visita->id], array_column($enClinica, 'id'));
+        if (now()->subMinutes(90)->isToday()) $this->assertSame([$visita->id], array_column($enClinica, 'id'));
 
         // Vuelve al mostrador sin anotarse: visita nueva enlazada, la anterior sale de la lista.
         $this->sesion()->postJson('/v2/recepcion/mostrador', ['accion' => 'atendido', 'nombre' => 'Ana', 'apellido' => 'López',

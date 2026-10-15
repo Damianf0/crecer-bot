@@ -96,7 +96,7 @@
                     <button class="v2-btn sm primary" style="margin-left:auto;text-transform:none;letter-spacing:0;" onclick="abrirMostrador()" title="Registrar a un paciente que se atendió en el mostrador sin anotarse en el tablet">+ Atención en mostrador</button></div>
                 <div id="hoy-sala" style="font-size:11.5px;color:var(--v2-text-mute);padding:0 12px 6px;"></div>
                 <div id="lista-sala"><div class="rec-empty">Cargando…</div></div>
-                {{-- Liberados al consultorio en los últimos 45 min: por si vuelven al mostrador --}}
+                {{-- Liberados al consultorio en la última hora: por si vuelven al mostrador --}}
                 <div id="en-clinica"></div>
             </div>
             <div class="rec-ficha" id="ficha-sala" style="display:none;"></div>
@@ -314,7 +314,7 @@ async function cargarSala() {
     $('badge-sala').textContent = j.stats?.total ?? SALA.length;
     $('cnt-sala').textContent = SALA.length;
     $('hoy-sala').textContent = `Hoy: ${j.stats?.hoy_tablet ?? 0} por el tablet · ${j.stats?.hoy_mostrador ?? 0} en el mostrador`;
-    renderEnClinica(j.en_clinica || [], j.en_clinica_minutos || 45);
+    renderEnClinica(j.en_clinica || [], j.en_clinica_minutos || 60);
     renderSala();
     // Si hay ficha abierta, refrescarla con datos frescos (o cerrarla si ya salió de la cola).
     if (selPac != null) {
