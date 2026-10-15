@@ -308,6 +308,14 @@ class OmniaService
     // ── API pública ───────────────────────────────────────────
 
     /**
+     * Estados de un turno que todavía no se atendió (después vienen recepcionado,
+     * atendiendo, atendido). Antes solo contaba "pendiente" y el
+     * tablet le decía "no tenés turno" justo a quien había confirmado (15/10:
+     * 17 de 30 llegadas "sin turno" tenían turno ese día).
+     */
+    public const ESTADOS_POR_ATENDER = ['pendiente', 'confirmado'];
+
+    /**
      * Busca un paciente por DNI. Devuelve array normalizado para Tablet,
      * o null si no se encuentra.
      */
@@ -349,7 +357,7 @@ class OmniaService
      *                              campo `NombreDelProfesional` (sin "Dr."/"Dra.").
      *                              Ej: "Ignacio Cruz", "Mauro Javier García Aurelio".
      * @param \Carbon\Carbon|null $dia  Día a consultar (default: hoy en zona AR).
-     * @param bool $soloPendientes  Si true (default), filtra estado=pendiente
+     * @param bool $soloPendientes  Si true (default), solo los por atender
      *                               (descarta cancelados, atendidos, etc.).
      */
     public function turnosDelDiaPorMedico(string $nombreOmnia, ?\Carbon\Carbon $dia = null, bool $soloPendientes = true): array
@@ -388,7 +396,7 @@ class OmniaService
             if ($norm($nomProf) !== $needle) continue;
 
             $estado = $t['Estado'] ?? '';
-            if ($soloPendientes && $estado !== 'pendiente') continue;
+            if ($soloPendientes && !in_array($estado, self::ESTADOS_POR_ATENDER, true)) continue;
 
             // FechaYHora viene como "23/4/2026 11:15" (string, hora local AR)
             $fh = $t['FechaYHora'] ?? '';
@@ -432,8 +440,8 @@ class OmniaService
      * turnos en estado `pendiente` Y `confirmado` (confirmado por Omnia el
      * 2026-06-16). El filtro por fecha y por estado lo hacemos acá en cliente.
      *
-     * @param bool $soloPendientes  Si true (default), descarta todo lo que no
-     *                              sea estado `pendiente` (p.ej. confirmados).
+     * @param bool $soloPendientes  Si true (default), descarta lo que ya no está
+     *                              por atender (ver ESTADOS_POR_ATENDER).
      */
     public function turnosHoy(int|string $pacienteId, bool $soloPendientes = true): array
     {
@@ -448,9 +456,7 @@ class OmniaService
 
         $turnos = [];
         foreach ($data as $t) {
-            // Solo pendientes: descarta confirmados/otros (el campo `state`
-            // del turno viene como "pendiente" en español).
-            if ($soloPendientes && ($t['state'] ?? '') !== 'pendiente') continue;
+            if ($soloPendientes && !in_array($t['state'] ?? '', self::ESTADOS_POR_ATENDER, true)) continue;
 
             $begins = (int) ($t['begins'] ?? 0);
             if ($begins < $hoyStart || $begins > $hoyEnd) continue;
