@@ -6,7 +6,7 @@
 // Notificación de Windows (15/10): si el navegador está minimizado o tapado,
 // el aviso sale además como notificación del sistema. Chrome solo las permite
 // en sitios seguros y el panel va por http://192.168.1.115, así que en cada PC
-// hay que pasar una vez docs/chrome-panel-seguro.reg (ver ese archivo). Sin
+// hay que pasar una vez /chrome-panel-seguro.reg (se baja desde "Mis avisos"). Sin
 // eso, todo sigue como antes: cartel + sonido + título.
 //
 // Chat interno y favoritos son importantes: el cartel y la notificación de
@@ -179,7 +179,8 @@ window.Avisos = (function () {
 
     function estadoSistema() {
         if (!('Notification' in window)) return 'Notificaciones de Windows: este navegador no las tiene.';
-        if (!window.isSecureContext) return 'Notificaciones de Windows: <b>no habilitadas en esta PC</b> (falta pasarle el archivo de configuración de Chrome). Los avisos se ven solo con el panel a la vista.';
+        if (!window.isSecureContext) return 'Notificaciones de Windows: <b>no habilitadas en esta PC</b> (falta pasarle el archivo de configuración de Chrome). Los avisos se ven solo con el panel a la vista. ' +
+            '<a href="/chrome-panel-seguro.reg" download style="color:var(--v2-accent);font-weight:600;">Descargar la configuración</a>: abrirla, aceptar (pide administrador) y reiniciar Chrome.';
         if (Notification.permission === 'denied') return 'Notificaciones de Windows: <b>bloqueadas</b>. Habilitalas desde el candado de la barra de direcciones → Notificaciones → Permitir.';
         if (Notification.permission === 'default') return 'Notificaciones de Windows: tocá cualquier lugar del panel y aceptá el permiso que pide Chrome.';
         return 'Notificaciones de Windows: <b>activas</b>. Con el navegador minimizado, los avisos salen abajo a la derecha de la pantalla. "Probar aviso" manda una a los 5 s.';
