@@ -1,9 +1,11 @@
 @extends('layouts.v2')
 
 {{-- Recepción en el shell V2. Reescribe a JS+endpoints los Livewire
-     ColaSecretaria (/secretaria) y ColaBot (/cola-bot). Dos tabs:
-       · Sala de espera  → cola_atencion (check-in, checklist, liberar)
-       · Mensajes del bot → derivaciones (clasificación, resolver)
+     ColaSecretaria (/secretaria). Dos solapas:
+       · Sala de espera → cola_atencion (check-in, checklist, liberar)
+       · Atendidos hoy  → cola_atencion ya cerrados del día (nota, volvió)
+     La solapa "Mensajes del bot" (derivaciones) se sacó el 20/10; sus
+     endpoints /v2/recepcion/bot/* quedan sin uso desde esta pantalla.
      InboxWA no se porta: lo cubre /v2/atencion (mismas tablas). --}}
 
 @push('styles')
@@ -85,7 +87,6 @@
 <div class="rec-shell">
     <div class="rec-tabs">
         <button class="rec-tab active" data-tab="sala" onclick="recTab('sala')">🪑 Sala de espera <span class="badge" id="badge-sala">0</span></button>
-        <button class="rec-tab" data-tab="bot" onclick="recTab('bot')">💬 Mensajes del bot <span class="badge" id="badge-bot">0</span></button>
         <button class="rec-tab" data-tab="hoy" onclick="recTab('hoy')">📋 Atendidos hoy <span class="badge" id="badge-hoy">0</span></button>
     </div>
 
@@ -101,20 +102,6 @@
                 <div id="en-clinica"></div>
             </div>
             <div class="rec-ficha" id="ficha-sala" style="display:none;"></div>
-        </div>
-    </div>
-
-    {{-- ── TAB: Mensajes del bot ── --}}
-    <div class="rec-pane" id="pane-bot">
-        <div class="rec-cols no-ficha" id="cols-bot">
-            <div class="rec-list">
-                <div class="rec-list-head">
-                    Derivaciones del bot <span class="cnt" id="cnt-bot">0</span>
-                    <label class="rec-toggle"><input type="checkbox" id="chk-prueba" checked onchange="cargarBot()"> mostrar pruebas</label>
-                </div>
-                <div id="lista-bot"><div class="rec-empty">Cargando…</div></div>
-            </div>
-            <div class="rec-ficha" id="ficha-bot" style="display:none;"></div>
         </div>
     </div>
 
@@ -198,7 +185,7 @@ function recTab(t) {
     TAB = t;
     document.querySelectorAll('.rec-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
     document.querySelectorAll('.rec-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-'+t));
-    if (t === 'bot') cargarBot(); else cargarSala();   // "Atendidos hoy" viene con la sala
+    cargarSala();   // "Atendidos hoy" viene con la sala
 }
 
 // ════════════════════ ATENCIÓN EN MOSTRADOR ════════════════════
@@ -590,114 +577,18 @@ async function guardarNotaHoy(id) {
     renderHoy();
 }
 
-// ════════════════════════ MENSAJES DEL BOT ════════════════════════
-let BOT = [];
-let selDeriv = null;
-
-async function cargarBot() {
-    const prueba = $('chk-prueba').checked ? 1 : 0;
-    const j = await call(`/v2/recepcion/bot?prueba=${prueba}`);
-    if (!j.ok) return;
-    BOT = j.cola || [];
-    $('badge-bot').textContent = j.total ?? BOT.length;
-    $('cnt-bot').textContent = BOT.length;
-    renderBot();
-    if (selDeriv != null) {
-        const d = BOT.find(x => x.id === selDeriv);
-        if (d) renderFichaBot(d); else cerrarFichaBot();
-    }
-}
-
-function renderBot() {
-    const c = $('lista-bot');
-    if (!BOT.length) { c.innerHTML = '<div class="rec-empty">Sin derivaciones pendientes.</div>'; return; }
-    c.innerHTML = BOT.map(d => `
-        <div class="rec-card ${d.id===selDeriv?'sel':''} ${d.estado==='en_atencion'?'atendiendo':''}" onclick="abrirDeriv(${d.id})">
-            <div class="rec-card-head">
-                <div class="rec-card-name">${esc(d.telefono)}</div>
-                ${d.estado==='en_atencion' ? '<span class="rec-flag blue">En atención</span>' : ''}
-                <span class="rec-card-meta">${esc(d.hace || '')}</span>
-            </div>
-            <div class="rec-flags">
-                <span class="rec-flag blue">${esc(d.etiqueta)}</span>
-                ${d.es_prueba ? '<span class="rec-flag">🧪 prueba</span>' : ''}
-                ${!d.en_horario ? '<span class="rec-flag orange">Fuera de horario</span>' : ''}
-            </div>
-            <div class="rec-card-meta">${esc((d.texto || '').slice(0, 120))}</div>
-        </div>`).join('');
-}
-
-async function abrirDeriv(id) {
-    selDeriv = id;
-    const j = await postJSON(`/v2/recepcion/bot/${id}/abrir`);
-    if (!j.ok) { v2toast(j._err || 'Error', 'err'); return; }
-    await cargarBot();
-    renderFichaBot(j.derivacion);
-}
-
-function renderFichaBot(d) {
-    $('cols-bot').classList.remove('no-ficha');
-    const f = $('ficha-bot'); f.style.display = 'block';
-    f.innerHTML = `
-        <div class="rec-ficha-head">
-            <div class="rec-ficha-title"><div class="n">${esc(d.telefono)}</div><div class="s">${esc(d.fecha || '')}</div></div>
-            <button class="rec-ficha-close" onclick="cerrarFichaBot()">✕</button>
-        </div>
-        <div class="rec-flags">
-            <span class="rec-flag blue">${esc(d.etiqueta)}</span>
-            ${d.es_prueba ? '<span class="rec-flag">🧪 prueba</span>' : ''}
-            ${!d.en_horario ? '<span class="rec-flag orange">Fuera de horario</span>' : ''}
-        </div>
-        <div class="rec-sub">Mensaje del paciente</div>
-        <div class="rec-msg">${esc(d.texto || '—')}</div>
-        ${d.resumen_llm ? `<div class="rec-sub">Resumen IA</div><div class="rec-msg">${esc(d.resumen_llm)}</div>` : ''}
-        <div class="rec-sub">Nota interna</div>
-        <textarea class="rec-ta" id="nota-deriv" placeholder="Notas de la gestión…">${esc(d.nota || '')}</textarea>
-        <div class="rec-actions">
-            <button class="v2-btn" onclick="guardarNotaDeriv(${d.id})">Guardar nota</button>
-            <button class="v2-btn primary" onclick="resolverDeriv(${d.id})">Marcar resuelto ✓</button>
-        </div>`;
-}
-
-function cerrarFichaBot() {
-    selDeriv = null;
-    $('ficha-bot').style.display = 'none';
-    $('cols-bot').classList.add('no-ficha');
-    renderBot();
-}
-
-async function guardarNotaDeriv(id) {
-    const nota = $('nota-deriv').value;
-    const j = await postJSON(`/v2/recepcion/bot/${id}/nota`, { nota });
-    if (!j.ok) { v2toast(j._err || 'Error', 'err'); return; }
-    const d = BOT.find(x => x.id === id); if (d) d.nota = nota;
-    v2toast('Nota guardada', 'ok');
-}
-
-async function resolverDeriv(id) {
-    const nota = $('nota-deriv')?.value || '';
-    const j = await postJSON(`/v2/recepcion/bot/${id}/resolver`, { nota });
-    if (!j.ok) { v2toast(j._err || 'Error', 'err'); return; }
-    v2toast('Derivación resuelta', 'ok');
-    cerrarFichaBot();
-    cargarBot();
-}
-
 // ── Arranque + tiempo real ───────────────────────────────────────────
-// Cada aviso de Reverb dice qué solapa cambió y se re-pide esa (las dos
-// badges quedan al día aunque no sea la activa). El polling queda de
-// respaldo: cada 6 s si el socket no está, cada 60 s si está.
+// La sala y "Atendidos hoy" salen del mismo pedido: se re-pide con cada aviso
+// de Reverb de la sala. El polling queda de respaldo: cada 6 s si el socket
+// no está, cada 60 s si está. (La solapa "Mensajes del bot" se sacó el 20/10.)
 cargarSala();
-cargarBot();
-const _ult = { sala: Date.now(), bot: Date.now() };
-const recargar = (t) => { _ult[t] = Date.now(); return t === 'sala' ? cargarSala() : cargarBot(); };
+let _ult = Date.now();
+const recargar = () => { _ult = Date.now(); return cargarSala(); };
 V2Tiempo.canales([['recepcion', 'RecepcionActualizada']], ev => ev.tipo, tipos => {
-    if (tipos.has('sala') || tipos.has(null)) recargar('sala');
-    if (tipos.has('bot')  || tipos.has(null)) recargar('bot');
+    if (tipos.has('sala') || tipos.has(null)) recargar();
 });
 setInterval(() => {
-    const t = TAB === 'bot' ? 'bot' : 'sala';   // "Atendidos hoy" se carga con la sala
-    if (!V2Tiempo.vivo() || Date.now() - _ult[t] > 60000) recargar(t);
+    if (!V2Tiempo.vivo() || Date.now() - _ult > 60000) recargar();
 }, 6000);
 </script>
 @endpush
