@@ -1162,7 +1162,7 @@ class AtencionController extends Controller
         $hasta = $request->input('hasta')
             ? \Carbon\Carbon::parse($request->input('hasta'))->endOfDay()
             : null;
-        $tipo  = $request->input('tipo', 'todos') ?: 'todos'; // todos | bot | wa | tarea
+        $tipo  = $request->input('tipo', 'todos') ?: 'todos'; // todos | bot | wa | tarea | recepcion
         $q     = trim((string) $request->input('q', ''));
         $area  = $request->input('area', 'todas') ?: 'todas'; // todas | atencion | administracion | ovodonacion (solo aplica a WA)
 
@@ -1219,6 +1219,28 @@ class AtencionController extends Controller
                 }
             });
             $fuentes['wa'] = [$query, 'updated_at'];
+        }
+
+        // Pacientes recepcionados (tablet o mostrador). Sin área de WhatsApp; los
+        // ve quien tiene acceso a Recepción. Entran los ya liberados o resueltos,
+        // y los de días anteriores que quedaron sin cerrar en la cola.
+        if (($tipo === 'recepcion' || $tipo === 'todos') && $area === 'todas' && Auth::user()?->hasPermiso('secretaria')) {
+            $query = \App\Models\ColaAtencion::where(fn ($w) => $w->whereIn('estado', ['liberado', 'resuelto'])
+                ->orWhere('hora_llegada', '<', today()));
+            if ($desde) $query->where('hora_llegada', '>=', $desde);
+            if ($hasta) $query->where('hora_llegada', '<=', $hasta);
+            if ($q !== '') $query->where(function ($w) use ($like, $digitos) {
+                $w->where('nombre', 'like', $like)
+                  ->orWhere('apellido', 'like', $like)
+                  ->orWhereRaw("CONCAT(apellido, ', ', nombre) like ?", [$like])
+                  ->orWhereRaw("CONCAT(nombre, ' ', apellido) like ?", [$like])
+                  ->orWhere('obra_social', 'like', $like)
+                  ->orWhere('profesional', 'like', $like)
+                  ->orWhere('practica', 'like', $like)
+                  ->orWhere('nota', 'like', $like);
+                if (strlen($digitos) >= 5) $w->orWhere('dni', 'like', '%' . $digitos . '%');
+            });
+            $fuentes['recepcion'] = [$query, 'hora_llegada'];
         }
 
         // Paginación real sobre las tres fuentes juntas. Antes cada una traía sus
@@ -1291,6 +1313,43 @@ class AtencionController extends Controller
                 'area_label'  => $areaLabels[$c->area] ?? $c->area,
                 'resuelto_at' => $c->updated_at?->format('d/m/Y H:i'),
                 'ts'          => $c->updated_at?->timestamp ?? 0,
+            ];
+        }
+
+        $motivos = \App\Http\Controllers\RecepcionController::MOTIVOS_MOSTRADOR;
+        foreach (\App\Models\ColaAtencion::whereIn('id', $ids['recepcion'] ?? [])
+            ->with(['registradoPor:id,nombre_completo', 'presentePor:id,nombre_completo'])->get() as $p) {
+            $motivo = $motivos[$p->motivo] ?? $p->motivo;
+            $turno  = $p->sin_turno ? 'Sin turno' : trim(implode(' · ', array_filter([
+                $p->turno_hora ? substr($p->turno_hora, 0, 5) : null, $p->profesional, $p->practica,
+            ])));
+            $filas["recepcion-{$p->id}"] = [
+                'id'          => $p->id,
+                'tipo'        => 'recepcion',
+                'contacto'    => trim($p->nombre_completo, ', ') ?: ($p->dni ?: '—'),
+                'etiqueta'    => 'Recepción',
+                'resumen'     => implode(' — ', array_filter([$turno ?: null, $motivo, $p->obra_social])) ?: '—',
+                'asig_name'   => $p->presentePor?->nombre_completo ?? $p->registradoPor?->nombre_completo,
+                'area_label'  => $p->origen === 'mostrador' ? 'Mostrador' : 'Tablet',
+                'resuelto_at' => $p->hora_llegada?->format('d/m/Y H:i'),
+                'ts'          => $p->hora_llegada?->timestamp ?? 0,
+                'detalle'     => [
+                    'dni'           => $p->dni ?: null,
+                    'obra_social'   => trim(($p->obra_social ?? '') . ($p->plan ? " · {$p->plan}" : '')) ?: null,
+                    'turno'         => $turno ?: null,
+                    'motivo'        => $motivo,
+                    'llegada'       => $p->hora_llegada?->format('H:i'),
+                    'llamado'       => $p->hora_llamado?->format('H:i'),
+                    'liberado'      => $p->hora_liberado?->format('H:i'),
+                    'atendido'      => $p->atendido_at?->format('H:i'),
+                    'estado'        => ['liberado' => 'Pasó al consultorio', 'resuelto' => 'Resuelto en recepción',
+                                        'esperando' => 'Quedó esperando (sin cerrar)', 'en_atencion' => 'Quedó en atención (sin cerrar)'][$p->estado] ?? $p->estado,
+                    'registro'      => $p->registradoPor?->nombre_completo,
+                    'presente'      => $p->presentePor?->nombre_completo,
+                    'faltantes'     => $p->presente_faltantes ?: [],
+                    'primera_vez'   => (bool) $p->primera_vez,
+                    'nota'          => $p->nota,
+                ],
             ];
         }
 

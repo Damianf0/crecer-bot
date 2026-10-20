@@ -46,6 +46,18 @@ class ColaAtencion extends Model
         static::deleted(fn () => \App\Support\AvisoRecepcion::marcar('sala'));
     }
 
+    // ── Relaciones ─────────────────────────────────────────
+
+    public function registradoPor()
+    {
+        return $this->belongsTo(User::class, 'registrado_por');
+    }
+
+    public function presentePor()
+    {
+        return $this->belongsTo(User::class, 'presente_por');
+    }
+
     // ── Helpers ────────────────────────────────────────────
 
     public function getNombreCompletoAttribute(): string

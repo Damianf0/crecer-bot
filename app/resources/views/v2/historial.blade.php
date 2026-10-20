@@ -67,6 +67,9 @@
                 <option value="bot"    {{ $tipo === 'bot'   ? 'selected' : '' }}>Bot</option>
                 <option value="wa"     {{ $tipo === 'wa'    ? 'selected' : '' }}>WhatsApp</option>
                 <option value="tarea"  {{ $tipo === 'tarea' ? 'selected' : '' }}>Tareas</option>
+                @if(auth()->user()?->hasPermiso('secretaria'))
+                <option value="recepcion" {{ $tipo === 'recepcion' ? 'selected' : '' }}>Recepción</option>
+                @endif
             </select>
         </div>
         <div>
@@ -130,6 +133,8 @@
                     <span class="v2-pill nueva">Bot</span>
                 @elseif($item['tipo'] === 'wa')
                     <span class="v2-pill proceso">WA</span>
+                @elseif($item['tipo'] === 'recepcion')
+                    <span class="v2-pill neutral">Recepción</span>
                 @else
                     <span class="v2-pill accent">Tarea</span>
                 @endif
@@ -145,7 +150,7 @@
             <td style="color:var(--v2-text-2);">{{ $item['area_label'] ?? '—' }}</td>
             <td style="white-space:nowrap;">
                 <button class="v2-btn sm" onclick="toggleDetalle('{{ $item['tipo'] }}', {{ $item['id'] }}, {{ json_encode($item) }})">Ver ▾</button>
-                @if($item['tipo'] !== 'tarea')
+                @if(!in_array($item['tipo'], ['tarea', 'recepcion']))
                 <button class="v2-btn sm accent" onclick="reabrir('{{ $item['tipo'] }}', {{ $item['id'] }}, this, '{{ $item['area'] ?? '' }}')">↩ Reabrir</button>
                 @endif
             </td>
@@ -219,6 +224,28 @@ async function toggleDetalle(tipo, id, item) {
                ).join('')}</div>`
             : `<div style="font-size:12px;color:var(--v2-text-mute);">Sin comentarios.</div>`;
         el.innerHTML = desc + meta + koms;
+        return;
+    }
+
+    if (tipo === 'recepcion') {
+        const d = item.detalle || {};
+        const fila = (k, v) => v ? `<span class="hist-label-mini" style="margin:0;">${k}</span><span>${esc(v)}</span>` : '';
+        const horarios = [d.llegada && `llegó ${d.llegada}`, d.llamado && `atendido en recepción ${d.llamado}`,
+                          d.liberado && `pasó ${d.liberado}`, d.atendido && `el médico lo marcó atendido ${d.atendido}`].filter(Boolean).join(' · ');
+        el.innerHTML = `<div style="display:grid;grid-template-columns:130px 1fr;gap:5px 12px;font-size:12px;margin-bottom:10px;">
+            ${fila('Por', item.area_label)}
+            ${fila('DNI', d.dni)}
+            ${fila('Obra social', d.obra_social)}
+            ${fila('Turno', d.turno)}
+            ${fila('Motivo', d.motivo)}
+            ${fila('Resultado', d.estado)}
+            ${fila('Horarios', horarios)}
+            ${fila('Cargó', d.registro)}
+            ${fila('Dio el presente', d.presente)}
+            ${d.primera_vez ? fila('Primera vez', 'Sí') : ''}
+            ${d.faltantes && d.faltantes.length ? fila('Pasó sin', d.faltantes.join(', ')) : ''}
+        </div>
+        ${d.nota ? `<div class="hist-label-mini">Nota</div><div class="detail-texto">${esc(d.nota)}</div>` : ''}`;
         return;
     }
 
