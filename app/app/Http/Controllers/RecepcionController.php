@@ -104,6 +104,7 @@ class RecepcionController extends Controller
                 'atendido'    => $p->atendido_at?->format('H:i'),   // el médico ya lo marcó atendido
             ])->values(),
             'en_clinica_minutos' => self::EN_CLINICA_MINUTOS,
+            'atendidos_hoy' => $this->atendidosHoy(),
             'stats' => [
                 'total'       => $cola->count(),
                 'esperando'   => $cola->where('estado', 'esperando')->count(),
@@ -114,6 +115,44 @@ class RecepcionController extends Controller
                 'hoy_mostrador' => ColaAtencion::whereDate('hora_llegada', today())->where('origen', 'mostrador')->count(),
             ],
         ]);
+    }
+
+    /**
+     * Solapa "Atendidos hoy": los que ya salieron de la cola en el día (pasaron
+     * al consultorio o se resolvieron en recepción). Sirve para levantarlos si
+     * vuelven más tarde o para dejarles una nota sin ir al historial.
+     */
+    private function atendidosHoy(): array
+    {
+        return ColaAtencion::whereDate('hora_llegada', today())
+            ->whereIn('estado', ['liberado', 'resuelto'])
+            ->with(['registradoPor:id,nombre_completo', 'presentePor:id,nombre_completo'])
+            ->orderByDesc('hora_llegada')->orderByDesc('id')
+            ->get()
+            ->map(fn ($p) => [
+                'id'          => $p->id,
+                'nombre'      => trim($p->nombre_completo, ', ') ?: ($p->dni ?: '—'),
+                'nombre_solo' => $p->nombre,
+                'apellido'    => $p->apellido,
+                'dni'         => $p->dni,
+                'obra_social' => $p->obra_social,
+                'plan'        => $p->plan,
+                'profesional' => $p->profesional,
+                'practica'    => $p->practica,
+                'turno_hora'  => $p->turno_hora ? substr($p->turno_hora, 0, 5) : null,
+                'motivo'      => self::MOTIVOS_MOSTRADOR[$p->motivo] ?? $p->motivo,
+                'origen'      => $p->origen === 'mostrador' ? 'Mostrador' : 'Tablet',
+                'estado'      => $p->estado === 'liberado' ? 'Pasó al consultorio' : 'Resuelto en recepción',
+                'sin_turno'   => (bool) $p->sin_turno,
+                'primera_vez' => (bool) $p->primera_vez,
+                'llegada'     => $p->hora_llegada?->format('H:i'),
+                'liberado'    => $p->hora_liberado?->format('H:i'),
+                'atendido'    => $p->atendido_at?->format('H:i'),
+                'registro'    => $p->registradoPor?->nombre_completo,
+                'presente'    => $p->presentePor?->nombre_completo,
+                'faltantes'   => $p->presente_faltantes ?: [],
+                'nota'        => $p->nota,
+            ])->values()->all();
     }
 
     /** Abre la ficha: esperando → en_atencion + hora_llamado. Inicializa checklist si faltaba. */

@@ -86,6 +86,7 @@
     <div class="rec-tabs">
         <button class="rec-tab active" data-tab="sala" onclick="recTab('sala')">🪑 Sala de espera <span class="badge" id="badge-sala">0</span></button>
         <button class="rec-tab" data-tab="bot" onclick="recTab('bot')">💬 Mensajes del bot <span class="badge" id="badge-bot">0</span></button>
+        <button class="rec-tab" data-tab="hoy" onclick="recTab('hoy')">📋 Atendidos hoy <span class="badge" id="badge-hoy">0</span></button>
     </div>
 
     {{-- ── TAB: Sala de espera ── --}}
@@ -114,6 +115,21 @@
                 <div id="lista-bot"><div class="rec-empty">Cargando…</div></div>
             </div>
             <div class="rec-ficha" id="ficha-bot" style="display:none;"></div>
+        </div>
+    </div>
+
+    {{-- ── TAB: Atendidos hoy (por si vuelven o para dejar una nota) ── --}}
+    <div class="rec-pane" id="pane-hoy">
+        <div class="rec-cols no-ficha" id="cols-hoy">
+            <div class="rec-list">
+                <div class="rec-list-head">
+                    Atendidos hoy <span class="cnt" id="cnt-hoy">0</span>
+                    <input class="v2-field" id="buscar-hoy" placeholder="Buscar por nombre, DNI o profesional…" oninput="renderHoy()"
+                           style="margin-left:auto;height:30px;min-width:240px;text-transform:none;letter-spacing:0;font-weight:400;">
+                </div>
+                <div id="lista-hoy"><div class="rec-empty">Cargando…</div></div>
+            </div>
+            <div class="rec-ficha" id="ficha-hoy" style="display:none;"></div>
         </div>
     </div>
 </div>
@@ -182,7 +198,7 @@ function recTab(t) {
     TAB = t;
     document.querySelectorAll('.rec-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
     document.querySelectorAll('.rec-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-'+t));
-    if (t === 'sala') cargarSala(); else cargarBot();
+    if (t === 'bot') cargarBot(); else cargarSala();   // "Atendidos hoy" viene con la sala
 }
 
 // ════════════════════ ATENCIÓN EN MOSTRADOR ════════════════════
@@ -194,8 +210,12 @@ let EN_CLINICA = [];
 function abrirMostrador(prefill = null) {
     MO = { paciente: null, turnos: [], turno: null, vuelveDe: prefill?.id || null, buscado: null, turnoElegido: false };
     ['mo-dni', 'mo-nombre', 'mo-apellido', 'mo-os', 'mo-nota'].forEach(i => $(i).value = '');
-    $('mo-motivo').value = prefill ? 'regreso' : '';   // sin valor por defecto: hay que preguntarle por qué viene
-    $('mo-encontrado').innerHTML = prefill ? `<span style="color:var(--v2-ok);">Vuelve del consultorio${prefill.profesional ? ' (' + esc(prefill.profesional) + ')' : ''}</span>` : '';
+    // Desde "Atendidos hoy" puede venir alguien que no pasó al consultorio (se resolvió en recepción).
+    const delConsultorio = prefill && prefill.estado !== 'Resuelto en recepción';
+    $('mo-motivo').value = delConsultorio ? 'regreso' : '';   // sin valor por defecto: hay que preguntarle por qué viene
+    $('mo-encontrado').innerHTML = !prefill ? ''
+        : delConsultorio ? `<span style="color:var(--v2-ok);">Vuelve del consultorio${prefill.profesional ? ' (' + esc(prefill.profesional) + ')' : ''}</span>`
+        : `<span style="color:var(--v2-ok);">Vuelve: ya vino hoy${prefill.llegada ? ' a las ' + esc(prefill.llegada) : ''}</span>`;
     $('mo-turnos').innerHTML = '';
     if (prefill) {
         $('mo-dni').value = prefill.dni || '';
@@ -315,6 +335,9 @@ async function cargarSala() {
     $('cnt-sala').textContent = SALA.length;
     $('hoy-sala').textContent = `Hoy: ${j.stats?.hoy_tablet ?? 0} por el tablet · ${j.stats?.hoy_mostrador ?? 0} en el mostrador`;
     renderEnClinica(j.en_clinica || [], j.en_clinica_minutos || 60);
+    HOY = j.atendidos_hoy || [];
+    $('badge-hoy').textContent = HOY.length;
+    renderHoy();
     renderSala();
     // Si hay ficha abierta, refrescarla con datos frescos (o cerrarla si ya salió de la cola).
     if (selPac != null) {
@@ -474,6 +497,99 @@ async function resolverPac(id) {
     cargarSala();
 }
 
+// ════════════════════════ ATENDIDOS HOY ════════════════════════
+let HOY = [];
+let selHoy = null;
+
+function renderHoy() {
+    const c = $('lista-hoy');
+    const q = ($('buscar-hoy').value || '').trim().toLowerCase();
+    const lista = q ? HOY.filter(p => [p.nombre, p.dni, p.profesional, p.obra_social].some(v => String(v || '').toLowerCase().includes(q))) : HOY;
+    $('cnt-hoy').textContent = HOY.length;
+    if (!lista.length) {
+        c.innerHTML = `<div class="rec-empty">${q ? 'Nadie con esa búsqueda hoy.' : 'Todavía no hay pacientes atendidos hoy.'}</div>`;
+    } else {
+        c.innerHTML = lista.map(p => `
+        <div class="rec-card ${p.id===selHoy?'sel':''}" onclick="abrirHoy(${p.id})">
+            <div class="rec-card-head">
+                <div class="rec-card-name">${esc(p.nombre)}</div>
+                ${p.nota ? '<span class="rec-flag yellow" title="Tiene nota">📝 Nota</span>' : ''}
+                <span class="rec-flag ${p.origen === 'Mostrador' ? 'blue' : 'green'}">${esc(p.origen)}</span>
+                <span class="rec-espera" style="font-weight:600;color:var(--v2-text-mute);">${esc(p.llegada || '')}</span>
+            </div>
+            <div class="rec-card-meta">
+                <span>${esc(p.estado)}</span>
+                ${p.profesional ? `<span>· ${esc(p.profesional)}</span>` : (p.motivo ? `<span>· ${esc(p.motivo)}</span>` : '')}
+                ${p.turno_hora ? `<span>· Turno <b>${esc(p.turno_hora)}</b></span>` : ''}
+            </div>
+        </div>`).join('');
+    }
+    if (selHoy != null) {
+        const p = HOY.find(x => x.id === selHoy);
+        if (p) renderFichaHoy(p); else cerrarFichaHoy();
+    }
+}
+
+function abrirHoy(id) {
+    selHoy = id;
+    renderHoy();
+}
+
+function renderFichaHoy(p) {
+    $('cols-hoy').classList.remove('no-ficha');
+    const f = $('ficha-hoy'); f.style.display = 'block';
+    // Igual que la ficha de la sala: el refresco no pisa la nota a medio escribir.
+    const taPrev = $('nota-hoy');
+    const guard = taPrev && f.dataset.pac == p.id
+        ? { v: taPrev.value, focus: document.activeElement === taPrev, s: taPrev.selectionStart } : null;
+    f.dataset.pac = p.id;
+    const horas = [p.llegada && `llegó ${p.llegada}`, p.liberado && `pasó ${p.liberado}`, p.atendido && `médico ${p.atendido}`].filter(Boolean).join(' · ');
+    f.innerHTML = `
+        <div class="rec-ficha-head">
+            <div class="rec-ficha-title"><div class="n">${esc(p.nombre)}</div><div class="s">DNI ${esc(p.dni || '—')} · ${esc(p.origen)}</div></div>
+            <button class="rec-ficha-close" onclick="cerrarFichaHoy()">✕</button>
+        </div>
+        <div class="rec-grid">
+            <div><div class="k">Obra social</div><div class="v">${esc(p.obra_social || '—')}${p.plan ? ' · ' + esc(p.plan) : ''}</div></div>
+            <div><div class="k">Motivo</div><div class="v">${esc(p.motivo || '—')}</div></div>
+            <div><div class="k">Práctica</div><div class="v">${esc(p.practica || (p.sin_turno ? 'Sin turno' : '—'))}</div></div>
+            <div><div class="k">Profesional</div><div class="v">${esc(p.profesional || '—')}</div></div>
+            <div><div class="k">Resultado</div><div class="v">${esc(p.estado)}</div></div>
+            <div><div class="k">Horarios</div><div class="v">${esc(horas || '—')}</div></div>
+            <div><div class="k">Cargó</div><div class="v">${esc(p.registro || '—')}</div></div>
+            <div><div class="k">Dio el presente</div><div class="v">${esc(p.presente || '—')}</div></div>
+        </div>
+        ${p.faltantes.length ? `<div class="rec-faltan">Pasó sin: ${p.faltantes.map(esc).join(', ')}</div>` : ''}
+
+        <div class="rec-sub">Nota interna</div>
+        <textarea class="rec-ta" id="nota-hoy" placeholder="Algo para tener en cuenta si vuelve…">${esc(p.nota || '')}</textarea>
+        <div class="rec-actions">
+            <button class="v2-btn" onclick="guardarNotaHoy(${p.id})">Guardar nota</button>
+            <button class="v2-btn primary" onclick='abrirMostrador(HOY.find(x => x.id === ${p.id}))' title="Lo vuelve a registrar en el mostrador con sus datos cargados">Volvió al mostrador</button>
+        </div>`;
+    if (guard) {
+        const ta = $('nota-hoy');
+        ta.value = guard.v;
+        if (guard.focus) { ta.focus(); ta.setSelectionRange(guard.s, guard.s); }
+    }
+}
+
+function cerrarFichaHoy() {
+    selHoy = null;
+    $('ficha-hoy').style.display = 'none';
+    $('cols-hoy').classList.add('no-ficha');
+    renderHoy();
+}
+
+async function guardarNotaHoy(id) {
+    const nota = $('nota-hoy').value;
+    const j = await postJSON(`/v2/recepcion/cola/${id}/nota`, { nota });
+    if (!j.ok) { v2toast(j._err || 'Error', 'err'); return; }
+    const p = HOY.find(x => x.id === id); if (p) p.nota = nota;
+    v2toast('Nota guardada', 'ok');
+    renderHoy();
+}
+
 // ════════════════════════ MENSAJES DEL BOT ════════════════════════
 let BOT = [];
 let selDeriv = null;
@@ -580,7 +696,8 @@ V2Tiempo.canales([['recepcion', 'RecepcionActualizada']], ev => ev.tipo, tipos =
     if (tipos.has('bot')  || tipos.has(null)) recargar('bot');
 });
 setInterval(() => {
-    if (!V2Tiempo.vivo() || Date.now() - _ult[TAB] > 60000) recargar(TAB);
+    const t = TAB === 'bot' ? 'bot' : 'sala';   // "Atendidos hoy" se carga con la sala
+    if (!V2Tiempo.vivo() || Date.now() - _ult[t] > 60000) recargar(t);
 }, 6000);
 </script>
 @endpush
