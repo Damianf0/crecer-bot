@@ -74,7 +74,7 @@ window.Avisos = (function () {
             p = document.createElement('div');
             p.id = 'v2-avisos';
             p.setAttribute('aria-live', 'polite');
-            p.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:3000;display:flex;flex-direction:column;gap:8px;max-width:min(360px,calc(100vw - 36px));';
+            p.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:3000;display:flex;flex-direction:column;gap:8px;max-width:min(280px,calc(100vw - 36px));';
             document.body.appendChild(p);
         }
         return p;
