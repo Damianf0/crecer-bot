@@ -374,6 +374,13 @@ services:
       - OLLAMA_KEEP_ALIVE=-1
       # El mismo modelo que OLLAMA_MODEL en bot/.env.
       - MODELO_PRECARGA=qwen3.5:4b
+      # Tope de memoria del llama-server (22/10). Por defecto guarda una caché
+      # de prompts de hasta 8 GB (--cache-ram 8192) y 32 checkpoints de 50 MB:
+      # en 5 h llegó a 8,6 GB, la máquina (12 GB) se quedó sin RAM ni swap y
+      # se colgaron el panel y el Chromium de los bots. Con estos topes el
+      # proceso queda en ~2,5 GB. Ollama le pasa estas variables al hijo.
+      - LLAMA_ARG_CACHE_RAM=1024
+      - LLAMA_ARG_CTX_CHECKPOINTS=8
     # Precarga (12/10): al arrancar deja el modelo en la placa antes de que lo
     # pida un bot. Los bots cortan a los 25 s y este Ollama aborta la carga si
     # el cliente corta; en frío tarda más que eso (33 s medidos), así que sin
