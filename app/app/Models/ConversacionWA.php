@@ -14,12 +14,14 @@ class ConversacionWA extends Model
     protected $fillable = [
         'contacto', 'area', 'nombre', 'estado', 'no_leidos', 'ultima_actividad',
         'urgente', 'asignada_a', 'resumen_llm', 'historial_llm', 'resumen_intento_at',
-        'telefono_wa', 'nombre_wa', 'wa_info_at',
+        'telefono_wa', 'nombre_wa', 'wa_info_at', 'episodio_desde', 'resumen_msg_id',
     ];
 
     protected $casts = [
         'ultima_actividad'   => 'datetime',
         'resumen_intento_at' => 'datetime',
+        'episodio_desde'     => 'datetime',
+        'resumen_msg_id'     => 'integer',
         'no_leidos'          => 'integer',
         'urgente'            => 'boolean',
         'wa_info_at'         => 'datetime',
@@ -143,16 +145,14 @@ class ConversacionWA extends Model
      * 1-2 mensajes cortos ("¿Me enviarían más detalles?") donde el modelo
      * devuelve {} porque no hay qué resumir; la cola ya muestra ese mensaje tal cual.
      *
-     * 1 query barata. Devuelve false rápido si ya hay resumen.
+     * Desde el 23/10 cuenta solo los mensajes de la consulta actual
+     * (episodio_desde): un "ok" a los dos meses no amerita por lo de mayo.
      */
     public function ameritaResumen(): bool
     {
-        if (!empty($this->resumen_llm)) return false;
-
         // CHAR_LENGTH cuenta caracteres en MySQL (LENGTH, bytes); SQLite (tests) solo tiene LENGTH, que ahí cuenta caracteres.
         $largo = $this->getConnection()->getDriverName() === 'sqlite' ? 'LENGTH' : 'CHAR_LENGTH';
-        $stats = MensajeWA::where('conversacion_id', $this->id)
-            ->where('direccion', 'entrante')
+        $stats = $this->entrantesDelEpisodio()
             ->selectRaw("
                 COUNT(*) as total,
                 SUM(CASE WHEN {$largo}(contenido) > 80 THEN 1 ELSE 0 END) as largos,
@@ -165,16 +165,58 @@ class ConversacionWA extends Model
             || ($stats->media  ?? 0) >= 1;
     }
 
+    /** Sin escribir por más de esto, el próximo mensaje abre una consulta nueva. */
+    public const EPISODIO_GAP_DIAS = 3;
+
+    /** Mensajes entrantes de la consulta actual. */
+    public function entrantesDelEpisodio()
+    {
+        return MensajeWA::where('conversacion_id', $this->id)
+            ->where('direccion', 'entrante')
+            ->when($this->episodio_desde, fn ($q) => $q->where('created_at', '>=', $this->episodio_desde));
+    }
+
     /**
-     * Despacha el job de resumen si amerita y aún no se está procesando.
-     * Idempotente: si ya hay resumen, o ya se intentó hace poco, o no amerita, no hace nada.
-     * Diseñado para llamarse desde mensajeEntrante / abrir conversación sin penalizar latencia.
+     * El paciente vuelve a escribir: si la conversación estaba archivada o sin
+     * movimiento hace más de EPISODIO_GAP_DIAS, empieza una consulta nueva y el
+     * resumen anterior deja de mostrarse (hasta el 23/10 quedaba para siempre:
+     * 57 de 103 conversaciones de un día mostraban un resumen de hace más de un
+     * mes). Llamar ANTES de actualizar estado y ultima_actividad.
+     */
+    public function abrirEpisodioSiCorresponde(): bool
+    {
+        $nueva = $this->estado === 'archivada'
+            || ($this->ultima_actividad && $this->ultima_actividad->lt(now()->subDays(self::EPISODIO_GAP_DIAS)));
+        if (!$nueva) return false;
+        $this->forceFill([
+            'episodio_desde'     => now(),
+            'resumen_llm'        => null,
+            'resumen_msg_id'     => null,
+            'resumen_intento_at' => null,
+        ])->saveQuietly();
+        \Illuminate\Support\Facades\Cache::forget("resumen-despachado:{$this->id}");
+        return true;
+    }
+
+    /** ¿Entraron mensajes del paciente después del último resumen? */
+    public function resumenDesactualizado(): bool
+    {
+        if (empty($this->resumen_llm)) return false;
+        // Resúmenes de antes del 23/10 no saben hasta dónde llegaban.
+        if (!$this->resumen_msg_id) return true;
+        return $this->entrantesDelEpisodio()->where('id', '>', $this->resumen_msg_id)->exists();
+    }
+
+    /**
+     * Despacha el job de resumen si hace falta: no hay resumen y la consulta lo
+     * amerita, o hay resumen pero entraron mensajes nuevos después.
+     * Diseñado para llamarse desde mensajeEntrante sin penalizar latencia.
      */
     public function despacharResumenSiAmerita(): void
     {
-        if (!empty($this->resumen_llm)) return;
-
-        if (!$this->ameritaResumen()) {
+        if (!empty($this->resumen_llm)) {
+            if (!$this->resumenDesactualizado()) return;
+        } elseif (!$this->ameritaResumen()) {
             // No amerita todavía: queda marcada como evaluada (Reportes separa
             // "no amerita" de "nunca evaluada"), pero la marca no frena la
             // próxima evaluación. El 12/10 entraron 4 mensajes en 12 segundos:
@@ -184,11 +226,13 @@ class ConversacionWA extends Model
             return;
         }
 
-        // Throttle: un despacho cada 10 min por conversación, para no encolar
-        // uno por mensaje mientras el job espera o si el bot no devolvió nada.
-        if (!\Illuminate\Support\Facades\Cache::add("resumen-despachado:{$this->id}", 1, 600)) return;
+        // Throttle: un despacho cada 3 min por conversación (era 10 hasta el
+        // 23/10, cuando el resumen se hacía una sola vez). El job sale con 60 s
+        // de demora para tomar la ráfaga entera; lo que llegue después dispara
+        // otro cuando vence la espera.
+        if (!\Illuminate\Support\Facades\Cache::add("resumen-despachado:{$this->id}", 1, 180)) return;
 
-        \App\Jobs\GenerarResumenLLM::dispatch($this->id)->onQueue('resumen');
+        \App\Jobs\GenerarResumenLLM::dispatch($this->id)->onQueue('resumen')->delay(now()->addSeconds(60));
     }
 
     public function asignadaA()

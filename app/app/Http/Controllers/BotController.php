@@ -128,7 +128,10 @@ class BotController extends Controller
 
         // Actualizar resumen LLM en la conversación
         if ($data['resumen_llm'] ?? null) {
-            $conv->update(['resumen_llm' => $data['resumen_llm']]);
+            $conv->update([
+                'resumen_llm'    => $data['resumen_llm'],
+                'resumen_msg_id' => $conv->entrantesDelEpisodio()->max('id'),
+            ]);
         }
 
         // Nota interna con la clasificación del bot
@@ -282,6 +285,13 @@ class BotController extends Controller
             ['contacto' => $data['contacto'], 'area' => $area],
             ['estado' => 'activa', 'ultima_actividad' => now()]
         );
+
+        // Vuelve a escribir tras archivar o tras días sin movimiento: consulta
+        // nueva, el resumen viejo deja de mostrarse. El backfill trae mensajes
+        // con fecha vieja: no abre consultas.
+        if (!$esBackfill && !$conv->wasRecentlyCreated) {
+            $conv->abrirEpisodioSiCorresponde();
+        }
 
         // Re-activar si estaba archivada (el contacto vuelve a escribir)
         if ($conv->estado === 'archivada') {

@@ -528,6 +528,83 @@ Artisan::command('conversaciones:regenerar-resumenes {--dry-run} {--limit=}', fu
 })->purpose('Backfill: dispatcha jobs LLM para conversaciones históricas sin resumen que ameritan');
 
 /**
+ * Resúmenes viejos (23/10): hasta hoy el resumen se hacía una sola vez por
+ * conversación y quedaba para siempre. Para las conversaciones con movimiento
+ * en los últimos --dias: marca dónde empieza la consulta actual (primer mensaje
+ * tras un hueco de más de 3 días), borra el resumen si es de antes y encola uno
+ * nuevo (espaciados, para no saturar Ollama). Sin --apply solo simula.
+ *
+ * Uso: docker exec -u www-data crecer-web-1 php artisan conversaciones:actualizar-resumenes
+ *      docker exec -u www-data crecer-web-1 php artisan conversaciones:actualizar-resumenes --apply
+ */
+Artisan::command('conversaciones:actualizar-resumenes {--apply} {--dias=7} {--espacio=6}', function () {
+    $apply = (bool) $this->option('apply');
+    $dias  = (int) $this->option('dias');
+    $gap   = \App\Models\ConversacionWA::EPISODIO_GAP_DIAS * 86400;
+
+    // También las archivadas: el resumen viejo se ve en el historial.
+    $convs = \App\Models\ConversacionWA::where('ultima_actividad', '>=', now()->subDays($dias))->get();
+
+    // Inicio de la consulta actual por conversación: el último mensaje (sin
+    // notas internas) que llegó más de 3 días después del anterior.
+    $inicios = collect(\Illuminate\Support\Facades\DB::select("
+        SELECT conversacion_id, MAX(created_at) AS inicio FROM (
+            SELECT conversacion_id, created_at,
+                   TIMESTAMPDIFF(SECOND, LAG(created_at) OVER (PARTITION BY conversacion_id ORDER BY created_at, id), created_at) AS hueco
+            FROM mensajes_wa
+            WHERE direccion <> 'nota_interna' AND conversacion_id IN (" . ($convs->pluck('id')->implode(',') ?: '0') . ")
+        ) x WHERE hueco > ? GROUP BY conversacion_id", [$gap]))->keyBy('conversacion_id');
+
+    $n = ['viejo_borrado' => 0, 'actualizar' => 0, 'nuevo' => 0, 'al_dia' => 0, 'nada' => 0];
+    $encolados = 0;
+    foreach ($convs as $conv) {
+        $inicio = isset($inicios[$conv->id]) ? \Carbon\Carbon::parse($inicios[$conv->id]->inicio) : null;
+        $conv->episodio_desde = $inicio;
+        $cambios = ['episodio_desde' => $inicio];
+        $encolar = false;
+
+        if ($conv->resumen_llm && $inicio && (!$conv->resumen_intento_at || $conv->resumen_intento_at->lt($inicio))) {
+            // Resumen de una consulta anterior: se borra y se pide uno nuevo.
+            $n['viejo_borrado']++;
+            $cambios += ['resumen_llm' => null, 'resumen_msg_id' => null];
+            $conv->resumen_llm = null;
+            $encolar = $conv->ameritaResumen();
+        } elseif ($conv->resumen_llm) {
+            // Misma consulta: se actualiza si llegó algo después (o no se sabe).
+            if ($conv->resumenDesactualizado()) {   // sin resumen_msg_id cuenta como desactualizado
+                $n['actualizar']++;
+                $encolar = true;
+            } else {
+                $n['al_dia']++;
+            }
+        } elseif ($conv->ameritaResumen()) {
+            $n['nuevo']++;
+            $encolar = true;
+        } else {
+            $n['nada']++;
+        }
+
+        if ($apply) {
+            $conv->forceFill($cambios)->saveQuietly();
+            if ($encolar) {
+                \App\Jobs\GenerarResumenLLM::dispatch($conv->id)->onQueue('resumen')
+                    ->delay(now()->addSeconds($encolados * (int) $this->option('espacio')));
+                $encolados++;
+            }
+        } elseif ($encolar) {
+            $encolados++;
+        }
+    }
+
+    $this->info("Conversaciones con movimiento en {$dias} días: {$convs->count()}");
+    $this->line("  Resumen de una consulta anterior → se borra y se rehace: {$n['viejo_borrado']}");
+    $this->line("  Resumen de esta consulta con mensajes nuevos después → se rehace: {$n['actualizar']}");
+    $this->line("  Sin resumen y lo amerita → se hace: {$n['nuevo']}");
+    $this->line("  Al día: {$n['al_dia']}  ·  Sin resumen y no amerita: {$n['nada']}");
+    $this->info(($apply ? 'Encolados: ' : 'Se encolarían: ') . "{$encolados} (uno cada {$this->option('espacio')} s ≈ " . round($encolados * (int) $this->option('espacio') / 60) . ' min)' . ($apply ? '' : '  — SIMULACIÓN, nada cambió'));
+})->purpose('Borra resúmenes de consultas anteriores y regenera los desactualizados (simula sin --apply)');
+
+/**
  * Sincroniza contactos desde Omnia (API prod) usando el reporte ambulatorio.
  *
  * Omnia no expone "listar pacientes"; la fuente es el reporte de turnos del

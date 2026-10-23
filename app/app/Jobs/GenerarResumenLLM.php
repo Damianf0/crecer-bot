@@ -42,17 +42,20 @@ class GenerarResumenLLM implements ShouldQueue
     {
         $conv = ConversacionWA::find($this->conversacionId);
         if (!$conv) return;
-        if (!empty($conv->resumen_llm)) return;
+        // Ya al día: nadie escribió después del último resumen.
+        if (!empty($conv->resumen_llm) && !$conv->resumenDesactualizado()) return;
 
         // Construir el texto a resumir: SOLO los mensajes entrantes del paciente
-        // (últimos 25, en orden cronológico). No incluimos salientes: ni las
-        // autorrespuestas del bot ni las respuestas manuales de la secretaria —
-        // el resumen es del motivo de consulta del paciente, no del ida y vuelta.
-        $msgs = MensajeWA::where('conversacion_id', $conv->id)
-            ->where('direccion', 'entrante')
-            ->orderBy('created_at')
+        // de la consulta actual (episodio_desde), los últimos 25 en orden
+        // cronológico. Hasta el 23/10 tomaba los 25 MÁS VIEJOS de toda la
+        // historia. No incluimos salientes: el resumen es del motivo de
+        // consulta del paciente, no del ida y vuelta.
+        $msgs = $conv->entrantesDelEpisodio()
+            ->orderByDesc('id')
             ->take(25)
-            ->get(['tipo', 'contenido']);
+            ->get(['id', 'tipo', 'contenido'])
+            ->reverse()
+            ->values();
 
         if ($msgs->isEmpty()) {
             $conv->forceFill(['resumen_intento_at' => now()])->saveQuietly();
@@ -86,11 +89,13 @@ class GenerarResumenLLM implements ShouldQueue
 
             $resumen = $resp->ok() ? $resp->json('resumen') : null;
 
-            // Marcar el intento siempre (éxito o fallo) para que el throttle de 10min funcione.
-            $conv->forceFill([
-                'resumen_llm'        => $resumen ?: $conv->resumen_llm,
+            // Si falla se conserva el anterior: es de esta misma consulta (al
+            // abrir una nueva se borra) y reintenta con el próximo mensaje.
+            $conv->forceFill($resumen ? [
+                'resumen_llm'        => $resumen,
+                'resumen_msg_id'     => $msgs->last()->id,
                 'resumen_intento_at' => now(),
-            ])->saveQuietly();
+            ] : ['resumen_intento_at' => now()])->saveQuietly();
 
             if (!$resumen) {
                 Log::warning('[ResumenLLM] Bot devolvió sin resumen', [
