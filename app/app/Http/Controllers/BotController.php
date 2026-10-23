@@ -266,8 +266,14 @@ class BotController extends Controller
         $area = $data['area'] ?? 'atencion';
         $esBackfill = !empty($data['backfill']);
 
-        // Deduplicar por wa_id
-        if (($data['wa_id'] ?? null) && MensajeWA::where('wa_id', $data['wa_id'])->exists()) {
+        // Deduplicar por wa_id. Si el guardado quedó sin archivo (la descarga
+        // falló) y ahora llega con archivo (backfill), se completa: así se
+        // recuperan adjuntos perdidos sin duplicar el mensaje.
+        if (($data['wa_id'] ?? null) && ($existente = MensajeWA::where('wa_id', $data['wa_id'])->first())) {
+            if (!$existente->archivo_url && !empty($data['archivo_url'])) {
+                $existente->update(['archivo_url' => $data['archivo_url']]);
+                return response()->json(['ok' => true, 'duplicate' => true, 'archivo_completado' => true]);
+            }
             return response()->json(['ok' => true, 'duplicate' => true]);
         }
 
@@ -458,7 +464,12 @@ class BotController extends Controller
 
         // Dedup: si llega el mismo wa_id 2 veces (ej: Laravel guardó al enviar
         // via /enviar y ahora vuelve por message_create del bot), no duplicamos.
-        if (($data['wa_id'] ?? null) && MensajeWA::where('wa_id', $data['wa_id'])->exists()) {
+        // Igual que en mensajeEntrante: si quedó sin archivo, se completa.
+        if (($data['wa_id'] ?? null) && ($existente = MensajeWA::where('wa_id', $data['wa_id'])->first())) {
+            if (!$existente->archivo_url && !empty($data['archivo_url'])) {
+                $existente->update(['archivo_url' => $data['archivo_url']]);
+                return response()->json(['ok' => true, 'duplicate' => true, 'archivo_completado' => true]);
+            }
             return response()->json(['ok' => true, 'duplicate' => true]);
         }
 

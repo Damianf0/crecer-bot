@@ -545,13 +545,45 @@ function crearClienteWwebjs() {
       const m = C.Msg.get(msgId) || (await C.Msg.getMessagesById([msgId]))?.messages?.[0];
       // REUPLOADING: el medio venció en el servidor, no se puede bajar ahora.
       if (!m || !m.mediaData || m.mediaData.mediaStage === 'REUPLOADING') return null;
-      if (m.mediaData.mediaStage != 'RESOLVED') {
-        await m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 });
+      const conTope = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('__tope__')), ms))]);
+
+      // Plan B (23/10): la cola interna de descargas de WA Web se puede trabar
+      // (admin: un adjunto quedó en DECRYPTING a las 09:03 y todos los que
+      // siguieron esperaron para siempre, con red y WebCrypto andando bien).
+      // Bajamos el archivo cifrado y lo desciframos nosotros (HKDF + AES-CBC,
+      // validando MAC y hash), sin pasar por esa cola.
+      async function bajarPorFuera() {
+        if (!m.directPath || !m.mediaKey) throw new Error('sin directPath/mediaKey');
+        const INFO = { image: 'Image', sticker: 'Image', video: 'Video', ptv: 'Video', gif: 'Video', audio: 'Audio', ptt: 'Audio', document: 'Document' };
+        const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+        const res = await fetch('https://mmg.whatsapp.net' + m.directPath);
+        if (res.status === 404 || res.status === 410) return null;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const enc = new Uint8Array(await res.arrayBuffer());
+        const base = await crypto.subtle.importKey('raw', b64(m.mediaKey), 'HKDF', false, ['deriveBits']);
+        const bits = new Uint8Array(await crypto.subtle.deriveBits({
+          name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32),
+          info: new TextEncoder().encode(`WhatsApp ${INFO[m.type] || 'Document'} Keys`),
+        }, base, 112 * 8));
+        const iv = bits.slice(0, 16), cuerpo = enc.slice(0, -10), mac = enc.slice(-10);
+        const hk = await crypto.subtle.importKey('raw', bits.slice(48, 80), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const conIv = new Uint8Array(16 + cuerpo.length); conIv.set(iv); conIv.set(cuerpo, 16);
+        const firma = new Uint8Array(await crypto.subtle.sign('HMAC', hk, conIv));
+        if (!mac.every((v, i) => v === firma[i])) throw new Error('MAC inválida');
+        const ak = await crypto.subtle.importKey('raw', bits.slice(16, 48), 'AES-CBC', false, ['decrypt']);
+        const plano = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, ak, cuerpo);
+        return { data: await window.WWebJS.arrayBufferToBase64Async(plano), mimetype: m.mimetype, porFuera: true };
       }
-      if (m.mediaData.mediaStage.includes('ERROR') || m.mediaData.mediaStage === 'FETCHING') return null;
+
+      if (m.mediaData.mediaStage != 'RESOLVED') {
+        try { await conTope(m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 }), 15_000); }
+        catch (e) { if (e.message !== '__tope__') throw e; return await bajarPorFuera(); }
+      }
+      if (m.mediaData.mediaStage.includes('ERROR')) return await bajarPorFuera();
+      if (m.mediaData.mediaStage === 'FETCHING') return null;
       const mockQpl = { addAnnotations() { return this; }, addPoint() { return this; } };
       try {
-        const buf = await window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
+        const buf = await conTope(window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
           directPath: m.directPath,
           encFilehash: m.encFilehash,
           filehash: m.filehash,
@@ -561,14 +593,17 @@ function crearClienteWwebjs() {
           mimetype: m.mimetype,
           signal: new AbortController().signal,
           downloadQpl: mockQpl,
-        });
+        }), 20_000);
         return { data: await window.WWebJS.arrayBufferToBase64Async(buf), mimetype: m.mimetype };
       } catch (e) {
         if (e.status && e.status === 404) return null;
+        if (e.message === '__tope__') return await bajarPorFuera();
         // Los errores de WA Web vienen minificados (e.message suelto no dice nada).
-        throw new Error(`${e.name || 'Error'}: ${e.message}`);
+        try { return await bajarPorFuera(); }
+        catch (e2) { throw new Error(`${e.name || 'Error'}: ${e.message} / plan B: ${e2.message}`); }
       }
     }, completarIdSerializado(msg.id));
+    if (result && result.porFuera) console.warn(`[whatsapp] adjunto bajado por plan B (cola de WA Web sin responder): ${completarIdSerializado(msg.id)}`);
     return result && result.data ? result : null;
   }
 
