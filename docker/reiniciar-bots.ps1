@@ -10,6 +10,10 @@
 # la cache (visto el 28/09). Por eso la espera por bot es de 12 min.
 # El watchdog externo no pisa: no reinicia containers con < 10 min de vida.
 
+# -Solo: lista de servicios a reiniciar (ej: -Solo bot-ovodonacion,bot). Sin
+# parametro, los de siempre.
+param([string[]]$Solo)
+
 $ErrorActionPreference = 'Continue'
 $Log = 'C:\crecer\backups\auto\reiniciar-bots.log'
 $Bots = @(
@@ -17,6 +21,11 @@ $Bots = @(
     @{ Servicio = 'bot-administracion'; Puerto = 3002 },
     @{ Servicio = 'bot';                Puerto = 3001 }
 )
+if ($Solo) {
+    # Por tarea programada los valores pueden llegar como un solo texto "a,b".
+    $Solo = $Solo | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+    $Bots = @($Bots | Where-Object { $Solo -contains $_.Servicio })
+}
 $EsperaMaxSeg = 720
 
 function Log($m) {
@@ -52,5 +61,5 @@ foreach ($b in $Bots) {
     }
     Log ("{0}: listo en {1} s" -f $b.Servicio, $seg)
 }
-Log 'OK: los 3 bots listos con el codigo nuevo'
+Log ("OK: {0} listos con el codigo nuevo" -f (($Bots | ForEach-Object { $_.Servicio }) -join ', '))
 exit 0
