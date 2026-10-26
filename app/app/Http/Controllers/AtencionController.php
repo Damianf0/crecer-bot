@@ -357,10 +357,22 @@ class AtencionController extends Controller
             }
             $contacto = $existente;
         } else {
+            // El DNI es único: si ya lo tiene otro contacto, avisar quién es en vez
+            // de dejar que la base tire un error 500.
+            $dni = preg_replace('/\D/', '', (string) ($data['dni'] ?? '')) ?: null;
+            if ($dni && ($conEseDni = \App\Models\Contacto::where('dni', $dni)->first())) {
+                return response()->json([
+                    'ok'    => false,
+                    'error' => "El DNI {$dni} ya está cargado en otro contacto: {$conEseDni->nombre}"
+                             . ($conEseDni->telefono ? " (tel. {$conEseDni->telefono})" : '')
+                             . '. Revisá el DNI o dejalo vacío.',
+                ], 422);
+            }
+
             $contacto = \App\Models\Contacto::create([
                 'nombre'   => $data['nombre'],
                 'telefono' => $tel,
-                'dni'      => $data['dni'] ?: null,
+                'dni'      => $dni,
                 'wa_id'    => $conv->contacto,  // ya tenemos el JID exacto
             ]);
         }
