@@ -312,8 +312,13 @@ function crearClienteWwebjs() {
   //     (en los salientes termina en "_out"). En los entrantes da el mismo
   //     formato que completarIdSerializado, y serialize() no copia el getter:
   //     el wa_id que ve Node no cambia.
+  //  3. (28/10, versión 2) El objeto plano trae el tamaño como fullWidth/
+  //     fullHeight y el índice de streaming como sidecar, pero el mensaje los
+  //     espera como width/height/streamingSidecar. Sin ellos los videos del
+  //     panel salían "a medias": un tilde para siempre en muchos teléfonos
+  //     (los mandados desde el celular, con esos campos, llegaban). Se copian.
   // Idempotente; se reaplica si la página recargó (WA Web se actualiza solo).
-  const VERSION_PARCHE = 1;
+  const VERSION_PARCHE = 2;
   async function asegurarParcheEnvio() {
     if (!client?.pupPage) return;
     await client.pupPage.evaluate((ver) => {
@@ -322,7 +327,13 @@ function crearClienteWwebjs() {
       window.WWebJS.__pmdOriginal = orig;
       window.WWebJS.processMediaData = async (...args) => {
         const md = await orig(...args);
-        return md && typeof md.toJSON === 'function' ? md.toJSON() : md;
+        if (!md || typeof md.toJSON !== 'function') return md;
+        const js = md.toJSON();
+        if (js.width == null && js.fullWidth != null) js.width = js.fullWidth;
+        if (js.height == null && js.fullHeight != null) js.height = js.fullHeight;
+        const sidecar = md.streamingSidecar ?? js.streamingSidecar ?? js.sidecar;
+        if (sidecar && !js.streamingSidecar) js.streamingSidecar = sidecar;
+        return js;
       };
       const MsgKey = window.require('WAWebMsgKey');
       if (!Object.getOwnPropertyDescriptor(MsgKey.prototype, '_serialized')) {
