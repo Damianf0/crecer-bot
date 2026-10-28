@@ -1425,6 +1425,11 @@ class AtencionController extends Controller
                 $contactoWA = $waId;
             } else {
                 $telefonoRaw = $contactoModel?->telefono ?? '';
+                // Ficha sin teléfono (p. ej. vino de Omnia sin celular): decirlo
+                // claro, no "número inválido", que confundía (28/10).
+                if ($contactoModel && trim($telefonoRaw) === '') {
+                    return response()->json(['ok' => false, 'error' => "La ficha de {$contactoModel->nombre} no tiene teléfono cargado. Agregalo en Contactos (✏️) o escribí el número a mano."], 422);
+                }
             }
         } else {
             $telefonoRaw = $data['telefono'] ?? '';

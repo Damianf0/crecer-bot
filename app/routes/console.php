@@ -747,6 +747,13 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
             if (!$contacto->dni)                                   $cambios['dni'] = $dni;
             if (!$contacto->email && $email)                       $cambios['email'] = $email;
             if (!$contacto->fecha_nacimiento && $fnac)             $cambios['fecha_nacimiento'] = $fnac;
+            // Ficha sin teléfono y Omnia lo tiene (28/10: fichas creadas sin celular
+            // quedaban así para siempre → sin chat vinculado y "número inválido").
+            // Si el número ya es de otra ficha (familiar), no se toca: es único.
+            if (!$contacto->telefono && $telNorm !== ''
+                && !Contacto::where('telefono', $telNorm)->where('id', '!=', $contacto->id)->exists()) {
+                $cambios['telefono'] = $telNorm;
+            }
             if (trim((string) $contacto->nombre) === '' && $p['nombre'] !== '') $cambios['nombre'] = $p['nombre'];
 
             if (empty($cambios)) { $acciones['sin_cambios']++; continue; }
@@ -767,6 +774,7 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
     $this->newLine();
     $this->line(sprintf('  %-38s %d', 'Contactos a CREAR',                   count($acciones['crear'])));
     $this->line(sprintf('  %-38s %d', 'Contactos a COMPLETAR (existentes)',  count($acciones['actualizar'])));
+    $this->line(sprintf('  %-38s %d', '  … de ellos, reciben teléfono',      count(array_filter($acciones['actualizar'], fn ($a) => isset($a['_cambios']['telefono'])))));
     $this->line(sprintf('  %-38s %d', 'Ya al día (sin cambios)',             $acciones['sin_cambios']));
     $this->line(sprintf('  %-38s %d', 'Nuevos sin celular (skipeados)',      $acciones['sin_celular']));
     $this->line(sprintf('  %-38s %d', 'Conflictos (revisar a mano)',         count($acciones['conflictos'])));
@@ -812,13 +820,35 @@ Artisan::command('contactos:sync-omnia {--desde=} {--hasta=} {--apply} {--muestr
         $creados++;
     }
     $actualizados = 0;
+    $vinculados   = 0;
     foreach ($acciones['actualizar'] as $a) {
-        Contacto::whereKey($a['id'])->update($a['_cambios']);
+        $cambios = $a['_cambios'];
+        // Dos fichas del mismo run con el mismo celular: la segunda se queda sin él.
+        if (isset($cambios['telefono']) && Contacto::where('telefono', $cambios['telefono'])->exists()) {
+            unset($cambios['telefono']);
+        }
+        if (!$cambios) continue;
+        Contacto::whereKey($a['id'])->update($cambios);
         $actualizados++;
+
+        // Teléfono recién cargado: si ya hay un chat de WhatsApp con ese número
+        // (identificado por IdentidadWA), vincular la ficha a ese chat.
+        if (isset($cambios['telefono']) && ($ficha = Contacto::find($a['id'])) && !$ficha->wa_id && !$ficha->wa_id_rechazado) {
+            $conv = ConversacionWA::where('telefono_wa', $cambios['telefono'])
+                ->where('contacto', 'not like', '%@g.us')
+                ->whereNotIn('contacto', Contacto::whereNotNull('wa_id')->select('wa_id'))
+                ->orderByDesc('ultima_actividad')->first();
+            if ($conv) {
+                $ficha->update(['wa_id' => $conv->contacto]);
+                ConversacionWA::where('contacto', $conv->contacto)->whereNull('nombre')->update(['nombre' => $ficha->nombre]);
+                $vinculados++;
+            }
+        }
     }
+    if ($vinculados) ConversacionWA::invalidarColaCache();
 
     $this->newLine();
-    $this->info("Creados: $creados · Completados: $actualizados");
+    $this->info("Creados: $creados · Completados: $actualizados · Chats vinculados: $vinculados");
     // Exit != 0 si Omnia rechazó algún día: el script de la tarea programada lo
     // detecta y lo deja registrado en el log en vez de fallar en silencio.
     return empty($stats["dias_perdidos"]) ? 0 : 1;
