@@ -23,7 +23,7 @@ class WaMediaController extends Controller
     {
         // La ruta ya restringe el formato, pero defensa en profundidad.
         // El @ es por archivos legacy con el JID sin sanitizar ("<ts>_<n>@lid.ogg").
-        if (!preg_match('/^[A-Za-z0-9._@-]+$/', $filename) || str_contains($filename, '..')) {
+        if (!preg_match('/^[A-Za-z0-9._@-]+$/', $filename) || $filename === '.' || $filename === '..') {
             abort(400);
         }
 
@@ -44,7 +44,7 @@ class WaMediaController extends Controller
     public static function rutaLocal(?string $archivo): ?string
     {
         $filename = basename((string) $archivo);
-        if ($filename === '' || !preg_match('/^[A-Za-z0-9._@-]+$/', $filename) || str_contains($filename, '..')) {
+        if ($filename === '' || !preg_match('/^[A-Za-z0-9._@-]+$/', $filename) || $filename === '.' || $filename === '..') {
             return null;
         }
         foreach (['/bot-media/' . $filename, storage_path('app/private/public/wa-media/' . $filename)] as $abs) {

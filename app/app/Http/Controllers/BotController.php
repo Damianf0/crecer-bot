@@ -121,7 +121,8 @@ class BotController extends Controller
         ]);
         $area = $data['area'] ?? 'atencion';
 
-        $conv = ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)->first();
+        $conv = ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)->first()
+            ?? ConversacionWA::destinoDeDerivacion($data['contacto'], $area);
         if (!$conv) {
             return response()->json(['ok' => false, 'error' => 'Conversación no encontrada'], 404);
         }
@@ -174,7 +175,8 @@ class BotController extends Controller
         // como FALLBACK: no se pierde la fila ni se ensucia el reporte.
         $codigo = \App\Support\TiposConsulta::valido($data['codigo']) ? $data['codigo'] : 'FALLBACK';
 
-        $conv = ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)->first();
+        $conv = ConversacionWA::where('contacto', $data['contacto'])->where('area', $area)->first()
+            ?? ConversacionWA::destinoDeDerivacion($data['contacto'], $area);
 
         \App\Models\ClasificacionWA::create([
             'conversacion_id' => $conv?->id,
@@ -280,11 +282,27 @@ class BotController extends Controller
             return response()->json(['ok' => true, 'duplicate' => true]);
         }
 
-        // Buscar o crear conversación para este contacto (por área = número de WA)
-        $conv = ConversacionWA::firstOrCreate(
-            ['contacto' => $data['contacto'], 'area' => $area],
-            ['estado' => 'activa', 'ultima_actividad' => now()]
-        );
+        // Momento real del mensaje (el backfill trae fechas viejas).
+        $momento = now();
+        if ($esBackfill) {
+            try { $momento = \Carbon\Carbon::parse($data['timestamp'])->setTimezone(config('app.timezone')); } catch (\Exception $e) {}
+        }
+
+        // Si hace poco se derivó a este paciente desde esta área a otra, lo que
+        // siga mandando a este número va a la conversación del área destino (antes
+        // abría una conversación nueva acá y el área destino nunca lo veía:
+        // 84 adjuntos entre el 24/09 y el 27/10).
+        $viaArea = null;
+        $conv = ConversacionWA::destinoDeDerivacion($data['contacto'], $area, $momento);
+        if ($conv) {
+            $viaArea = $area;
+        } else {
+            // Buscar o crear conversación para este contacto (por área = número de WA)
+            $conv = ConversacionWA::firstOrCreate(
+                ['contacto' => $data['contacto'], 'area' => $area],
+                ['estado' => 'activa', 'ultima_actividad' => now()]
+            );
+        }
 
         // Vuelve a escribir tras archivar o tras días sin movimiento: consulta
         // nueva, el resumen viejo deja de mostrarse. El backfill trae mensajes
@@ -319,6 +337,7 @@ class BotController extends Controller
         $msg = new MensajeWA([
             'conversacion_id' => $conv->id,
             'direccion'       => 'entrante',
+            'via_area'        => $viaArea,
             'tipo'            => $data['tipo'],
             'contenido'       => $data['contenido'] ?? null,
             'archivo_url'     => $data['archivo_url'] ?? null,
@@ -331,7 +350,7 @@ class BotController extends Controller
         if ($esBackfill) {
             // setTimezone: el bot manda ISO UTC (toISOString); sin convertir, la
             // hora de pared UTC quedaba guardada como si fuera ART (+3h de error).
-            try { $msg->created_at = \Carbon\Carbon::parse($data['timestamp'])->setTimezone(config('app.timezone')); } catch (\Exception $e) {}
+            $msg->created_at = $momento;
         }
         $msg->save();
 
@@ -339,6 +358,12 @@ class BotController extends Controller
             'ultima_actividad' => now(),
             'no_leidos'        => $conv->no_leidos + 1,
         ]);
+
+        if ($viaArea && !$esBackfill) {
+            Log::info('Entrante por el número viejo pasado al área destino', [
+                'conv' => $conv->id, 'via' => $viaArea, 'area' => $conv->area, 'msg' => $msg->id,
+            ]);
+        }
 
         // Identidad de WhatsApp (teléfono real del @lid + nombre de perfil): una
         // consulta por conversación que todavía no la tiene, después de

@@ -132,6 +132,15 @@ window.V2Conv = (function () {
         </div>`;
     }
 
+    // Marca de los mensajes que el paciente mandó al número de otra área
+    // después de que se derivó la conversación.
+    function viaHtml(m) {
+        if (!m.via) return '';
+        return m.direccion === 'entrante'
+            ? `<div class="v2-via" title="El paciente lo mandó al número de ${esc(m.via)} después de la derivación">📲 Llegó por ${esc(m.via)}</div>`
+            : `<div class="v2-via" title="Se envió desde el número de ${esc(m.via)}">📲 Desde el número de ${esc(m.via)}</div>`;
+    }
+
     function renderMsg(m) {
         if (m.direccion === 'nota_interna') {
             return `<div class="v2-msg" style="justify-content:center;">
@@ -149,16 +158,17 @@ window.V2Conv = (function () {
                 : `<span class="v2-sel-chk off" title="${m.archivo_url || m.tipo !== 'texto' ? 'El archivo no está en el servidor: no se puede reenviar' : 'No se puede reenviar'}">–</span>`;
             return `<div class="v2-msg ${dir} v2-selectable${marcado ? ' sel' : ''}${m.reenviable ? '' : ' no-sel'}" ${m.reenviable ? `onclick="V2Conv.selToggle(${m.id})"` : ''}>
                 ${caja}<div style="max-width:70%;width:fit-content;min-width:0;">
-                <div class="v2-bubble">${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
+                <div class="v2-bubble">${viaHtml(m)}${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
                 <div class="v2-msg-meta">${meta}</div>
             </div></div>`;
         }
 
         // Solo se puede citar un mensaje que WhatsApp conoce (tiene wa_id).
-        const reply = m.wa_id ? `<button class="v2-reply-btn" title="Responder a este mensaje" onclick="V2Conv.responderA(${m.id})">↩</button>` : '';
+        // Los que llegaron por el número de otra área no se pueden citar desde este.
+        const reply = (m.wa_id && !m.via) ? `<button class="v2-reply-btn" title="Responder a este mensaje" onclick="V2Conv.responderA(${m.id})">↩</button>` : '';
         const fwd   = m.reenviable ? `<button class="v2-reply-btn" title="Reenviar este mensaje a otro contacto" onclick="V2Conv.selIniciar(${m.id})">↪</button>` : '';
         return `<div class="v2-msg ${dir}"><div style="max-width:70%;width:fit-content;min-width:0;">
-            <div class="v2-bubble">${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
+            <div class="v2-bubble">${viaHtml(m)}${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
             <div class="v2-msg-meta">${meta} ${reply}${fwd}</div>
         </div></div>`;
     }
@@ -192,7 +202,8 @@ window.V2Conv = (function () {
     function renderEvento(e) {
         const lbl  = EVENTO_LBL[e.tipo] || e.tipo;
         const dest = e.destino ? ` a <b>${esc(e.destino)}</b>` : '';
-        return `<div class="v2-evento"><b>${esc(e.usuario || 'Sistema')}</b> ${lbl}${dest} · ${esc(e.hora)}</div>`;
+        const det  = e.detalle ? ` (${esc(e.detalle)})` : '';
+        return `<div class="v2-evento"><b>${esc(e.usuario || 'Sistema')}</b> ${lbl}${dest}${det} · ${esc(e.hora)}</div>`;
     }
 
     function renderTimeline(d) {

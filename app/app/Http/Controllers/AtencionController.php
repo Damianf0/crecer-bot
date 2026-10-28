@@ -221,6 +221,10 @@ class AtencionController extends Controller
             'ts'          => $m->created_at->timestamp,
             'usuario'     => $m->usuario_id ? ($userMap[$m->usuario_id] ?? null) : null,
             'wa_id'       => $m->wa_id,
+            // Entró por el número de otra área (el paciente escribió al número
+            // viejo después de que se derivó la conversación). No se puede citar:
+            // el mensaje original vive en el chat de otro número.
+            'via'         => $m->via_area ? (ConversacionWA::areas()[$m->via_area] ?? $m->via_area) : null,
             // Se puede reenviar suelto: texto con contenido, o adjunto que esté en disco.
             'reenviable'  => self::esReenviable($m),
             // Reply (solo lectura): el panel renderea el bubble citado arriba del
@@ -250,6 +254,7 @@ class AtencionController extends Controller
             ->get()
             ->map(fn($e) => [
                 'tipo'    => $e->tipo,
+                'detalle' => $e->detalle,
                 'usuario' => $e->usuario?->nombre_completo,
                 'destino' => $e->usuarioDestino?->nombre_completo,
                 'fecha'   => $e->created_at->format('d/m/Y H:i'),
@@ -1593,6 +1598,9 @@ class AtencionController extends Controller
         ]);
 
         // Mover al área destino. Si ya existe una conv (contacto, destino), fusionar.
+        // derivada_desde/derivada_at: lo que el paciente siga mandando al número
+        // viejo se pasa a esta conversación (ver BotController::mensajeEntrante).
+        $origen = $conv->area;
         $existente = ConversacionWA::where('contacto', $conv->contacto)
             ->where('area', $destino)
             ->where('id', '!=', $conv->id)
@@ -1607,6 +1615,8 @@ class AtencionController extends Controller
                 'no_leidos'        => $existente->no_leidos + $conv->no_leidos,
                 'ultima_actividad' => now(),
                 'asignada_a'       => null,
+                'derivada_desde'   => $origen,
+                'derivada_at'      => now(),
             ]);
             $conv->delete();
             $destinoConvId = $existente->id;
@@ -1616,11 +1626,13 @@ class AtencionController extends Controller
                 'asignada_a'       => null,
                 'estado'           => 'activa',
                 'ultima_actividad' => now(),
+                'derivada_desde'   => $origen,
+                'derivada_at'      => now(),
             ]);
             $destinoConvId = $conv->id;
         }
 
-        $this->logEvento($destinoConvId, 'derivada_area');
+        $this->logEvento($destinoConvId, 'derivada_area', null, "{$origenLabel} → {$destinoLabel}");
         ConversacionWA::invalidarColaCache();
 
         return response()->json([
@@ -1650,6 +1662,7 @@ class AtencionController extends Controller
         if (!empty($data['quoted_wa_id'])) {
             $orig = MensajeWA::where('conversacion_id', $conv->id)
                 ->where('wa_id', $data['quoted_wa_id'])
+                ->whereNull('via_area')   // vino por otro número: no se puede citar desde este
                 ->first();
             if ($orig) {
                 $fromMe  = in_array($orig->direccion, ['saliente', 'nota_interna'], true);
@@ -1846,11 +1859,12 @@ class AtencionController extends Controller
 
     // ── Helpers ────────────────────────────────────────────────────────
 
-    private function logEvento(int $convId, string $tipo, ?int $destId = null): void
+    private function logEvento(int $convId, string $tipo, ?int $destId = null, ?string $detalle = null): void
     {
         ConversacionEvento::create([
             'conversacion_id'    => $convId,
             'tipo'               => $tipo,
+            'detalle'            => $detalle,
             'usuario_id'         => Auth::id(),
             'usuario_destino_id' => $destId,
         ]);

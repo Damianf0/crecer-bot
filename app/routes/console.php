@@ -1475,3 +1475,156 @@ Artisan::command('primera-vez:importar {archivo} {--apply} {--muestra=12}', func
     $this->info('Listo: ' . $c->count() . ' registros importados.');
     return 0;
 });
+
+/**
+ * Una sola vez (28/10): mensajes que el paciente mandó al número viejo después
+ * de que se derivó la conversación a otra área. Abrían una conversación nueva
+ * en el área de origen y el área destino nunca los veía (84 adjuntos entre el
+ * 24/09 y el 27/10). Desde el 28/10 BotController::mensajeEntrante los pasa
+ * solos; esto trae los anteriores.
+ *
+ * Criterio: conversación O del mismo paciente, en otra área, CREADA dentro de
+ * los 7 días posteriores a una derivación (la de origen se había movido, así
+ * que O nació por lo que el paciente siguió mandando al número viejo). Se pasan
+ * a la conversación derivada los mensajes de O dentro de esa ventana, marcados
+ * con via_area. Si O queda vacía se borra (queda guardada en el lote).
+ *
+ * Sin --apply solo simula. --revertir=<archivo del lote> deshace.
+ *   docker exec -u www-data crecer-web-1 php artisan conversaciones:rescatar-derivadas
+ */
+Artisan::command('conversaciones:rescatar-derivadas {--desde=2026-09-24} {--dias=7} {--solo-activas} {--apply} {--revertir=}', function () {
+    $dir   = storage_path('app/rescate-derivadas');
+    $dias  = (int) $this->option('dias');   // ventana para lo histórico (la del arreglo es DIAS_REDIRIGIR_DERIVADA)
+    $areas = ConversacionWA::areas();
+
+    // ── Deshacer un lote ──────────────────────────────────────────────
+    if ($rev = $this->option('revertir')) {
+        $path = str_contains($rev, '/') ? $rev : "{$dir}/{$rev}";
+        $lote = json_decode((string) @file_get_contents($path), true);
+        if (!$lote) { $this->error("No pude leer el lote {$path}"); return 1; }
+        DB::transaction(function () use ($lote) {
+            foreach ($lote['pares'] as $p) {
+                if ($p['o_borrada']) {
+                    DB::table('conversaciones_wa')->insert($p['o_fila']);
+                    foreach ($p['o_eventos'] as $ev) DB::table('conversacion_eventos')->insert($ev);
+                }
+                DB::table('mensajes_wa')->whereIn('id', $p['mensajes'])->update(['conversacion_id' => $p['o_id'], 'via_area' => null]);
+                DB::table('documentos_paciente')->whereIn('id', $p['documentos'])->update(['conversacion_id' => $p['o_id']]);
+                DB::table('tareas_wa')->whereIn('id', $p['tareas'])->update(['conversacion_id' => $p['o_id']]);
+                DB::table('clasificaciones_wa')->whereIn('id', $p['clasificaciones'])->update(['conversacion_id' => $p['o_id']]);
+                DB::table('mensajes_wa')->where('id', $p['nota_id'])->delete();
+                DB::table('conversaciones_wa')->where('id', $p['d_id'])->update($p['d_antes']);
+            }
+        });
+        ConversacionWA::invalidarColaCache();
+        $this->info('Lote revertido: ' . count($lote['pares']) . ' conversaciones.');
+        return 0;
+    }
+
+    $eventos = DB::table('conversacion_eventos')->where('tipo', 'derivada_area')
+        ->where('created_at', '>=', $this->option('desde'))->orderBy('created_at')->get();
+
+    // Cada conversación O queda con la derivación más reciente anterior a su creación.
+    $pares = [];
+    foreach ($eventos as $e) {
+        $d = ConversacionWA::find($e->conversacion_id);
+        if (!$d) continue;
+        $desde = \Carbon\Carbon::parse($e->created_at);
+        $hasta = $desde->copy()->addDays($dias);
+        $os = ConversacionWA::where('contacto', $d->contacto)->where('id', '!=', $d->id)
+            ->where('area', '!=', $d->area)
+            ->where('created_at', '>', $desde)->where('created_at', '<=', $hasta)
+            ->when($this->option('solo-activas'), fn ($q) => $q->where('estado', 'activa'))->get();
+        foreach ($os as $o) {
+            $pares[$o->id] = ['d' => $d, 'o' => $o, 'desde' => $desde, 'hasta' => $hasta];
+        }
+    }
+
+    $filas = [];
+    $tot = ['msgs' => 0, 'adj' => 0, 'borradas' => 0, 'reactivadas' => 0];
+    foreach ($pares as $k => $p) {
+        $o = $p['o']; $d = $p['d'];
+        $msgs = \App\Models\MensajeWA::where('conversacion_id', $o->id)
+            ->where('created_at', '>', $p['desde'])->where('created_at', '<=', $p['hasta'])->orderBy('id')->get();
+        $resto = \App\Models\MensajeWA::where('conversacion_id', $o->id)->count() - $msgs->count();
+        $p += ['msgs' => $msgs, 'borrar' => $resto === 0, 'reactivar' => $o->estado === 'activa'];
+        $pares[$k] = $p;
+        $adj = $msgs->where('tipo', '!=', 'texto')->count();
+        $tot['msgs'] += $msgs->count();
+        $tot['adj']  += $adj;
+        $tot['borradas']    += $p['borrar'] ? 1 : 0;
+        $tot['reactivadas'] += $p['reactivar'] ? 1 : 0;
+        $filas[] = [
+            $p['desde']->format('d/m H:i'),
+            "{$d->id} " . ($areas[$d->area] ?? $d->area),
+            "{$o->id} " . ($areas[$o->area] ?? $o->area) . " ({$o->estado})",
+            $msgs->where('direccion', 'entrante')->count() . ' / ' . $msgs->where('direccion', 'saliente')->count() . ' / ' . $msgs->where('direccion', 'nota_interna')->count(),
+            $adj,
+            $resto ?: '—',
+            ($p['borrar'] ? 'se borra' : 'queda') . ($p['reactivar'] ? ' · REACTIVA D' : ''),
+        ];
+    }
+
+    $this->info(($this->option('apply') ? 'APLICANDO' : 'SIMULACIÓN (sin --apply no se escribe nada)') . ': '
+        . count($pares) . " conversaciones · {$tot['msgs']} mensajes · {$tot['adj']} adjuntos · "
+        . "{$tot['borradas']} quedan vacías y se borran · {$tot['reactivadas']} estaban activas");
+    $this->table(['Derivada', 'Destino (D)', 'Número viejo (O)', 'Entr / Sal / Notas', 'Adj', 'Quedan en O', 'O'], $filas);
+
+    if (!$this->option('apply')) return 0;
+
+    @mkdir($dir, 0775, true);
+    $lote = ['creado' => now()->toDateTimeString(), 'pares' => []];
+    foreach ($pares as $p) {
+        $o = $p['o']; $d = $p['d']->fresh();
+        $msgIds = $p['msgs']->pluck('id')->all();
+        if (!$d || !$msgIds) continue;
+        DB::transaction(function () use ($p, $o, $d, $msgIds, $areas, &$lote) {
+            $reg = [
+                'o_id' => $o->id, 'd_id' => $d->id, 'mensajes' => $msgIds, 'o_borrada' => $p['borrar'],
+                'o_fila'    => (array) DB::table('conversaciones_wa')->where('id', $o->id)->first(),
+                'o_eventos' => DB::table('conversacion_eventos')->where('conversacion_id', $o->id)->get()->map(fn ($r) => (array) $r)->all(),
+                'd_antes'   => (array) DB::table('conversaciones_wa')->where('id', $d->id)
+                    ->first(['estado', 'no_leidos', 'ultima_actividad', 'derivada_desde', 'derivada_at']),
+                'documentos' => DB::table('documentos_paciente')->whereIn('mensaje_id', $msgIds)->pluck('id')->all(),
+                'tareas' => [], 'clasificaciones' => [],
+            ];
+            DB::table('mensajes_wa')->whereIn('id', $msgIds)->update(['conversacion_id' => $d->id, 'via_area' => $o->area]);
+            DB::table('documentos_paciente')->whereIn('id', $reg['documentos'])->update(['conversacion_id' => $d->id]);
+            if ($p['borrar']) {
+                $reg['tareas'] = DB::table('tareas_wa')->where('conversacion_id', $o->id)->pluck('id')->all();
+                $reg['clasificaciones'] = DB::table('clasificaciones_wa')->where('conversacion_id', $o->id)->pluck('id')->all();
+                DB::table('tareas_wa')->whereIn('id', $reg['tareas'])->update(['conversacion_id' => $d->id]);
+                DB::table('clasificaciones_wa')->whereIn('id', $reg['clasificaciones'])->update(['conversacion_id' => $d->id]);
+                DB::table('conversaciones_wa')->where('id', $o->id)->delete();   // sus eventos se van por cascade (guardados en el lote)
+            }
+
+            $adj    = $p['msgs']->where('tipo', '!=', 'texto')->count();
+            $origen = $areas[$o->area] ?? $o->area;
+            $nota = \App\Models\MensajeWA::create([
+                'conversacion_id' => $d->id, 'direccion' => 'nota_interna', 'tipo' => 'texto', 'leido' => true,
+                'contenido' => '📲 Se trajeron ' . count($msgIds) . ' mensajes' . ($adj ? " ({$adj} adjuntos)" : '')
+                    . " que el paciente mandó al número de {$origen} después de la derivación ("
+                    . $p['msgs']->min('created_at')->format('d/m') . ' al ' . $p['msgs']->max('created_at')->format('d/m') . ').',
+            ]);
+            $reg['nota_id'] = $nota->id;
+
+            $upd = [];
+            if ($p['reactivar']) {
+                $noLeidos = $p['msgs']->where('direccion', 'entrante')->where('leido', false)->count();
+                $upd = ['estado' => 'activa', 'no_leidos' => $d->no_leidos + $noLeidos, 'ultima_actividad' => now()];
+            }
+            // Derivación de los últimos días: lo próximo que llegue al número viejo ya se pasa solo.
+            if ($p['borrar'] && $p['desde']->gt(now()->subDays(ConversacionWA::DIAS_REDIRIGIR_DERIVADA))
+                && (!$d->derivada_at || $d->derivada_at->lt($p['desde']))) {
+                $upd += ['derivada_desde' => $o->area, 'derivada_at' => $p['desde']];
+            }
+            if ($upd) DB::table('conversaciones_wa')->where('id', $d->id)->update($upd);
+            $lote['pares'][] = $reg;
+        });
+    }
+    $archivo = 'lote-' . now()->format('Ymd-His') . '.json';
+    file_put_contents("{$dir}/{$archivo}", json_encode($lote, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    ConversacionWA::invalidarColaCache();
+    $this->info("Listo. Para deshacer: php artisan conversaciones:rescatar-derivadas --revertir={$archivo}");
+    return 0;
+})->purpose('Trae a la conversación derivada lo que el paciente mandó al número viejo (simula sin --apply)');

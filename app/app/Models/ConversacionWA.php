@@ -15,6 +15,7 @@ class ConversacionWA extends Model
         'contacto', 'area', 'nombre', 'estado', 'no_leidos', 'ultima_actividad',
         'urgente', 'asignada_a', 'resumen_llm', 'historial_llm', 'resumen_intento_at',
         'telefono_wa', 'nombre_wa', 'wa_info_at', 'episodio_desde', 'resumen_msg_id',
+        'derivada_desde', 'derivada_at',
     ];
 
     protected $casts = [
@@ -25,7 +26,31 @@ class ConversacionWA extends Model
         'no_leidos'          => 'integer',
         'urgente'            => 'boolean',
         'wa_info_at'         => 'datetime',
+        'derivada_at'        => 'datetime',
     ];
+
+    /** Días que, tras derivar, lo que el paciente mande al número viejo se pasa al área destino. */
+    public const DIAS_REDIRIGIR_DERIVADA = 3;
+
+    /**
+     * Conversación a la que hay que pasar un mensaje que el paciente mandó al
+     * número de $areaOrigen porque hace poco se lo derivó de esa área a otra.
+     * Solo si en el área de origen no hay conversación con el paciente: si
+     * alguien la retomó ahí (o le escribió desde ese número), se respeta.
+     */
+    public static function destinoDeDerivacion(string $contacto, string $areaOrigen, ?\Carbon\Carbon $momento = null): ?self
+    {
+        $momento ??= now();
+        if (static::where('contacto', $contacto)->where('area', $areaOrigen)->exists()) {
+            return null;
+        }
+        return static::where('contacto', $contacto)
+            ->where('derivada_desde', $areaOrigen)
+            ->where('derivada_at', '<=', $momento)
+            ->where('derivada_at', '>=', $momento->copy()->subDays(self::DIAS_REDIRIGIR_DERIVADA))
+            ->orderByDesc('derivada_at')
+            ->first();
+    }
 
     /** Áreas válidas (= números de WhatsApp). 'atencion' es el bot original. */
     public const AREAS = [

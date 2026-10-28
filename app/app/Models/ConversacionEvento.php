@@ -11,6 +11,7 @@ class ConversacionEvento extends Model
     protected $fillable = [
         'conversacion_id',
         'tipo',
+        'detalle',
         'usuario_id',
         'usuario_destino_id',
     ];
