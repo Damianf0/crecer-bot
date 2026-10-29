@@ -24,6 +24,17 @@
 .pr-card:hover { border-color:var(--v2-accent); transform:translateY(-1px); }
 .pr-card h3 { margin:0 0 6px; font-size:15px; font-weight:600; line-height:1.3; }
 .pr-card p { margin:0 0 10px; font-size:12.5px; color:var(--v2-text-2); line-height:1.45; }
+.os-card { cursor:default; }
+.os-card:hover { transform:none; border-color:var(--v2-border); }
+.os-card ol { margin:4px 0 10px; padding-left:20px; font-size:13px; line-height:1.5; }
+.os-card li { margin-bottom:4px; }
+.os-card li .nota { display:block; font-size:11.5px; color:var(--v2-text-2); }
+.os-card li .v2-pill { margin-left:4px; vertical-align:1px; }
+.os-general { border-style:dashed; }
+.os-aviso { font-size:12.5px; color:var(--v2-text-2); background:var(--v2-bg-soft, rgba(0,0,0,.03)); border:1px solid var(--v2-border);
+            border-radius:var(--v2-radius-sm, 6px); padding:9px 12px; margin-bottom:14px; line-height:1.5; }
+.os-sugeridas { margin-bottom:18px; }
+.os-sugeridas h4 { margin:0 0 8px; font-size:12px; font-weight:600; color:var(--v2-text-2); text-transform:uppercase; letter-spacing:.4px; }
 .pr-card-foot { display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:11px; color:var(--v2-text-mute); }
 .pr-detalle { background:var(--v2-bg-card); border:1px solid var(--v2-border); border-radius:var(--v2-radius); padding:24px 28px; }
 .pr-det-head { border-bottom:1px solid var(--v2-border); padding-bottom:16px; margin-bottom:20px; }
@@ -203,6 +214,8 @@ const state = {
     puedeEditar: false,
     areas: {},
     eliminados: false,    // viendo la papelera (solo supervisión)
+    vista: 'procs',       // procs | os (qué tiene que traer cada obra social)
+    os: null,             // checklist por obra social, se carga una vez
     nEliminados: 0,
 };
 
@@ -217,6 +230,16 @@ function cargarDebounced() {
 async function cargar() {
     const seq = ++_reqSeq;
     state.q = document.getElementById('q').value.trim();
+    if (state.vista === 'os') {
+        // Entrando directo a esta vista: las áreas de los chips vienen con los procedimientos.
+        if (!Object.keys(state.areas).length) {
+            try { const r0 = await get('/procedimientos/data'); state.areas = r0.areas; state.puedeEditar = r0.puede_editar; } catch (e) {}
+        }
+        await cargarOS();
+        if (seq === _reqSeq) { renderChips(); renderOS(); }
+        return;
+    }
+    if (state.q && !state.eliminados) cargarOS();   // para sugerir obras sociales que coinciden
 
     const params = new URLSearchParams();
     if (state.q)    params.set('q', state.q);
@@ -236,24 +259,27 @@ async function cargar() {
     if (seq !== _reqSeq) return;
 
     state.puedeEditar = r.puede_editar;
-    document.getElementById('btn-nuevo').style.display = r.puede_editar ? '' : 'none';
+    document.getElementById('btn-nuevo').style.display = r.puede_editar && state.vista === 'procs' ? '' : 'none';
     state.areas = r.areas;
     state.nEliminados = r.eliminados_count || 0;
     // Se restauró el último: no tiene sentido quedarse en una papelera vacía.
     if (state.eliminados && !state.nEliminados) { state.eliminados = false; return cargar(); }
     renderChips();
     renderLista(r.data);
+    renderSugeridas();
 }
 
 function renderChips() {
-    const chips = ['<button class="v2-vista' + (state.area === '' ? ' active' : '') +
+    const chips = ['<button class="v2-vista' + (state.vista === 'procs' && state.area === '' ? ' active' : '') +
                    '" onclick="setArea(\'\')">Todas</button>'];
     for (const [k, label] of Object.entries(state.areas)) {
-        chips.push('<button class="v2-vista' + (state.area === k ? ' active' : '') +
+        chips.push('<button class="v2-vista' + (state.vista === 'procs' && state.area === k ? ' active' : '') +
                    '" onclick="setArea(\'' + esc(k) + '\')">' + esc(label) + '</button>');
     }
+    chips.push('<button class="v2-vista' + (state.vista === 'os' ? ' active' : '') +
+               '" onclick="verOS()" title="Qué tiene que traer cada paciente según su obra social">🩺 Obras sociales: qué traer</button>');
     // Papelera: aparece solo si hay algo para restaurar.
-    if (state.puedeEditar && (state.nEliminados || state.eliminados)) {
+    if (state.puedeEditar && state.vista === 'procs' && (state.nEliminados || state.eliminados)) {
         chips.push('<button class="v2-vista' + (state.eliminados ? ' active' : '') +
                    '" style="margin-left:auto;" onclick="verEliminados()">🗑 Eliminados<span class="n">' +
                    state.nEliminados + '</span></button>');
@@ -263,8 +289,111 @@ function renderChips() {
 
 function setArea(a) {
     state.area = a;
+    if (state.vista === 'os') { state.vista = 'procs'; prepararBuscador(); urlOS(false); }
     renderChips();
     cargar();
+}
+
+// ══ Obras sociales: qué tiene que traer el paciente (29/10) ══════
+// Misma lista que ve recepción en la ficha; se carga en Recepción → Checklist por obra social.
+
+function verOS(q) {
+    state.vista = 'os';
+    state.eliminados = false;
+    if (typeof q === 'string') document.getElementById('q').value = q;
+    prepararBuscador();
+    urlOS(true);
+    renderChips();
+    cargar();
+    document.getElementById('q').focus();
+}
+
+function prepararBuscador() {
+    const os = state.vista === 'os';
+    document.getElementById('q').placeholder = os ? 'Buscar obra social (nombre o sigla)...' : 'Buscar procedimiento...';
+    document.getElementById('btn-nuevo').style.display = !os && state.puedeEditar ? '' : 'none';
+}
+
+function urlOS(on) {
+    const url = on ? '/v2/procedimientos?vista=obras-sociales' : '/v2/procedimientos';
+    if (window.location.pathname + window.location.search !== url) history.pushState({ id: null }, '', url);
+}
+
+async function cargarOS() {
+    if (state.os) return;
+    try {
+        const r = await get('/procedimientos/obras-sociales');
+        state.os = r.data || [];
+        state.osEditar = !!r.puede_editar;
+    } catch (e) { state.os = null; }
+}
+
+// Sin acentos ni mayúsculas.
+const norm = t => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const PALABRAS_CHICAS = ['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'para', 'a', 'al', 'en'];
+// Sigla armada con las iniciales: "Instituto de Obra Médica Asistencial" → "ioma".
+const sigla = t => norm(t).replace(/\(.*?\)/g, ' ').split(/[^a-z0-9]+/).filter(w => w && !PALABRAS_CHICAS.includes(w)).map(w => w[0]).join('');
+
+function osCoinciden(q) {
+    const nq = norm(q).trim();
+    if (!nq) return (state.os || []).filter(c => !c.general);
+    return (state.os || []).filter(c => !c.general && (norm(c.nombre).includes(nq) || sigla(c.nombre).startsWith(nq.replace(/\s+/g, ''))));
+}
+
+function tarjetaOS(c) {
+    const pasos = c.items.map(i => '<li>' + esc(i.texto) +
+        (i.obligatorio ? '<span class="v2-pill urgente">Obligatorio</span>' : '') +
+        (i.nota ? '<span class="nota">' + esc(i.nota) + '</span>' : '') + '</li>').join('');
+    return '<div class="pr-card os-card' + (c.general ? ' os-general' : '') + '" data-os="' + c.id + '">' +
+             '<h3>' + esc(c.general ? 'Si la obra social no está en la lista (General)' : c.nombre) + '</h3>' +
+             '<ol>' + pasos + '</ol>' +
+             '<div class="pr-card-foot">' +
+               (c.editado ? '<span>Actualizado ' + esc(c.editado) + (c.editado_por ? ' por ' + esc(c.editado_por.split(' ')[0]) : '') + '</span>' : '') +
+               '<button class="v2-btn sm" style="margin-left:auto;" onclick="copiarOS(' + c.id + ')" title="Copiar la lista para pegarla en un WhatsApp">Copiar</button>' +
+             '</div>' +
+           '</div>';
+}
+
+function renderOS() {
+    const cont = document.getElementById('lista');
+    if (!state.os) {
+        cont.innerHTML = '<div class="v2-empty"><span class="ico">⚠️</span>No se pudieron cargar las obras sociales.</div>';
+        return;
+    }
+    const general = state.os.find(c => c.general);
+    const lista = osCoinciden(state.q);
+    const editar = state.osEditar
+        ? ' <a href="/v2/recepcion/reglas" style="color:var(--v2-accent);font-weight:600;">Editar las listas</a>' : '';
+    let html = '<div class="os-aviso">Lo que tiene que traer cada paciente según su obra social: es la misma lista que usa recepción. ' +
+               'Si la obra social no tiene lista propia, vale la <b>General</b>.' + editar + '</div>';
+    if (lista.length) {
+        html += '<div class="pr-grid">' + lista.map(tarjetaOS).join('') + '</div>';
+    } else {
+        html += '<div class="v2-empty" style="padding:18px;"><span class="ico">🔎</span>' +
+                (state.q ? 'Ninguna obra social con lista propia coincide con «' + esc(state.q) + '». Vale la General:' : 'Todavía no hay listas por obra social.') + '</div>';
+    }
+    if (general) html += '<div class="pr-grid" style="margin-top:12px;">' + tarjetaOS(general) + '</div>';
+    cont.innerHTML = html;
+}
+
+// En la búsqueda de procedimientos: si lo buscado es una obra social, se muestra arriba.
+function renderSugeridas() {
+    if (state.vista !== 'procs' || !state.q || state.eliminados || !state.os) return;
+    const ms = osCoinciden(state.q).slice(0, 3);
+    if (!ms.length) return;
+    const div = document.createElement('div');
+    div.className = 'os-sugeridas';
+    div.innerHTML = '<h4>🩺 Qué tiene que traer</h4><div class="pr-grid">' + ms.map(tarjetaOS).join('') + '</div>';
+    const cont = document.getElementById('lista');
+    cont.insertBefore(div, cont.firstChild);
+}
+
+function copiarOS(id) {
+    const c = (state.os || []).find(x => x.id === id);
+    if (!c) return;
+    const txt = (c.general ? 'Para tu consulta tenés que traer:' : 'Para tu consulta con ' + c.nombre + ' tenés que traer:') + '\n' +
+        c.items.map(i => '• ' + i.texto + (i.nota ? ' (' + i.nota + ')' : '')).join('\n');
+    copiarFallback(txt);
 }
 
 function verEliminados() {
@@ -335,7 +464,10 @@ function urlDetalle(id) {
 // que no tiene state, y ahí el atrás dejaba la URL en /2 mostrando el listado.
 window.addEventListener('popstate', () => {
     const m = window.location.pathname.match(/^\/v2\/procedimientos\/(\d+)$/);
-    if (m) abrir(parseInt(m[1], 10), true); else volver(true);
+    if (m) { abrir(parseInt(m[1], 10), true); return; }
+    const os = new URLSearchParams(window.location.search).get('vista') === 'obras-sociales';
+    if (os !== (state.vista === 'os')) { state.vista = os ? 'os' : 'procs'; prepararBuscador(); renderChips(); }
+    volver(true);
 });
 
 async function abrir(id, sinUrl) {
@@ -512,6 +644,7 @@ function volver(sinUrl) {
     document.getElementById('vista-detalle').style.display = 'none';
     document.getElementById('vista-editor').style.display  = 'none';
     document.getElementById('vista-lista').style.display   = '';
+    if (state.vista === 'os') urlOS(true);
     cargar();
 }
 
@@ -862,7 +995,10 @@ window.addEventListener('beforeunload', ev => {
 const PROC_INICIAL = {{ $procId ?? 'null' }};
 
 (async () => {
+    // /v2/procedimientos?vista=obras-sociales abre directo la consulta de obras sociales.
+    if (new URLSearchParams(window.location.search).get('vista') === 'obras-sociales') state.vista = 'os';
     await cargar();
+    prepararBuscador();
     if (PROC_INICIAL) abrir(PROC_INICIAL, true);
 })();
 </script>

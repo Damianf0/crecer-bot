@@ -254,6 +254,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
     Route::get('/v2/procedimientos/{id}',   [\App\Http\Controllers\V2Controller::class, 'procedimientos'])->whereNumber('id');
     Route::get('/procedimientos/data',      [ProcedimientoController::class, 'data']);
     Route::get('/procedimientos/opciones',  [ProcedimientoController::class, 'opciones']);
+    Route::get('/procedimientos/obras-sociales', [ProcedimientoController::class, 'obrasSociales']);
     Route::get('/procedimientos/{id}',      [ProcedimientoController::class, 'show'])->whereNumber('id');
 
     // Adjuntos: se sirven por controller (con sesión), nunca por public/storage.

@@ -31,6 +31,34 @@ class ProcedimientoController extends Controller
     }
 
     /**
+     * GET /procedimientos/obras-sociales — consulta de solo lectura de los
+     * checklist de recepción por obra social (29/10), para contestar por
+     * teléfono o WhatsApp qué tiene que traer un paciente. Es la misma lista
+     * que ve recepción en la ficha: se edita en /v2/recepcion/reglas.
+     * Solo las activas y con pasos (las mismas que usa ChecklistRecepcion).
+     */
+    public function obrasSociales(): JsonResponse
+    {
+        $lista = \App\Models\RecepcionChecklist::with(['items', 'actualizadoPor:id,nombre_completo'])
+            ->where('activo', true)
+            ->orderByRaw("clave = '' DESC")->orderBy('financiador')
+            ->get()
+            ->filter(fn ($c) => $c->items->isNotEmpty())
+            ->map(fn ($c) => [
+                'id'          => $c->id,
+                'general'     => $c->esGeneral(),
+                'nombre'      => $c->esGeneral() ? 'General' : $c->financiador,
+                'items'       => $c->items->map(fn ($i) => [
+                    'texto' => $i->texto, 'obligatorio' => (bool) $i->obligatorio, 'nota' => $i->nota,
+                ])->values(),
+                'editado'     => $c->updated_at?->format('d/m/Y'),
+                'editado_por' => $c->actualizadoPor?->nombre_completo,
+            ])->values();
+
+        return response()->json(['ok' => true, 'data' => $lista, 'puede_editar' => $this->puedeEditar()]);
+    }
+
+    /**
      * GET /procedimientos/data — listado con búsqueda y filtro por área.
      *
      * Sin paginación a propósito: son decenas de procedimientos, no miles como
