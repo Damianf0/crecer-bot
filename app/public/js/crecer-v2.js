@@ -88,7 +88,8 @@ window.V2Conv = (function () {
         tomada: 'tomó la conversación', delegada: 'la delegó', resuelta: 'la resolvió',
         reabierta: 'la reabrió', urgente_on: 'la marcó urgente', urgente_off: 'le sacó urgente',
         iniciada: 'inició la conversación', derivada_area: 'la derivó de área', reenviada: 'la reenvió', reenvio_mensajes: 'reenvió mensajes',
-        archivada_auto: 'la archivó por inactividad',   // usuario null → renderiza "Sistema la archivó…"
+        archivada_auto: 'la archivó por inactividad',
+        tarea_area: 'pidió una tarea', tarea_area_hecha: 'completó la tarea', tarea_area_reabierta: 'reabrió la tarea',   // usuario null → renderiza "Sistema la archivó…"
     };
 
     // Plantillas del modal "Nueva conversación" (mismas que V1).
@@ -141,6 +142,19 @@ window.V2Conv = (function () {
             : `<div class="v2-via" title="Se envió desde el número de ${esc(m.via)}">📲 Desde el número de ${esc(m.via)}</div>`;
     }
 
+    // Tareas para un área (29/10): mensaje que viaja en una tarea, o respuesta
+    // al paciente que se mandó desde una tarea.
+    function tareaHtml(m) {
+        let h = '';
+        if (m.desde_tarea) {
+            h += `<a class="v2-via" href="/v2/centro-tareas?tarea_id=${m.desde_tarea.id}" target="_blank" title="Abrir la tarea">📋 Respondido desde una tarea${m.desde_tarea.area ? ' de ' + esc(m.desde_tarea.area) : ''}</a>`;
+        }
+        (m.tareas || []).forEach(t => {
+            h += `<a class="v2-via" href="/v2/centro-tareas?tarea_id=${t.id}" target="_blank" title="Abrir la tarea">📋 En tarea${t.area ? ' para ' + esc(t.area) : ''}${t.hecha ? ' · ✓ hecha' : ''}</a>`;
+        });
+        return h;
+    }
+
     function renderMsg(m) {
         if (m.direccion === 'nota_interna') {
             return `<div class="v2-msg" style="justify-content:center;">
@@ -153,12 +167,13 @@ window.V2Conv = (function () {
         // Modo selección (reenviar mensajes sueltos): la fila entera marca/desmarca.
         if (state.sel) {
             const marcado = state.sel.has(m.id);
-            const caja = m.reenviable
+            const elegible = state.selModo === 'tarea' || m.reenviable;
+            const caja = elegible
                 ? `<span class="v2-sel-chk${marcado ? ' on' : ''}">${marcado ? '✓' : ''}</span>`
                 : `<span class="v2-sel-chk off" title="${m.archivo_url || m.tipo !== 'texto' ? 'El archivo no está en el servidor: no se puede reenviar' : 'No se puede reenviar'}">–</span>`;
-            return `<div class="v2-msg ${dir} v2-selectable${marcado ? ' sel' : ''}${m.reenviable ? '' : ' no-sel'}" ${m.reenviable ? `onclick="V2Conv.selToggle(${m.id})"` : ''}>
+            return `<div class="v2-msg ${dir} v2-selectable${marcado ? ' sel' : ''}${elegible ? '' : ' no-sel'}" ${elegible ? `onclick="V2Conv.selToggle(${m.id})"` : ''}>
                 ${caja}<div style="max-width:70%;width:fit-content;min-width:0;">
-                <div class="v2-bubble">${viaHtml(m)}${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
+                <div class="v2-bubble">${viaHtml(m)}${tareaHtml(m)}${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
                 <div class="v2-msg-meta">${meta}</div>
             </div></div>`;
         }
@@ -167,9 +182,10 @@ window.V2Conv = (function () {
         // Los que llegaron por el número de otra área no se pueden citar desde este.
         const reply = (m.wa_id && !m.via) ? `<button class="v2-reply-btn" title="Responder a este mensaje" onclick="V2Conv.responderA(${m.id})">↩</button>` : '';
         const fwd   = m.reenviable ? `<button class="v2-reply-btn" title="Reenviar este mensaje a otro contacto" onclick="V2Conv.selIniciar(${m.id})">↪</button>` : '';
+        const tarea = state.readOnly ? '' : `<button class="v2-reply-btn" title="Crear una tarea con este mensaje (para un área o una persona)" onclick="V2Conv.selIniciar(${m.id}, 'tarea')">📋</button>`;
         return `<div class="v2-msg ${dir}"><div style="max-width:70%;width:fit-content;min-width:0;">
-            <div class="v2-bubble">${viaHtml(m)}${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
-            <div class="v2-msg-meta">${meta} ${reply}${fwd}</div>
+            <div class="v2-bubble">${viaHtml(m)}${tareaHtml(m)}${quotedHtml(m.quoted)}${bubbleContenido(m)}</div>
+            <div class="v2-msg-meta">${meta} ${reply}${fwd}${tarea}</div>
         </div></div>`;
     }
 
@@ -194,8 +210,10 @@ window.V2Conv = (function () {
         const n = state.sel.size;
         return `<div class="v2-sel-bar">
             <button class="v2-btn" onclick="V2Conv.selSalir()">Cancelar</button>
-            <span class="n">${n === 0 ? 'Tocá los mensajes a reenviar' : n === 1 ? '1 seleccionado' : `${n} seleccionados`}</span>
-            <button class="v2-btn accent" onclick="V2Conv.modalReenvioSel()" ${n ? '' : 'disabled'}>↪ Reenviar</button>
+            <span class="n">${n === 0 ? (state.selModo === 'tarea' ? 'Tocá los mensajes que van en la tarea' : 'Tocá los mensajes a reenviar') : n === 1 ? '1 seleccionado' : `${n} seleccionados`}</span>
+            ${state.selModo === 'tarea'
+                ? `<button class="v2-btn accent" onclick="V2Conv.modalTareaSel()" ${n ? '' : 'disabled'}>📋 Crear tarea</button>`
+                : `<button class="v2-btn accent" onclick="V2Conv.modalReenvioSel()" ${n ? '' : 'disabled'}>↪ Reenviar</button>`}
         </div>`;
     }
 
@@ -388,7 +406,7 @@ window.V2Conv = (function () {
                     const done = t.estado === 'completada';
                     const cls  = done ? 'done' : (t.vencida ? 'vencida' : '');
                     const cuando = t.vence_fmt ? esc(t.vence_fmt) : 'sin fecha';
-                    const quien  = t.asignado_nombre ? ' · ' + esc(t.asignado_nombre.split(' ')[0]) : '';
+                    const quien  = (t.area_label ? ' · → ' + esc(t.area_label) : '') + (t.asignado_nombre ? ' · ' + esc(t.asignado_nombre.split(' ')[0]) : '');
                     return `<div class="v2-leg-tarea ${cls}">
                         <input type="checkbox" class="chk" ${done ? 'checked' : ''} onchange="V2Conv.toggleTarea(${t.id}, this.checked)" title="${done ? 'Marcar como pendiente' : 'Marcar como completada'}">
                         <a class="body" href="/centro-tareas?tarea_id=${t.id}" title="Abrir en el Centro de tareas">
@@ -459,11 +477,16 @@ window.V2Conv = (function () {
         dlg = document.createElement('dialog');
         dlg.className = 'v2-dialog';
         dlg.id = 'v2-modal-tarea';
-        const opts = (cfg.usuarios || [])
-            .map(u => `<option value="${u.id}">${esc(u.nombre_completo)}</option>`).join('');
+        const opts = `<optgroup label="Un área (la ve todo el equipo del área)">`
+            + Object.entries(window.V2_AREAS || {}).filter(([k]) => k !== 'difusion')
+                .map(([k, l]) => `<option value="area:${k}">${esc(l)}</option>`).join('')
+            + `</optgroup><optgroup label="Una persona">`
+            + (cfg.usuarios || []).map(u => `<option value="${u.id}">${esc(u.nombre_completo)}</option>`).join('')
+            + '</optgroup>';
         dlg.innerHTML = `
-            <h3>Agendar para <span id="v2-mt-quien"></span></h3>
-            <div class="v2-compose-modos" style="margin-bottom:4px;">
+            <h3><span id="v2-mt-h">Agendar para</span> <span id="v2-mt-quien"></span></h3>
+            <div id="v2-mt-adjuntos" style="display:none;font-size:12px;color:var(--v2-text-2);margin:-2px 0 8px;line-height:1.45;"></div>
+            <div class="v2-compose-modos" id="v2-mt-tipos" style="margin-bottom:4px;">
                 <button type="button" class="v2-compose-modo active" id="v2-mt-t-tarea"   onclick="V2Conv.setTipoTarea('tarea')">📋 Tarea</button>
                 <button type="button" class="v2-compose-modo"        id="v2-mt-t-llamada" onclick="V2Conv.setTipoTarea('llamada')">📞 Llamada</button>
             </div>
@@ -483,7 +506,7 @@ window.V2Conv = (function () {
                     </select>
                 </div>
             </div>
-            <label class="v2-label">Asignar a</label>
+            <label class="v2-label">Para</label>
             <select class="v2-field" id="v2-mt-asignada">${opts}</select>
             <label class="v2-label">Nota (opcional)</label>
             <textarea class="v2-field" id="v2-mt-desc" rows="2" placeholder="Detalle o contexto…"></textarea>
@@ -578,18 +601,40 @@ window.V2Conv = (function () {
 
         // Abre el modal para crear una tarea / agendar una llamada sobre el contacto
         // de la conversación abierta. La tarea queda vinculada vía ref_tipo:'wa'.
-        modalTarea() {
+        // Desde la barra de selección (📋): la tarea lleva los mensajes marcados.
+        modalTareaSel() {
+            if (state.sel && state.sel.size) V2Conv.modalTarea({ mensajes: [...state.sel] });
+        },
+
+        // opts.mensajes: ids marcados en el chat → la tarea los lleva y por
+        // defecto va a otra área.
+        modalTarea(opts = {}) {
             if (!state.conv) return;
             const c = state.conv.conv;
             const dlg = ensureModalTarea();
+            const ids = opts.mensajes || [];
+            state.tareaMsgIds = ids;
             document.getElementById('v2-mt-quien').textContent = c.contacto || 'el contacto';
             document.getElementById('v2-mt-titulo').value     = '';
             document.getElementById('v2-mt-vence').value      = '';
             document.getElementById('v2-mt-desc').value       = '';
             document.getElementById('v2-mt-prioridad').value  = 'normal';
             const sel = document.getElementById('v2-mt-asignada');
-            if (sel) sel.value = String(cfg.meId);    // por defecto, para mí
-            V2Conv.setTipoTarea('tarea');
+            const adj = document.getElementById('v2-mt-adjuntos');
+            document.getElementById('v2-mt-tipos').style.display = ids.length ? 'none' : '';
+            document.getElementById('v2-mt-h').textContent = ids.length ? 'Tarea sobre' : 'Agendar para';
+            if (ids.length) {
+                adj.style.display = '';
+                adj.textContent = `📎 Lleva ${ids.length === 1 ? 'el mensaje marcado' : `los ${ids.length} mensajes marcados`}. La conversación sigue acá: quien la resuelva puede contestarle al paciente desde la tarea y queda en este chat.`;
+                // Por defecto, la primera otra área.
+                const otra = Object.keys(window.V2_AREAS || {}).find(k => k !== 'difusion' && k !== c.area);
+                if (sel) sel.value = otra ? 'area:' + otra : String(cfg.meId);
+                state.tareaTipo = 'tarea';
+            } else {
+                adj.style.display = 'none';
+                if (sel) sel.value = String(cfg.meId);    // por defecto, para mí
+                V2Conv.setTipoTarea('tarea');
+            }
             dlg.showModal();
             document.getElementById('v2-mt-titulo').focus();
         },
@@ -619,6 +664,8 @@ window.V2Conv = (function () {
             if (!titulo) { v2toast('Poné un título', 'err'); return; }
             const vence = document.getElementById('v2-mt-vence').value;        // datetime-local o ''
             const asign = document.getElementById('v2-mt-asignada').value;
+            const area  = asign.startsWith('area:') ? asign.slice(5) : null;
+            const ids   = state.tareaMsgIds || [];
             const prio  = document.getElementById('v2-mt-prioridad').value;
             const desc  = document.getElementById('v2-mt-desc').value.trim();
             const btn = document.getElementById('v2-mt-guardar');
@@ -627,14 +674,18 @@ window.V2Conv = (function () {
                 await post('/tareas', {
                     titulo,
                     descripcion: desc || null,
-                    asignada_a:  asign ? parseInt(asign) : null,
+                    asignada_a:  area ? null : (asign ? parseInt(asign) : null),
+                    area,
                     vence_at:    vence || null,
                     prioridad:   prio,
                     ref_tipo:    'wa',
                     ref_id:      state.panelId,
+                    mensaje_ids: ids.length ? ids : undefined,
                 });
                 document.getElementById('v2-modal-tarea').close();
-                v2toast(state.tareaTipo === 'llamada' ? 'Llamada agendada' : 'Tarea creada');
+                v2toast(state.tareaTipo === 'llamada' ? 'Llamada agendada'
+                    : area ? `Tarea creada para ${(window.V2_AREAS || {})[area] || area}` : 'Tarea creada');
+                if (ids.length) { state.sel = null; state.selModo = null; state.tareaMsgIds = []; }
                 await V2Conv.refrescar();   // re-pinta el legajo con la tarea nueva
             } catch (e) {
                 v2toast(e.message || 'No se pudo crear la tarea', 'err');
@@ -813,15 +864,16 @@ window.V2Conv = (function () {
         // ── Reenviar mensajes sueltos (como el "Reenviar" de WhatsApp, 01/10) ──
         // ↪ en un mensaje entra en modo selección con ese mensaje marcado; la
         // barra de abajo reemplaza al compose (lo tipeado se guarda y vuelve).
-        selIniciar(id) {
+        selIniciar(id, modo = 'reenviar') {
             if (!state.conv) return;
             state.selBorrador = document.getElementById('compose')?.value || '';
+            state.selModo = modo;
             state.sel = new Set([id]);
             selRepintar(true);
         },
 
         selToggle(id) {
-            if (!state.sel || !msgIndex[id]?.reenviable) return;
+            if (!state.sel || !msgIndex[id] || (state.selModo !== 'tarea' && !msgIndex[id].reenviable)) return;
             state.sel.has(id) ? state.sel.delete(id) : state.sel.add(id);
             selRepintar(false);
         },

@@ -40,12 +40,19 @@
         <textarea class="v2-field" id="nt-desc" rows="3" placeholder="Detalle opcional"></textarea>
         <div class="v2-grid2">
             <div>
-                <label class="v2-label">Asignar a</label>
+                <label class="v2-label">Para</label>
                 <select class="v2-field" id="nt-asig">
+                    <optgroup label="Una persona">
                     <option value="{{ auth()->id() }}">Yo ({{ explode(' ', auth()->user()->nombre_completo)[0] }})</option>
                     @foreach($usuarios as $u)@if($u->id !== auth()->id())
                     <option value="{{ $u->id }}">{{ $u->nombre_completo }}</option>
                     @endif @endforeach
+                    </optgroup>
+                    <optgroup label="Un área (la ve todo el equipo)">
+                    @foreach(\App\Http\Controllers\TareaController::areasDestino() as $k)
+                    <option value="area:{{ $k }}">{{ \App\Models\ConversacionWA::areas()[$k] ?? $k }}</option>
+                    @endforeach
+                    </optgroup>
                 </select>
             </div>
             <div>
@@ -73,6 +80,18 @@
         </div>
     </form>
 </dialog>
+<dialog class="v2-dialog" id="dlg-completar">
+    <form method="dialog" onsubmit="return false;">
+        <h3>Completar tarea</h3>
+        <div id="cp-info" style="font-size:12.5px;color:var(--v2-text-2);margin-bottom:6px;line-height:1.45;"></div>
+        <label class="v2-label">Cómo se resolvió (opcional)</label>
+        <textarea class="v2-field" id="cp-texto" rows="3" placeholder="Ej.: pago registrado, recibo 0001-234"></textarea>
+        <div class="v2-dialog-foot">
+            <button type="button" class="v2-btn" onclick="document.getElementById('dlg-completar').close()">Cancelar</button>
+            <button type="button" class="v2-btn accent" id="cp-ok" onclick="confirmarCompletar()">Completar</button>
+        </div>
+    </form>
+</dialog>
 @endsection
 
 @push('scripts')
@@ -81,7 +100,8 @@ const { esc, get, post, patch, del, avatarHtml } = V2;
 const ME_ID = {{ auth()->id() }};
 
 let state = { tareas: [], derivaciones: [], vista: 'activas', q: '', sel: null /* {tipo:'tarea'|'der', id} */,
-              ambito: 'mias' /* mias | asignadas | creadas | todas */, vencidas: false };
+              ambito: 'mias' /* mias | area | asignadas | creadas | todas */, vencidas: false, misAreas: [] };
+const AREAS = window.V2_AREAS || {};
 
 const PRIO_PILL = {
     alta:   '<span class="v2-pill urgente">Alta</span>',
@@ -99,6 +119,7 @@ async function fetchAll() {
             get('/centro-tareas/derivaciones'),
         ]);
         state.tareas = t.data || [];
+        state.misAreas = t.mis_areas || [];
         state.derivaciones = d.data || [];
     } catch (e) {}
 }
@@ -124,8 +145,9 @@ function renderVistas() {
     const amb = document.getElementById('b-ambito');
     if (state.vista === 'derivaciones') { amb.style.display = 'none'; return; }
     amb.style.display = '';
-    amb.innerHTML = [['mias', 'Mías'], ['asignadas', 'Asignadas a mí'], ['creadas', 'Creadas por mí'], ['todas', 'Todas']]
-        .map(([k, lbl]) => `<button class="v2-vista ${state.ambito === k ? 'active' : ''}" onclick="setAmbito('${k}')">${lbl}</button>`)
+    const nomAreas = state.misAreas.map(a => AREAS[a] || a).join(', ');
+    amb.innerHTML = [['mias', 'Mías'], ['area', 'Para mis áreas', nomAreas], ['asignadas', 'Asignadas a mí'], ['creadas', 'Creadas por mí'], ['todas', 'Todas']]
+        .map(([k, lbl, tip]) => `<button class="v2-vista ${state.ambito === k ? 'active' : ''}" ${tip ? `title="${esc(tip)}"` : ''} onclick="setAmbito('${k}')">${lbl}</button>`)
         .join('')
         + `<button class="v2-vista ${state.vencidas ? 'active' : ''}" style="margin-left:auto;" title="Solo tareas vencidas sin completar" onclick="toggleVencidas()">⚠ Vencidas</button>`;
 }
@@ -158,10 +180,11 @@ function renderBandeja() {
             ? `<span class="ago ${t.vencida ? 'urg' : ''}" title="Vence">${t.vencida ? '⚠ ' : ''}${esc(t.vence_fmt)}</span>`
             : `<span class="ago">${esc(t.hace || '')}</span>`;
         return `<div class="v2-card ${t.vencida ? 'urgente' : ''} ${sel ? 'selected' : ''}" onclick="abrirTarea(${t.id})">
-            <div class="v2-card-l1">${PRIO_PILL[t.prioridad] || ''}<span class="v2-pill neutral">${ESTADO_LBL[t.estado] || t.estado}</span>${vence}</div>
+            <div class="v2-card-l1">${PRIO_PILL[t.prioridad] || ''}${t.area ? `<span class="v2-pill espera" title="Tarea para un área">→ ${esc(t.area_label)}</span>` : ''}<span class="v2-pill neutral">${ESTADO_LBL[t.estado] || t.estado}</span>${vence}</div>
             <div class="v2-card-l2"><span class="nombre">${esc(t.titulo)}</span></div>
             ${t.descripcion ? `<div class="resumen">${esc(t.descripcion)}</div>` : ''}
-            <div class="v2-card-foot"><span class="who">→ ${esc((t.asignado_nombre || 'Sin asignar').split(' ')[0])}</span>${t.comentarios.length ? `<span>💬 ${t.comentarios.length}</span>` : ''}</div>
+            ${t.conversacion ? `<div class="resumen" style="font-size:11.5px;">💬 ${esc(t.conversacion.contacto || '')}${t.mensajes.length ? ` · 📎 ${t.mensajes.length}` : ''}</div>` : ''}
+            <div class="v2-card-foot"><span class="who">${t.area && !t.asignado_nombre ? 'Sin tomar' : '→ ' + esc((t.asignado_nombre || 'Sin asignar').split(' ')[0])}</span>${t.area ? `<span>de ${esc((t.creado_nombre || '').split(' ')[0])}</span>` : ''}${t.comentarios.length ? `<span>💬 ${t.comentarios.length}</span>` : ''}</div>
         </div>`;
     }).join('') : `<div class="v2-empty"><span class="ico">✨</span>Sin tareas ${state.vista === 'completadas' ? 'completadas' : 'activas'}.</div>`;
 }
@@ -181,8 +204,9 @@ function abrirTarea(id) {
 
     const acciones = [];
     if (t.estado !== 'completada') {
-        if (t.estado === 'pendiente') acciones.push(`<button class="v2-btn" onclick="estadoTarea(${t.id}, 'en_progreso')">Empezar</button>`);
-        acciones.push(`<button class="v2-btn accent" onclick="estadoTarea(${t.id}, 'completada')">Completar</button>`);
+        if (t.area && t.asignada_a !== ME_ID) acciones.push(`<button class="v2-btn" onclick="tomarTarea(${t.id})" title="Queda a tu nombre: el resto del área ve que ya la tiene alguien">${t.asignada_a ? 'Tomarla yo' : 'La tomo yo'}</button>`);
+        else if (t.estado === 'pendiente') acciones.push(`<button class="v2-btn" onclick="estadoTarea(${t.id}, 'en_progreso')">Empezar</button>`);
+        acciones.push(`<button class="v2-btn accent" onclick="abrirCompletar(${t.id})">Completar</button>`);
     } else {
         acciones.push(`<button class="v2-btn" onclick="estadoTarea(${t.id}, 'pendiente')">Reabrir</button>`);
     }
@@ -204,11 +228,21 @@ function abrirTarea(id) {
         <div class="v2-msgs" style="gap:12px;">
             <div class="v2-leg-tabla" style="max-width:560px;">
                 <div class="v2-leg-row"><span class="k">Estado</span><span class="v">${ESTADO_LBL[t.estado] || t.estado}</span></div>
-                <div class="v2-leg-row"><span class="k">Asignada a</span><span class="v">${esc(t.asignado_nombre || 'Sin asignar')}</span></div>
+                ${t.area ? `<div class="v2-leg-row"><span class="k">Para el área</span><span class="v">${esc(t.area_label)}</span></div>
+                <div class="v2-leg-row"><span class="k">Pedida por</span><span class="v">${esc(t.creado_nombre || '—')}</span></div>` : ''}
+                <div class="v2-leg-row"><span class="k">${t.area ? 'La tiene' : 'Asignada a'}</span><span class="v">${esc(t.asignado_nombre || (t.area ? 'Nadie todavía' : 'Sin asignar'))}</span></div>
+                ${t.completado_nombre ? `<div class="v2-leg-row"><span class="k">Completada por</span><span class="v">${esc(t.completado_nombre)} · ${esc(t.completada_fmt || '')}</span></div>` : ''}
+                ${t.conversacion ? `<div class="v2-leg-row"><span class="k">Paciente</span><span class="v">${t.conversacion.puede_ver
+                    ? `<a class="v2-leg-link" href="/v2/atencion/${esc(t.conversacion.area)}?conv=${t.conversacion.id}" target="_blank">${esc(t.conversacion.contacto || '—')}</a>`
+                    : esc(t.conversacion.contacto || '—')} · chat de ${esc(t.conversacion.area_label)}</span></div>` : ''}
                 ${t.vence_fmt ? `<div class="v2-leg-row"><span class="k">Vence</span><span class="v mono" ${t.vencida ? 'style="color:var(--v2-urg);"' : ''}>${esc(t.vence_fmt)}${t.vencida ? ' · vencida' : ''}</span></div>` : ''}
                 ${t.procedimiento_id ? `<div class="v2-leg-row"><span class="k">Procedimiento</span><span class="v"><a class="v2-leg-link" href="/v2/procedimientos/${t.procedimiento_id}" target="_blank">${esc(t.procedimiento_titulo || '—')}</a></span></div>` : ''}
             </div>
             ${t.descripcion ? `<div class="v2-bubble" style="max-width:560px;">${esc(t.descripcion)}</div>` : ''}
+            ${t.mensajes.length ? `<div style="max-width:560px;">
+                <div class="v2-label" style="margin-bottom:6px;">Mensajes de la conversación (${t.mensajes.length})</div>
+                ${t.mensajes.map(mensajeHtml).join('')}
+            </div>` : ''}
             <div style="max-width:560px;">
                 <div class="v2-label" style="margin-bottom:6px;">Comentarios (${t.comentarios.length})</div>
                 <div id="coms">${t.comentarios.map(c => `
@@ -220,21 +254,86 @@ function abrirTarea(id) {
             </div>
         </div>
         <div class="v2-compose">
+            ${t.conversacion && t.estado !== 'completada' ? `<div style="font-size:11.5px;color:var(--v2-text-mute);margin-bottom:5px;">
+                "Comentar" queda en la tarea. "Responder al paciente" le llega por WhatsApp desde el número de ${esc(t.conversacion.area_label)} y queda en su chat.</div>` : ''}
             <div class="v2-compose-row">
-                <textarea id="compose-com" placeholder="Agregar un comentario…" style="min-height:42px;"></textarea>
+                <textarea id="compose-com" placeholder="${t.conversacion ? 'Escribí un comentario o la respuesta al paciente…' : 'Agregar un comentario…'}" style="min-height:42px;"></textarea>
                 <button class="v2-btn primary" onclick="comentar(${t.id})">Comentar</button>
+                ${t.conversacion && t.estado !== 'completada' ? `<button class="v2-btn accent" id="btn-responder" onclick="responderPaciente(${t.id})">📲 Responder al paciente</button>` : ''}
             </div>
         </div>`;
 }
 
-async function estadoTarea(id, estado) {
+async function estadoTarea(id, estado, resolucion = null) {
     try {
-        await patch(`/tareas/${id}`, { estado });
+        await patch(`/tareas/${id}`, resolucion ? { estado, resolucion } : { estado });
         v2toast(estado === 'completada' ? 'Tarea completada' : 'Actualizada');
         await fetchAll(); renderBandeja();
         if (estado === 'completada' && state.vista !== 'completadas') cerrarDetalle();
         else abrirTarea(id);
     } catch (e) { v2toast('No se pudo actualizar', 'err'); }
+}
+
+function mensajeHtml(m) {
+    const quien = m.direccion === 'entrante' ? 'Paciente' : m.direccion === 'nota_interna' ? 'Nota interna' : 'Clínica';
+    let cont;
+    if (m.tipo === 'imagen' && m.archivo_url) {
+        cont = `<a href="${esc(m.archivo_url)}" target="_blank" rel="noopener"><img src="${esc(m.archivo_url)}" alt="Imagen" style="max-width:260px;max-height:260px;border-radius:6px;display:block;"></a>${m.contenido ? `<div style="margin-top:5px;">${esc(m.contenido)}</div>` : ''}`;
+    } else if (m.tipo === 'audio' && m.archivo_url) {
+        cont = `<audio controls src="${esc(m.archivo_url)}"></audio>${m.contenido ? `<div style="font-style:italic;">"${esc(m.contenido)}"</div>` : ''}`;
+    } else if (m.archivo_url) {
+        cont = `<a class="doc-link" href="${esc(m.archivo_url)}" target="_blank" rel="noopener">📄 ${esc(m.contenido || 'Archivo adjunto')}</a>`;
+    } else {
+        cont = `<span style="white-space:pre-wrap;">${esc(m.contenido || (m.tipo !== 'texto' ? '(el archivo no está en el servidor)' : ''))}</span>`;
+    }
+    return `<div class="v2-bubble" style="margin-bottom:6px;${m.direccion === 'entrante' ? '' : 'background:var(--v2-bg-hover);'}">
+        <div style="font-size:10.5px;color:var(--v2-text-mute);margin-bottom:3px;">${quien} · ${esc(m.fecha)}</div>${cont}</div>`;
+}
+
+async function tomarTarea(id) {
+    try {
+        await patch(`/tareas/${id}`, { asignada_a: ME_ID, estado: 'en_progreso' });
+        v2toast('La tarea quedó a tu nombre');
+        await fetchAll(); renderBandeja();
+        if (state.tareas.some(x => x.id === id)) abrirTarea(id); else cerrarDetalle();
+    } catch (e) { v2toast(e.message || 'No se pudo tomar', 'err'); }
+}
+
+let _completarId = null;
+function abrirCompletar(id) {
+    const t = state.tareas.find(x => x.id === id);
+    if (!t) return;
+    _completarId = id;
+    document.getElementById('cp-info').textContent = t.area && t.creado_nombre
+        ? `A ${t.creado_nombre} le llega un aviso y en el chat del paciente queda que se completó, con lo que escribas acá.`
+        : 'Lo que escribas queda como comentario de la tarea.';
+    document.getElementById('cp-texto').value = (document.getElementById('compose-com')?.value || '').trim();
+    document.getElementById('dlg-completar').showModal();
+    document.getElementById('cp-texto').focus();
+}
+async function confirmarCompletar() {
+    if (!_completarId) return;
+    const resolucion = document.getElementById('cp-texto').value.trim() || null;
+    document.getElementById('dlg-completar').close();
+    await estadoTarea(_completarId, 'completada', resolucion);
+}
+
+async function responderPaciente(id) {
+    const ta = document.getElementById('compose-com');
+    const texto = ta.value.trim();
+    if (!texto) { v2toast('Escribí la respuesta', 'err'); return; }
+    const t = state.tareas.find(x => x.id === id);
+    if (!confirm(`¿Mandarle este mensaje por WhatsApp a ${t?.conversacion?.contacto || 'el paciente'}?\n\n${texto}`)) return;
+    const btn = document.getElementById('btn-responder');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+    try {
+        const r = await post(`/tareas/${id}/responder`, { texto });
+        v2toast(`Enviado desde el número de ${r.numero}`);
+        await fetchAll(); abrirTarea(id);
+    } catch (e) {
+        v2toast(e.message || 'No se pudo enviar', 'err');
+        if (btn) { btn.disabled = false; btn.textContent = '📲 Responder al paciente'; }
+    }
 }
 
 async function borrarTarea(id) {
@@ -332,12 +431,19 @@ function abrirEditar(id) {
     document.getElementById('nt-submit').textContent = 'Guardar cambios';
     document.getElementById('nt-titulo').value = t.titulo || '';
     document.getElementById('nt-desc').value = t.descripcion || '';
-    document.getElementById('nt-asig').value = t.asignada_a ? String(t.asignada_a) : String(ME_ID);
+    document.getElementById('nt-asig').value = t.area && !t.asignada_a ? 'area:' + t.area : (t.asignada_a ? String(t.asignada_a) : String(ME_ID));
     document.getElementById('nt-vence').value = t.vence_at || '';
     document.getElementById('nt-proc').value = t.procedimiento_id ? String(t.procedimiento_id) : '';
     setPrioChips(t.prioridad || 'normal');
     document.getElementById('dlg-nueva').showModal();
     document.getElementById('nt-titulo').focus();
+}
+
+// "Para": un área (area:clave, sin persona) o una persona (mantiene el área si ya tenía).
+function paraDe(v) {
+    if (v.startsWith('area:')) return { area: v.slice(5), asignada_a: null };
+    const actual = _editId ? state.tareas.find(x => x.id === _editId) : null;
+    return { asignada_a: parseInt(v), area: actual ? actual.area : null };
 }
 
 async function guardarTarea() {
@@ -346,7 +452,7 @@ async function guardarTarea() {
     const payload = {
         titulo,
         descripcion: document.getElementById('nt-desc').value.trim() || null,
-        asignada_a:  parseInt(document.getElementById('nt-asig').value),
+        ...paraDe(document.getElementById('nt-asig').value),
         vence_at:    document.getElementById('nt-vence').value || null,
         prioridad:   document.querySelector('#nt-prio .active')?.dataset.v || 'normal',
         procedimiento_id: parseInt(document.getElementById('nt-proc').value) || null,
@@ -390,7 +496,25 @@ async function cargarProcedimientos() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────
-(async () => { await fetchAll(); renderBandeja(); cargarProcedimientos(); })();
+(async () => {
+    await fetchAll(); renderBandeja(); cargarProcedimientos();
+    // Deep-link (avisos, chat): ?tarea_id=N abre esa tarea aunque no esté en la vista actual.
+    const tid = parseInt(new URLSearchParams(location.search).get('tarea_id'));
+    if (tid) {
+        if (!state.tareas.some(x => x.id === tid)) {
+            try {
+                const r = await get(`/tareas/data?id=${tid}`);
+                const t = (r.data || [])[0];
+                if (t) {
+                    if (t.estado === 'completada') { state.vista = 'completadas'; }
+                    state.ambito = 'todas';
+                    await fetchAll(); renderBandeja();
+                }
+            } catch (e) {}
+        }
+        if (state.tareas.some(x => x.id === tid)) abrirTarea(tid);
+    }
+})();
 setInterval(async () => { await fetchAll(); renderBandeja(); }, 15000);
 </script>
 @endpush

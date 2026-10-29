@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
- * Lo que hoy está "en" una persona, para que el panel avise las novedades en
+ * Lo que hoy está 'en' una persona, para que el panel avise las novedades en
  * cualquier pantalla (crecer-avisos.js compara contra lo que ya conocía). Viaja
  * en /bot-pulso, que corre cada 15 s y al instante con cada cambio de una cola.
  * Antes los avisos vivían en la pantalla de cada cola y solo saltaban ahí.
@@ -43,8 +43,34 @@ class AvisosUsuario
 
             $misTareas = Tarea::where('estado', '!=', 'completada')->where('asignada_a', $uid)
                 ->with('creadaPor:id,nombre_completo')->orderByDesc('id')->limit(self::TOPE)->get()
-                ->map(fn ($t) => ['id' => $t->id, 'titulo' => $t->titulo, 'de' => $t->creada_por !== $uid ? $t->creadaPor?->nombre_completo : null])
+                // Las de un área que tomé yo no avisan "te asignó" (el aviso fue al llegar al área).
+                ->map(fn ($t) => ['id' => $t->id, 'titulo' => $t->titulo, 'de' => $t->creada_por !== $uid && !$t->area ? $t->creadaPor?->nombre_completo : null])
                 ->values();
+
+            // Tareas nuevas para las áreas que atiendo (nadie las tomó todavía).
+            $areasTarea = array_values(array_diff($colas, [ConversacionWA::AREA_DIFUSION]));
+            $tareasArea = Tarea::sinTomarEn($areasTarea)->where('creada_por', "!=", $uid)
+                ->with("creadaPor:id,nombre_completo")->orderByDesc('id')->limit(self::TOPE)->get()
+                ->map(fn ($t) => ['id' => $t->id, 'titulo' => $t->titulo, 'area' => $t->area_label, 'de' => $t->creadaPor?->nombre_completo])
+                ->values();
+
+            // Lo que pedí a un área: aviso cuando la completan o la comentan.
+            $misPedidos = Tarea::whereNotNull('area')->where('creada_por', $uid)
+                ->where('updated_at', ">=", now()->subDays(7))
+                ->with(["completadaPor:id,nombre_completo", 'comentarios' => fn ($q) => $q->where('user_id', "!=", $uid)->with('user:id,nombre_completo')])
+                ->orderByDesc('updated_at')->limit(self::TOPE)->get()
+                ->map(function ($t) use ($uid) {
+                    $ult = $t->comentarios->last();
+                    return [
+                        'id'     => $t->id,
+                        'titulo' => $t->titulo,
+                        'area'   => $t->area_label,
+                        'hecha'  => $t->estado === 'completada' && $t->completada_por !== $uid,
+                        'por'    => $t->completadaPor?->nombre_completo,
+                        'coms'   => $t->comentarios->count(),
+                        'ultimo' => $ult ? ($ult->user?->nombre_completo . ": " . Str::limit($ult->contenido, 90)) : null,
+                    ];
+                })->values();
 
             $favs = array_keys(FavoritoWA::set());
             $favoritos = !$favs || !$colas ? collect() : ConversacionWA::where('estado', 'activa')
@@ -61,6 +87,8 @@ class AvisosUsuario
                 'mis_tareas' => $misTareas,
                 'favoritos'  => $favoritos,
                 'urgentes'   => $urgentes,
+                'tareas_area' => $tareasArea,
+                'mis_pedidos' => $misPedidos,
             ];
         });
     }

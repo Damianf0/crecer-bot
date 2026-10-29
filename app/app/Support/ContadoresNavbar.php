@@ -25,7 +25,9 @@ class ContadoresNavbar
         return Cache::remember("navbar.counts.v3.{$uid}", 5, fn() => [
             'mis_conv'   => ConversacionWA::where('estado', 'activa')->where('asignada_a', $uid)->count(),
             'mis_tareas' => Derivacion::where('estado', 'en_atencion')->where('asignada_a', $uid)->count()
-                          + Tarea::where('estado', '!=', 'completada')->where('asignada_a', $uid)->count(),
+                          + Tarea::where('estado', '!=', 'completada')->where('asignada_a', $uid)->count()
+                          // + las de mis áreas que nadie tomó todavía
+                          + Tarea::sinTomarEn(\App\Http\Controllers\TareaController::misAreas())->count(),
             'por_area'   => ConversacionWA::where('estado', 'activa')->whereNull('asignada_a')->where('no_leidos', '>', 0)->whereIn('area', $mias)
                 ->selectRaw('area, count(*) as n')->groupBy('area')->pluck('n', 'area')
                 ->map(fn($n) => (int) $n)->toArray(),

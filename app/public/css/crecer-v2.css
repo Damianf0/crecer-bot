@@ -496,6 +496,8 @@ input, textarea, select { font-family: inherit; color: var(--v2-text); }
     padding: 1px 6px;
     margin-bottom: 5px;
 }
+a.v2-via { text-decoration: none; margin-right: 4px; }
+a.v2-via:hover { color: var(--v2-accent); }
 
 /* ── Reply a mensaje puntual (07/08) ─────────────────────────────── */
 .v2-quoted {

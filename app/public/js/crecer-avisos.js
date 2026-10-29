@@ -19,7 +19,7 @@
 window.Avisos = (function () {
     const CLAVE_CONOCIDO = 'avisos.conocido.v1';   // sessionStorage: por pestaña
     const PREFIJO_DEDUP  = 'avisos.dedup.';         // localStorage: entre pestañas
-    let prefs = { chat: true, conv_delegada: true, tarea_asignada: true, favorito: true, urgente: true, sonido: true };
+    let prefs = { chat: true, conv_delegada: true, tarea_asignada: true, tarea_area: true, tarea_pedida: true, favorito: true, urgente: true, sonido: true };
     const IMPORTANTES = ['chat', 'favorito'];
     let pendientesTitulo = 0;
     const tituloBase = document.title;
@@ -150,6 +150,8 @@ window.Avisos = (function () {
             tareas: (d.mis_tareas || []).map(t => t.id),
             favs:   Object.fromEntries((d.favoritos || []).map(c => [c.id, c.no_leidos || 0])),
             urg:    (d.urgentes || []).map(c => c.id),
+            tarea_area: (d.tareas_area || []).map(t => t.id),
+            pedidos: Object.fromEntries((d.mis_pedidos || []).map(t => [t.id, [t.hecha ? 1 : 0, t.coms || 0]])),
         };
         const antes = leerConocido();
         guardarConocido(ahora);
@@ -162,7 +164,24 @@ window.Avisos = (function () {
         });
         (d.mis_tareas || []).forEach(t => {
             if (antes.tareas.includes(t.id) || !t.de) return;   // sin "de": me la asigné yo
-            aviso({ tipo: 'tarea_asignada', clave: `tarea-${t.id}`, titulo: `${t.de} te asignó una tarea`, texto: t.titulo, url: '/v2/centro-tareas' });
+            aviso({ tipo: 'tarea_asignada', clave: `tarea-${t.id}`, titulo: `${t.de} te asignó una tarea`, texto: t.titulo, url: `/v2/centro-tareas?tarea_id=${t.id}` });
+        });
+        // Tareas para un área (29/10). Con un "conocido" de antes de esta versión, solo registra.
+        if (antes.tarea_area) (d.tareas_area || []).forEach(t => {
+            if (antes.tarea_area.includes(t.id)) return;
+            aviso({ tipo: 'tarea_area', clave: `tarea-area-${t.id}`, titulo: `Nueva tarea para ${t.area}`,
+                    texto: `${t.de ? t.de + ': ' : ''}${t.titulo}`, url: `/v2/centro-tareas?tarea_id=${t.id}` });
+        });
+        if (antes.pedidos) (d.mis_pedidos || []).forEach(t => {
+            const [hechaAntes, comsAntes] = antes.pedidos[t.id] || [0, 0];
+            const url = `/v2/centro-tareas?tarea_id=${t.id}`;
+            if (t.hecha && !hechaAntes) {
+                aviso({ tipo: 'tarea_pedida', clave: `tarea-hecha-${t.id}`, titulo: `${t.por || t.area} completó tu tarea`,
+                        texto: `${t.area}: ${t.titulo}`, url });
+            } else if ((t.coms || 0) > comsAntes && t.ultimo) {
+                aviso({ tipo: 'tarea_pedida', clave: `tarea-com-${t.id}-${t.coms}`, titulo: `Novedad en tu tarea para ${t.area}`,
+                        texto: t.ultimo, url });
+            }
         });
         (d.favoritos || []).forEach(c => {
             if ((c.no_leidos || 0) <= (antes.favs[c.id] || 0) || abierta(c.id)) return;

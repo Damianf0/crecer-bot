@@ -210,6 +210,7 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::patch('/tareas/{id}',              [TareaController::class, 'update']);
         Route::delete('/tareas/{id}',             [TareaController::class, 'destroy']);
         Route::post('/tareas/{id}/comentario',    [TareaController::class, 'comentar']);
+        Route::post('/tareas/{id}/responder',     [TareaController::class, 'responder']);
         Route::delete('/tareas/comentario/{id}',  [TareaController::class, 'eliminarComentario']);
     });
 

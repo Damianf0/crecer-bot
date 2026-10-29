@@ -210,6 +210,16 @@ class AtencionController extends Controller
             ? \App\Models\User::whereIn('id', $userIds)->pluck('nombre_completo', 'id')
             : collect();
 
+        // Tareas para un área (29/10): mensajes que viajan en una tarea y
+        // respuestas al paciente mandadas desde una. Dos consultas por página.
+        $areasLbl = ConversacionWA::areas();
+        $enTareas = \Illuminate\Support\Facades\DB::table('tarea_mensajes')
+            ->join('tareas', 'tareas.id', '=', 'tarea_mensajes.tarea_id')
+            ->whereIn('tarea_mensajes.mensaje_id', $msgsCol->pluck('id'))
+            ->get(['tarea_mensajes.mensaje_id', 'tareas.id', 'tareas.area', 'tareas.estado'])
+            ->groupBy('mensaje_id');
+        $tareasResp = \App\Models\Tarea::whereIn('id', $msgsCol->pluck('tarea_id')->filter()->unique())->pluck('area', 'id');
+
         $msgs = $msgsCol->reverse()->values()->map(fn($m) => [
             'id'          => $m->id,
             'direccion'   => $m->direccion,
@@ -227,6 +237,10 @@ class AtencionController extends Controller
             'via'         => $m->via_area ? (ConversacionWA::areas()[$m->via_area] ?? $m->via_area) : null,
             // Se puede reenviar suelto: texto con contenido, o adjunto que esté en disco.
             'reenviable'  => self::esReenviable($m),
+            'tareas'      => ($enTareas[$m->id] ?? collect())->map(fn ($t) => [
+                'id' => $t->id, 'area' => $t->area ? ($areasLbl[$t->area] ?? $t->area) : null, 'hecha' => $t->estado === 'completada',
+            ])->values(),
+            'desde_tarea' => $m->tarea_id ? ['id' => $m->tarea_id, 'area' => ($a = $tareasResp[$m->tarea_id] ?? null) ? ($areasLbl[$a] ?? $a) : null] : null,
             // Reply (solo lectura): el panel renderea el bubble citado arriba del
             // mensaje cuando quoted_wa_id no es null. quoted_preview es el texto
             // (o un emoji + tipo para media). autor es nullable: lo poblamos si
@@ -279,6 +293,7 @@ class AtencionController extends Controller
                 'vence_fmt'       => $t->vence_at?->format('d/m H:i'),
                 'vencida'         => $t->vencida,
                 'asignado_nombre' => $t->asignadaA?->nombre_completo,
+                'area_label'      => $t->area_label,
             ]);
 
         // Determinar si la conversación está vinculada con un contacto del directorio.

@@ -13,12 +13,45 @@ class Tarea extends Model
     protected $fillable = [
         'titulo', 'descripcion', 'asignada_a', 'creada_por',
         'vence_at', 'estado', 'prioridad', 'ref_tipo', 'ref_id',
-        'procedimiento_id',
+        'procedimiento_id', 'area', 'completada_por', 'completada_at',
     ];
 
     protected $casts = [
-        'vence_at' => 'datetime',
+        'vence_at'      => 'datetime',
+        'completada_at' => 'datetime',
     ];
+
+    /** Mensajes de la conversación que se marcaron al crear la tarea. */
+    public function mensajes(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(MensajeWA::class, 'tarea_mensajes', 'tarea_id', 'mensaje_id')->orderBy('mensajes_wa.id');
+    }
+
+    public function completadaPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'completada_por');
+    }
+
+    /**
+     * Tareas que la persona puede ver: las de personas, y las de áreas que
+     * puede ver (las áreas restringidas no existen para el resto del equipo).
+     */
+    public function scopeVisiblesPara($q, ?User $user)
+    {
+        $areas = array_keys(ConversacionWA::areasPara($user));
+        return $q->where(fn ($q) => $q->whereNull('area')->orWhereIn('area', $areas));
+    }
+
+    /** Pendientes de un área que nadie tomó todavía. */
+    public function scopeSinTomarEn($q, array $areas)
+    {
+        return $q->where('estado', '!=', 'completada')->whereNull('asignada_a')->whereIn('area', $areas ?: ['-']);
+    }
+
+    public function getAreaLabelAttribute(): ?string
+    {
+        return $this->area ? (ConversacionWA::areas()[$this->area] ?? $this->area) : null;
+    }
 
     public function asignadaA(): BelongsTo
     {
