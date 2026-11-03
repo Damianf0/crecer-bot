@@ -78,4 +78,22 @@ class BotMensajeEntranteTest extends TestCase
         // que quedar escribible para www-data.
         $this->assertSame(0666, config('logging.channels.daily.permission'));
     }
+
+    public function test_el_audio_entra_sin_texto_y_la_transcripcion_se_completa_despues(): void
+    {
+        Http::fake(['*' => Http::response(['ok' => false], 503)]);
+        $audio = fn (?string $texto) => $this->withToken('token-de-prueba')->postJson('/api/bot/mensajes', [
+            'contacto' => '5492235550000@c.us', 'area' => 'administracion', 'tipo' => 'audio',
+            'contenido' => $texto, 'archivo_url' => 'http://bot/media/a.ogg',
+            'wa_id' => 'false_5492235550000@c.us_AUD', 'timestamp' => now()->toISOString(),
+        ]);
+
+        $audio(null)->assertCreated();
+        $audio('Hola, quería un turno')->assertOk()->assertJson(['transcripcion_completada' => true]);
+        // Si vuelve a llegar, no pisa la transcripción que ya está.
+        $audio('otra cosa')->assertOk()->assertJsonMissing(['transcripcion_completada' => true]);
+
+        $this->assertSame(1, MensajeWA::where('wa_id', 'false_5492235550000@c.us_AUD')->count());
+        $this->assertSame('Hola, quería un turno', MensajeWA::where('wa_id', 'false_5492235550000@c.us_AUD')->value('contenido'));
+    }
 }

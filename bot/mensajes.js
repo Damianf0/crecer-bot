@@ -5,7 +5,7 @@ const { obtenerRespuesta, enviarRespuesta } = require('./respuestas');
 const { derivarConversacion, obtenerHistorial, guardarHistorial, marcarLeido } = require('./cola');
 const { estaEnHorario } = require('./horario');
 const { estado: estadoBot, pushClasificacion } = require('./estado-bot');
-const { guardarMensajeSaliente, transcribirAudio, registrarClasificacion } = require('./mensajesApi');
+const { guardarMensajeSaliente, transcribirUnaVez, transcripcionEnCurso, registrarClasificacion } = require('./mensajesApi');
 
 const MEDIA_DIR = '/app/media';
 
@@ -129,13 +129,16 @@ async function extraerTexto(msg) {
   if (msg.type === 'texto' && msg.body) return msg.body.trim();
   if (msg.type === 'audio') {
     try {
+      // La misma transcripción que usa el guardado en el panel (una sola por audio).
+      const enCurso = transcripcionEnCurso(msg.wa_id);
+      if (enCurso) { const t = await enCurso.catch(() => null); if (t) return t; return '[audio sin transcripción]'; }
       const media = await msg.downloadMedia();
       if (media) {
         const ext      = media.mimetype?.includes('ogg') ? 'ogg' : 'mp3';
         const filename = `${Date.now()}_${msg.from.replace('@c.us', '')}.${ext}`;
         const filePath = path.join(MEDIA_DIR, filename);
         fs.writeFileSync(filePath, Buffer.from(media.data, 'base64'));
-        const transcripcion = await transcribirAudio(filePath);
+        const transcripcion = await transcribirUnaVez(msg.wa_id, filePath);
         if (transcripcion) return transcripcion;
       }
     } catch (e) {

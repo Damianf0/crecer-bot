@@ -108,12 +108,15 @@ async function guardarMensajeEntrante(msg, opts = {}) {
     let contenido   = msg.body;
     let archivo_url = null;
 
+    let transcripcion = null;
     if (tipo === 'audio') {
       try {
         const persisted = await persistirMedia(msg, 'ogg');
         if (persisted) {
           archivo_url = persisted.archivo_url;
-          contenido   = await transcribirAudio(persisted.filePath).catch(() => null);
+          transcripcion = transcribirUnaVez(msg.wa_id, persisted.filePath);
+          // Sin wa_id no se puede completar después: se espera como antes.
+          contenido = msg.wa_id ? null : await transcripcion.catch(() => null);
         }
       } catch (e) {
         console.warn('[mensajesApi] Audio no descargado:', e.message);
@@ -136,7 +139,7 @@ async function guardarMensajeEntrante(msg, opts = {}) {
       return; // tipo no soportado
     }
 
-    await postConReintentos('/bot/mensajes', {
+    const datos = {
       contacto,
       area:      BOT_AREA,
       tipo,
@@ -152,7 +155,17 @@ async function guardarMensajeEntrante(msg, opts = {}) {
       // Backfill: Laravel usa el timestamp como created_at y saltea el sync
       // inline de avatar (150 mensajes seguidos = 150 calls CDP al bot).
       backfill:  opts.backfill || undefined,
-    }, `entrante ${contacto}`);
+    };
+    await postConReintentos('/bot/mensajes', datos, `entrante ${contacto}`);
+
+    // Audio (03/11): antes se guardaba recién con la transcripción hecha, y con
+    // varios audios seguidos Whisper tardaba hasta 2 min. Ahora el audio entra
+    // al panel enseguida y el texto se completa cuando está (Laravel lo
+    // completa al recibir el mismo wa_id con contenido).
+    if (transcripcion && msg.wa_id) {
+      const texto = await transcripcion.catch(() => null);
+      if (texto) await postConReintentos('/bot/mensajes', { ...datos, contenido: texto }, `transcripción ${contacto}`);
+    }
 
   } catch (err) {
     console.error('[mensajesApi] Error guardando entrante:', err.message);
@@ -271,6 +284,24 @@ async function transcribirAudio(filePath) {
 }
 
 /**
+ * Una sola transcripción por audio. El guardado en el panel y el clasificador
+ * transcribían cada audio por separado: el doble de trabajo para Whisper.
+ * Sin wa_id no hay con qué compartir y se transcribe directo.
+ */
+const _transcripciones = new Map();
+function transcribirUnaVez(waId, filePath) {
+  if (!waId) return transcribirAudio(filePath);
+  if (!_transcripciones.has(waId)) {
+    _transcripciones.set(waId, transcribirAudio(filePath));
+    setTimeout(() => _transcripciones.delete(waId), 10 * 60_000).unref();
+  }
+  return _transcripciones.get(waId);
+}
+function transcripcionEnCurso(waId) {
+  return (waId && _transcripciones.get(waId)) || null;
+}
+
+/**
  * Guarda la clasificación de la IA para las estadísticas de tipo de consulta.
  * Hasta el 28/09 solo quedaba en memoria (/admin/pruebas) y en el log: a
  * Laravel llegaban únicamente las derivaciones (7 de los 16 códigos).
@@ -294,4 +325,4 @@ async function registrarAck(waId, ack) {
   await postConReintentos('/bot/difusion/ack', { wa_id: waId, ack }, `ack ${waId}`);
 }
 
-module.exports = { guardarMensajeEntrante, guardarMensajeSaliente, guardarMensajeSalienteExterno, transcribirAudio, mimeExt, registrarClasificacion, registrarAck };
+module.exports = { guardarMensajeEntrante, guardarMensajeSaliente, guardarMensajeSalienteExterno, transcribirAudio, transcribirUnaVez, transcripcionEnCurso, mimeExt, registrarClasificacion, registrarAck };

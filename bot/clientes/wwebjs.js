@@ -6,6 +6,7 @@ const { EventEmitter } = require('events');
 const { Client, LocalAuth, MessageMedia, Message } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const fs = require('fs');
+const crypto = require('crypto');
 const dns = require('dns');
 const path = require('path');
 
@@ -887,8 +888,25 @@ function crearClienteWwebjs() {
     return { wa_id: waId };
   };
 
+  // Subida nueva en cada envío de fotos (03/11). WA Web reconoce un archivo por
+  // su hash y, si ya lo mandó antes, reusa la subida vieja. Con el combo de
+  // Secretaría, a ~4 de cada 10 pacientes el video y las fotos les quedaban en
+  // un tilde (textos y PDF sí llegaban); la subida reusada es la sospecha.
+  // Un comentario JPEG (FF FE) con bytes al azar justo después del inicio hace
+  // que cada foto tenga su propio hash; WA la recomprime como a cualquier foto.
+  // Probado: bytes al final no sirven (WA los recorta), y en el MP4 tampoco
+  // sirven ni relleno ni cambiar la fecha interna (WA rearma el video).
+  function variarArchivo(mimetype, base64) {
+    const mt = String(mimetype || '').toLowerCase();
+    if (mt !== 'image/jpeg' && mt !== 'image/jpg') return base64;
+    const b = Buffer.from(base64, 'base64');
+    if (b[0] !== 0xFF || b[1] !== 0xD8) return base64;
+    const com = Buffer.concat([Buffer.from([0xFF, 0xFE, 0, 10]), crypto.randomBytes(8)]);
+    return Buffer.concat([b.subarray(0, 2), com, b.subarray(2)]).toString('base64');
+  }
+
   emitter.sendMedia = async (jid, { mimetype, base64, filename, caption }) => {
-    const media = new MessageMedia(mimetype, base64, filename || 'archivo');
+    const media = new MessageMedia(mimetype, variarArchivo(mimetype, base64), filename || 'archivo');
     const opts = caption ? { caption } : {};
     let sent;
     try {

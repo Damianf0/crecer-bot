@@ -279,6 +279,13 @@ class BotController extends Controller
                 $existente->update(['archivo_url' => $data['archivo_url']]);
                 return response()->json(['ok' => true, 'duplicate' => true, 'archivo_completado' => true]);
             }
+            // Audio: el bot lo guarda apenas llega y manda la transcripción
+            // después con el mismo wa_id (Whisper tardaba hasta 2 min con varios
+            // audios seguidos y el mensaje no aparecía hasta entonces).
+            if ($existente->tipo === 'audio' && blank($existente->contenido) && !empty($data['contenido'])) {
+                $existente->update(['contenido' => $data['contenido']]);
+                return response()->json(['ok' => true, 'duplicate' => true, 'transcripcion_completada' => true]);
+            }
             return response()->json(['ok' => true, 'duplicate' => true]);
         }
 
