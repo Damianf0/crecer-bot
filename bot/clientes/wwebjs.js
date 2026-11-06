@@ -318,6 +318,11 @@ function crearClienteWwebjs() {
   //     espera como width/height/streamingSidecar. Sin ellos los videos del
   //     panel salían "a medias": un tilde para siempre en muchos teléfonos
   //     (los mandados desde el celular, con esos campos, llegaban). Se copian.
+  // Probado y descartado (06/11): el arreglo oficial (PR #201923: esparcir el
+  // MediaData tal cual y borrar solo __x_id). Con nuestra versión los campos
+  // del modelo son __x_*, el Msg no los toma y fotos y videos salían como
+  // mensajes de texto vacíos (type chat, sin mediaKey). No volver a intentarlo
+  // sin probar contra el número interno.
   // Idempotente; se reaplica si la página recargó (WA Web se actualiza solo).
   const VERSION_PARCHE = 2;
   async function asegurarParcheEnvio() {
@@ -913,6 +918,11 @@ function crearClienteWwebjs() {
   emitter.sendMedia = async (jid, { mimetype, base64, filename, caption }) => {
     const media = new MessageMedia(mimetype, variarArchivo(mimetype, base64), filename || 'archivo');
     const opts = caption ? { caption } : {};
+    // Videos siempre como documento (06/11, Damián): el video del combo (11 MB)
+    // colgó Chromium de Secretaría al procesarlo, y como video a varias
+    // pacientes les quedaba en un tilde. Como documento WA no lo procesa: el
+    // archivo sale tal cual y se abre con el reproductor del teléfono.
+    if (String(mimetype || '').toLowerCase().startsWith('video/')) opts.sendMediaAsDocument = true;
     let sent;
     try {
       await asegurarParcheEnvio();
