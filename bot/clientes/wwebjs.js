@@ -499,7 +499,12 @@ function crearClienteWwebjs() {
     if (browserVivo) chequeosSinConnected = 0;
     else chequeosSinConnected++;
 
-    if (paginaViva || inactivo < ZOMBIE_INACTIVO_MS) strikesZombie = 0;
+    // Una operación que se venció hace poco (un envío o una descarga) es señal
+    // suficiente aunque haya habido actividad: el 06/11 Secretaría se colgó
+    // mandando el video del combo y quedó 7 min muda. Sin esto, esperaba 15 min
+    // de inactividad + 2 chequeos (~25 min); con esto, 2 chequeos (~5-10 min).
+    const trabadaReciente = fallasTrabadas.some((t) => Date.now() - t < TRABADAS_VENTANA_MS);
+    if (paginaViva || (inactivo < ZOMBIE_INACTIVO_MS && !trabadaReciente)) strikesZombie = 0;
     else strikesZombie++;
 
     console.log(`[watchdog] browser: ${browserVivo ? 'ok' : 'MUERTO'} | página: ${paginaViva ? 'ok' : 'sin respuesta'} | Inactivo: ${Math.round(inactivo / 60000)}m | strikes: ${chequeosSinConnected} zombie: ${strikesZombie}`);
