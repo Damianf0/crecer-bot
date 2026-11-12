@@ -156,6 +156,54 @@ function restaurarSnapshot() {
   return true;
 }
 
+// ── LOGOUT conservador (12/11) ─────────────────────────────────────────
+// Los cortes del 03/09, 30/09, 01/10 y 12/11 tienen la misma firma: WA Web se
+// resincroniza sola y segundos después navega a post_logout, sin nada hecho
+// desde el celular. El 20/07 un LOGOUT así resultó falso (volvió con un
+// reinicio, sin QR). Pero wwebjs, ante un LOGOUT, BORRA la carpeta de sesión
+// (LocalAuth.logout) y nosotros además el snapshot: no quedaba nada con qué
+// reintentar. Ahora la sesión se aparta en vez de borrarse, se reintenta UNA
+// vez con ella, y recién si pide QR / no autentica / vuelve el LOGOUT se borra
+// todo y se muestra el QR (lo que evita el loop sin QR del 14/09).
+const SESSION_LOGOUT_DIR    = path.join(AUTH_PATH, 'session-logout');
+const REINTENTO_LOGOUT_FILE = path.join(AUTH_PATH, 'reintento-logout.json');
+const REINTENTO_LOGOUT_VIGENCIA_MS = 30 * 60_000;
+const REINTENTO_LOGOUT_BOOT_MIN    = 3;
+
+class LocalAuthConservadora extends LocalAuth {
+  async logout() {
+    this.logoutEnCurso = (async () => {
+      if (!this.userDataDir || !fs.existsSync(this.userDataDir)) return;
+      try {
+        await fs.promises.rm(SESSION_LOGOUT_DIR, { recursive: true, force: true });
+        await fs.promises.rename(this.userDataDir, SESSION_LOGOUT_DIR);
+        console.warn('[whatsapp] LOGOUT: sesión apartada (no borrada) para reintentar con ella');
+      } catch (e) {
+        console.warn('[whatsapp] LOGOUT: no se pudo apartar la sesión, la borro:', e.message);
+        await fs.promises.rm(this.userDataDir, { recursive: true, force: true }).catch(() => {});
+      }
+    })();
+    return this.logoutEnCurso;
+  }
+}
+
+function leerReintentoLogout() {
+  try {
+    const r = JSON.parse(fs.readFileSync(REINTENTO_LOGOUT_FILE, 'utf8'));
+    r.vencido = Date.now() - new Date(r.ts).getTime() > REINTENTO_LOGOUT_VIGENCIA_MS;
+    return r;
+  } catch (_) { return null; }
+}
+
+function borrarSesionRevocada() {
+  for (const p of [SESSION_DIR, SNAP_DIR, SESSION_LOGOUT_DIR, MARKER_FILE, REINTENTO_LOGOUT_FILE]) {
+    try { fs.rmSync(p, { recursive: true, force: true }); } catch (e) {
+      console.error(`[whatsapp] No se pudo borrar ${path.basename(p)}:`, e.message);
+    }
+  }
+  console.warn('[whatsapp] LOGOUT: sesión revocada borrada — el próximo arranque muestra QR nuevo');
+}
+
 // El incidente del 04/07 arrancó con ERR_NAME_NOT_RESOLVED: el container
 // levanta antes de que el DNS de Docker esté usable y Chromium navega al
 // vacío. Mejor esperar acá que lanzar un initialize condenado.
@@ -366,6 +414,58 @@ function crearClienteWwebjs() {
   let chequeosSinConnected = 0;
   let reintentosSeguidos   = 0;
   let listoEnEstaCorrida   = false; // llegó a 'ready' → la sesión en disco es válida
+  let versionEnUso         = null;  // versión de WA Web con la que arrancó esta corrida
+
+  // ── Reinicio nocturno por versión nueva de WA Web (12/11) ──────────────
+  // En los cortes del 01/10 y del 12/11 la página había cambiado de versión
+  // justo antes del LOGOUT: el bot sigue sirviendo la versión de caché con la
+  // que arrancó y WhatsApp publica 3-4 por día. Para que ese choque no caiga en
+  // horario de atención, de madrugada, si hay una versión más nueva, se
+  // reinicia el cliente (apagado limpio + snapshot). Escalonado por área para
+  // no levantar varios Chromium a la vez; después del backup (02:30) y del
+  // reinicio de Ollama (03:30).
+  const AREA_BOT = require('../area').BOT_AREA;
+  const HORA_REINICIO_VERSION = parseInt(process.env.REINICIO_VERSION_HORA || '4', 10);
+  const MINUTO_REINICIO_VERSION = { atencion: 0, administracion: 15, ovodonacion: 30, criopreservacion: 45 }[AREA_BOT] ?? 50;
+  let diaChequeoVersion = null;
+  setInterval(async () => {
+    const ahora = new Date();
+    const m = ahora.getMinutes() - MINUTO_REINICIO_VERSION;
+    if (ahora.getHours() !== HORA_REINICIO_VERSION || m < 0 || m >= 10) return;
+    const dia = ahora.toDateString();
+    if (diaChequeoVersion === dia) return;
+    diaChequeoVersion = dia;
+    if (process.env.WA_WEB_VERSION || destruido || !listoEnEstaCorrida || !versionEnUso) return;
+    let vigente = null;
+    try {
+      const axios = require('axios');
+      const r = await axios.get(`${WA_VERSIONES_URL}/versions.json`, { timeout: 8_000 });
+      vigente = r.data?.currentVersion || null;
+      if (vigente) await bajarHtmlVersion(vigente);
+    } catch (e) {
+      console.warn(`[whatsapp] Chequeo nocturno de versión: no se pudo consultar/bajar (${e.message})`);
+      return;
+    }
+    if (!vigente || compararVersiones(vigente, versionEnUso) <= 0) {
+      console.log(`[whatsapp] Chequeo nocturno de versión: al día (${versionEnUso})`);
+      return;
+    }
+    if (destruido || !listoEnEstaCorrida) return;
+    console.warn(`[whatsapp] Versión nueva de WhatsApp Web (${versionEnUso} → ${vigente}): reinicio nocturno`);
+    destruido = true;
+    detenerBootTimer();
+    detenerWatchdog();
+    emitter.emit('disconnected', 'reinicio_version');
+    try {
+      await client.destroy();
+      hacerSnapshot();
+      console.log('[whatsapp] Snapshot de sesión guardado (reinicio por versión)');
+    } catch (e) {
+      console.warn('[whatsapp] Reinicio por versión: cierre no limpio, sin snapshot:', e.message);
+      limpiarCacheChromium();
+    }
+    programarReinicio(5_000);
+  }, 60_000);
 
   // Boot-watchdog: cubre la ventana initialize→ready que el watchdog normal no ve
   let bootTimer    = null;
@@ -676,6 +776,15 @@ function crearClienteWwebjs() {
       return;
     }
     limpiarLocks();
+    // Reintento tras LOGOUT: si quedó de hace más de 30 min (se cortó el
+    // proceso a mitad), no seguir probando con una sesión que pudo estar
+    // revocada de verdad → QR limpio.
+    let reintentoLogout = leerReintentoLogout();
+    if (reintentoLogout?.vencido) {
+      console.warn('[whatsapp] Reintento de LOGOUT vencido sin llegar a ready');
+      borrarSesionRevocada();
+      reintentoLogout = null;
+    }
     destruido = false;
     chequeosSinConnected = 0;
 
@@ -686,8 +795,22 @@ function crearClienteWwebjs() {
     // actor externo. Si en BOOT_TIMEOUT no llegó a ready ni pidió QR: limpiar
     // caché y reintentar; al 2º timeout seguido, restaurar el snapshot antes
     // (la escalera que se ejecutó a mano el 16/07, automatizada).
+    // Si el reintento tras LOGOUT no prospera, se abandona: sesión revocada de
+    // verdad → borrar todo y QR nuevo.
+    async function abandonarReintentoLogout(motivo) {
+      console.error(`[whatsapp] LOGOUT confirmado (${motivo}): la sesión no volvió — la borro y muestro QR nuevo`);
+      destruido = true;
+      detenerBootTimer();
+      detenerWatchdog();
+      try { await client.destroy(); } catch (_) {}
+      borrarSesionRevocada();
+      reintentosSeguidos = 0;
+      programarReinicio(3000);
+    }
+
     bootTimer = setTimeout(async () => {
       if (destruido) return;
+      if (reintentoLogout) { await abandonarReintentoLogout(`sin ready tras ${REINTENTO_LOGOUT_BOOT_MIN} min`); return; }
       bootTimeouts++;
       console.warn(`[whatsapp] Boot-watchdog: sin 'ready' ni QR tras ${BOOT_TIMEOUT_MIN} min (timeout ${bootTimeouts}) — limpio caché y reintento`);
       destruido = true;
@@ -702,15 +825,18 @@ function crearClienteWwebjs() {
         }
       }
       programarReinicio(5000);
-    }, BOOT_TIMEOUT_MIN * 60 * 1000);
+    }, (reintentoLogout ? REINTENTO_LOGOUT_BOOT_MIN : BOOT_TIMEOUT_MIN) * 60 * 1000);
 
     const wa = await resolverVersionWA();
+    versionEnUso = wa.version;
     console.log(`[whatsapp] WhatsApp Web ${wa.version} (${wa.origen})`);
+    if (reintentoLogout) console.warn(`[whatsapp] Arranque de REINTENTO tras LOGOUT (${reintentoLogout.ts}): si en ${REINTENTO_LOGOUT_BOOT_MIN} min no autentica, QR nuevo`);
     // Para el watchdog: qué versión usa cada bot (antes leía el default del código).
     try { fs.writeFileSync(path.join(WA_CACHE_DIR, `en-uso-${require('../area').BOT_AREA}.json`), JSON.stringify({ version: wa.version, origen: wa.origen, ts: new Date().toISOString() })); } catch (_) {}
 
+    const authStrategy = new LocalAuthConservadora({ dataPath: AUTH_PATH });
     client = new Client({
-      authStrategy: new LocalAuth({ dataPath: AUTH_PATH }),
+      authStrategy,
       puppeteer: PUPPETEER_OPTS,
       userAgent: USER_AGENT_MODERNO,
       // Cache LOCAL y estricto: el HTML vive en bot/.wwebjs_cache (lo baja
@@ -725,8 +851,29 @@ function crearClienteWwebjs() {
       },
     });
 
+    // Inyección única por página (12/11). wwebjs llama a inject() en CADA
+    // 'framenavigated' (iframes y navegaciones dentro del documento incluidas),
+    // y cada llamada vuelve a registrar los listeners de la página: el 12/11,
+    // tras día y medio, una sola resincronización disparó 18 'authenticated' y
+    // 18 'ready' juntos. Una ventana nueva (navegación real) no trae la marca,
+    // así que ahí sí se inyecta de nuevo.
+    const injectOriginal = client.inject.bind(client);
+    client.inject = async () => {
+      let yaInyectada = false;
+      try {
+        yaInyectada = await client.pupPage.evaluate(() => {
+          if (window.__crecerInyectada) return true;
+          window.__crecerInyectada = true;
+          return false;
+        });
+      } catch (_) { /* contexto navegando: que siga el inject normal */ }
+      if (yaInyectada) return;
+      return injectOriginal();
+    };
+
     client.on('qr', async (qr) => {
       detenerBootTimer(); // hay QR: espera humana, el boot-watchdog no aplica
+      if (reintentoLogout) { await abandonarReintentoLogout('WhatsApp pidió QR'); return; }
       // QR con marker de sesión válida = corrupción local, NO logout del
       // servidor (probado 05/07). Restaurar el snapshot antes de rendirse.
       const marker = leerMarker();
@@ -775,6 +922,12 @@ function crearClienteWwebjs() {
       resetActividad();
       reintentosSeguidos = 0;
       listoEnEstaCorrida = true;
+      if (reintentoLogout) {
+        reintentoLogout = null;
+        try { fs.rmSync(REINTENTO_LOGOUT_FILE, { force: true }); } catch (_) {}
+        try { fs.rmSync(SNAP_DIR, { recursive: true, force: true }); } catch (_) {}
+        console.warn('[whatsapp] El LOGOUT era FALSO: la sesión volvió sin QR');
+      }
       escribirMarker({ ts: new Date().toISOString(), phone, intentos_restore: 0 });
       asegurarParcheEnvio().catch((e) => console.warn('[whatsapp] No se pudo aplicar el parche de envío:', e.message));
       console.log(`[whatsapp] Cliente listo. Número: ${phone}`);
@@ -787,6 +940,7 @@ function crearClienteWwebjs() {
       console.error('[whatsapp] Fallo de autenticación:', msg);
       detenerWatchdog();
       emitter.emit('disconnected', `auth_failure:${msg}`);
+      if (reintentoLogout) borrarSesionRevocada();
       process.exit(1);
     });
 
@@ -794,31 +948,41 @@ function crearClienteWwebjs() {
       if (destruido) return;
       destruido = true;
       console.warn('[whatsapp] Desconectado:', reason);
-      // LOGOUT = el servidor revocó el pareo: la sesión en disco ya no sirve.
-      // Sin esto, el apagado siguiente la copiaba al snapshot y el marker
-      // disparaba restauraciones de una sesión muerta (ovo 14/09).
-      if (reason === 'LOGOUT') {
+      // LOGOUT: el marker se borra siempre (sin él, el apagado siguiente no
+      // snapshotea una sesión quizá muerta ni el QR dispara restauraciones —
+      // ovo 14/09). La sesión se reintenta UNA vez (ver LocalAuthConservadora).
+      const esLogout = reason === 'LOGOUT';
+      const veniaDeReintento = !!reintentoLogout;
+      if (esLogout) {
         listoEnEstaCorrida = false;
         try { fs.rmSync(MARKER_FILE, { force: true }); } catch (_) {}
-        console.error('[whatsapp] LOGOUT del servidor: pareo revocado — hay que reescanear el QR (snapshot desactivado)');
+        console.error(`[whatsapp] LOGOUT del servidor${veniaDeReintento ? ' (otra vez, en el reintento)' : ''}`);
       }
       detenerBootTimer();
       detenerWatchdog();
       emitter.emit('disconnected', reason);
       try { await client.destroy(); } catch (_) {}
-      // Con la sesión revocada en disco, el próximo initialize no llega nunca a
-      // QR: se queda en "auth timeout" para siempre (ovo 14/09 y 22/09). Con
-      // Chromium ya cerrado, se borra la sesión (y el snapshot, que es la misma
-      // sesión muerta) para que el reinicio muestre un QR limpio.
-      if (reason === 'LOGOUT') {
-        try {
-          fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-          fs.rmSync(SNAP_DIR, { recursive: true, force: true });
-          console.warn('[whatsapp] LOGOUT: sesión revocada borrada — el próximo arranque muestra QR nuevo');
-        } catch (e) {
-          console.error('[whatsapp] LOGOUT: no se pudo borrar la sesión revocada:', e.message);
+      if (esLogout) {
+        // wwebjs aparta la sesión en paralelo a este handler: esperar a que termine.
+        try { await conTimeout(authStrategy.logoutEnCurso || Promise.resolve(), 15_000, 'apartar sesión'); } catch (e) {
+          console.warn('[whatsapp] LOGOUT:', e.message);
         }
-        reintentosSeguidos = 0; // QR nuevo cuanto antes, sin backoff
+        let reintenta = false;
+        if (!veniaDeReintento && fs.existsSync(SESSION_LOGOUT_DIR)) {
+          try {
+            fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+            fs.renameSync(SESSION_LOGOUT_DIR, SESSION_DIR);
+            fs.writeFileSync(REINTENTO_LOGOUT_FILE, JSON.stringify({ ts: new Date().toISOString() }));
+            reintenta = true;
+            console.warn(`[whatsapp] LOGOUT: reintento UNA vez con la misma sesión (el 20/07 hubo uno falso). Si pide QR o no autentica en ${REINTENTO_LOGOUT_BOOT_MIN} min, QR nuevo`);
+          } catch (e) {
+            console.error('[whatsapp] LOGOUT: no se pudo preparar el reintento:', e.message);
+          }
+        }
+        // Con la sesión revocada en disco, el próximo initialize no llega nunca a
+        // QR: se queda en "auth timeout" para siempre (ovo 14/09 y 22/09).
+        if (!reintenta) borrarSesionRevocada();
+        reintentosSeguidos = 0; // sin backoff: reintento o QR nuevo cuanto antes
       }
       const espera = delayReintento();
       console.log(`[whatsapp] Reiniciando en ${Math.round(espera / 1000)} segundos...`);
@@ -865,6 +1029,7 @@ function crearClienteWwebjs() {
       // err.message viene vacío en errores minificados de WA Web ("r"): sin el
       // stack, 7 días de loop (14-21/09) quedaron sin una sola pista.
       console.error('[whatsapp] Error en initialize:', err?.stack || err?.message || String(err));
+      if (reintentoLogout) { await abandonarReintentoLogout('initialize falló'); return; }
       detenerBootTimer();
       detenerWatchdog();
       emitter.emit('disconnected', `initialize:${err.message}`);
