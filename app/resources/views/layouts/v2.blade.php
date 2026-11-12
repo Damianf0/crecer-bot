@@ -193,7 +193,11 @@
             const bots = Object.values(d.bots || {});
             const mal = bots.filter(b => b.estado !== 'listo').map(b => b.label).join(', ');
             dot.parentElement.title = bots.map(b => `${b.label}: ${b.estado}${b.has_qr ? ' (falta QR)' : ''}`).join('\n');
+            // Falta QR = el número NO recibe ni envía nada: va en rojo y sin "Iniciando",
+            // que hacía pensar que se arreglaba solo (12/11: Administración 1 h desvinculada).
+            const sinQr = bots.filter(b => b.has_qr || b.estado === 'esperando_qr').map(b => b.label).join(', ');
             if (d.estado === 'listo') { dot.className = 'v2-dot ok'; txt.textContent = 'Bots ok'; }
+            else if (sinQr) { dot.className = 'v2-dot err'; txt.textContent = 'Sin conexión — falta escanear QR: ' + sinQr; }
             else if (d.estado === 'iniciando') { dot.className = 'v2-dot warn'; txt.textContent = 'Iniciando: ' + mal; }
             else { dot.className = 'v2-dot err'; txt.textContent = 'Caído: ' + mal; }
             const c = d.contadores || {};
