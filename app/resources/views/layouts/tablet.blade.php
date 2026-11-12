@@ -29,8 +29,11 @@
         button { font-family: inherit; }
 
         /* ── Estructura principal ── */
+        /* 100dvh = alto VISIBLE (sin la barra del navegador). Con 100vh, en el
+           tablet la barra de direcciones tapaba la parte de abajo (12/11). */
         .tablet-wrap {
             height: 100vh;
+            height: 100dvh;
             display: flex;
             flex-direction: column;
         }
@@ -72,21 +75,27 @@
             height: 100%;
         }
 
+        /* Centrado "seguro": si el contenido no entra, en vez de cortarse arriba
+           y abajo (justify-content:center) queda pegado arriba y se desplaza. */
+        .col-left, .col-right, .step-main { overflow-y: auto; }
+        .col-left > :first-child, .col-right > :first-child, .step-main > :first-child { margin-top: auto; }
+        .col-left > :last-child,  .col-right > :last-child,  .step-main > :last-child  { margin-bottom: auto; }
+
         .col-left {
             flex: 1;
             min-width: 0;
+            min-height: 0;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             padding: 4vh 5vw;
         }
 
         .col-right {
             width: min(46vw, 540px);
             flex-shrink: 0;
+            min-height: 0;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             padding: 3vh 4vw;
             gap: 1.6vh;
             background: var(--tarjeta);
@@ -106,10 +115,8 @@
         .step-main {
             flex: 1;
             min-height: 0;
-            overflow-y: auto;
             display: flex;
             flex-direction: column;
-            justify-content: center;
         }
 
         .step-actions {
@@ -338,6 +345,24 @@
             .key       { height: clamp(64px, 8vh, 108px); }
             .opciones  { grid-template-columns: repeat(2, 1fr); }
             .motivo-btn { min-height: clamp(84px, 10vh, 132px); }
+        }
+
+        /* ── Pantalla baja (zoom del navegador alto, barra visible, tablet chico):
+           los mínimos fijos dejaban el botón Confirmar fuera de la pantalla. ── */
+        @media (max-height: 620px) {
+            .tablet-header { padding: 1vh 4vw; }
+            .header-sub    { display: none; }
+            .key           { height: clamp(44px, 10vh, 108px); font-size: clamp(22px, 5vh, 42px); border-radius: 12px; }
+            .keypad        { gap: 1vh; }
+            .btn           { min-height: clamp(48px, 9vh, 92px); font-size: clamp(18px, 3.4vh, 27px); }
+            .motivo-btn    { min-height: clamp(60px, 14vh, 150px); font-size: clamp(17px, 3.4vh, 29px); }
+            .dni-display   { height: clamp(52px, 11vh, 112px); font-size: clamp(34px, 8vh, 78px); }
+            .step, .col-left, .col-right { padding-top: 2vh; padding-bottom: 2vh; }
+            .step          { gap: 1.6vh; }
+            .step-title    { font-size: clamp(22px, 5vh, 44px); }
+            .paciente-nombre { font-size: clamp(22px, 5vh, 46px); }
+            .turno-card    { padding: 1.4vh 2vw; }
+            .turno-hora    { font-size: clamp(24px, 5vh, 52px); }
         }
     </style>
 </head>
