@@ -121,6 +121,8 @@ class User extends Authenticatable
         'medico'     => 'Panel médico',
         // Área restringida (config/lineas.php): nadie la tiene por defecto.
         'area_criopreservacion' => 'WhatsApp de Criopreservación (ver y atender)',
+        // CRM de ovodonación (reemplaza Bigin): nadie lo tiene por defecto.
+        'crm_ovodonacion' => 'CRM de ovodonación (donantes y receptoras)',
     ];
 
     // Devuelve los permisos efectivos: los guardados en DB, o los default del rol si nunca se configuraron

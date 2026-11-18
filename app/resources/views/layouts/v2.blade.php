@@ -111,6 +111,13 @@
             </a>
             @endif
 
+            @if($u && $u->hasPermiso('crm_ovodonacion'))
+            <div class="v2-nav-sec">Ovodonación</div>
+            <a class="v2-nav-item {{ $navActiva === 'crm-ovo' ? 'active' : '' }}" href="/v2/crm-ovo">
+                <span class="ico">🧬</span><span class="lbl">Donantes y receptoras</span>
+            </a>
+            @endif
+
             @if($u && $u->hasPermiso('medico'))
             <div class="v2-nav-sec">Consultorio</div>
             <a class="v2-nav-item {{ $navActiva === 'medico' ? 'active' : '' }}" href="/v2/medico">

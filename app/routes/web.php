@@ -289,6 +289,20 @@ Route::middleware([SecretariaAuth::class])->group(function () {
         Route::post('/primera-vez/medicos',  [$pv, 'guardarMedico']);
     });
 
+    // CRM de ovodonación (reemplaza Bigin): donantes y receptoras por etapa.
+    // Permiso propio: no lo tiene nadie por defecto, tampoco supervisión.
+    Route::middleware('permiso:crm_ovodonacion')->group(function () {
+        $oc = \App\Http\Controllers\OvoCrmController::class;
+        Route::get('/v2/crm-ovo',                     [$oc, 'index']);
+        Route::get('/crm-ovo/tablero',                [$oc, 'tablero']);
+        Route::get('/crm-ovo/ficha/{id}',             [$oc, 'ficha'])->whereNumber('id');
+        Route::post('/crm-ovo/ficha',                 [$oc, 'store']);
+        Route::post('/crm-ovo/ficha/{id}',            [$oc, 'update'])->whereNumber('id');
+        Route::post('/crm-ovo/ficha/{id}/mover',      [$oc, 'mover'])->whereNumber('id');
+        Route::post('/crm-ovo/ficha/{id}/nota',       [$oc, 'nota'])->whereNumber('id');
+        Route::post('/crm-ovo/ficha/{id}/borrar',     [$oc, 'destroy'])->whereNumber('id');
+    });
+
     // PoC V2 — admin con shell V2 reusando las vistas de producción.
     Route::middleware('permiso:admin')->get('/v2/admin/{pagina?}', [\App\Http\Controllers\V2Controller::class, 'admin'])
         ->where('pagina', '[a-z-]+');
