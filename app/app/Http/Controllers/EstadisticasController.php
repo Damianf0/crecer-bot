@@ -55,7 +55,7 @@ class EstadisticasController extends Controller
                     $primera = ConversacionEvento::where('conversacion_id', $c->id)
                         ->where('tipo', 'tomada')
                         ->orderBy('created_at')->value('created_at');
-                    return $primera ? (int) Carbon::parse($primera)->diffInSeconds($c->created_at) : null;
+                    return $primera ? (int) Carbon::parse($c->created_at)->diffInSeconds(Carbon::parse($primera)) : null;
                 })
                 ->filter()
                 ->values()
@@ -156,16 +156,27 @@ class EstadisticasController extends Controller
                     ->whereBetween('created_at', [$from, $to])
                     ->count();
 
-                // Tiempo medio respuesta: por cada "tomada" del usuario, delta vs created_at de la conv
+                // Tiempo de respuesta: por cada "tomada" del usuario, delta desde el primer
+                // mensaje entrante posterior a la última "resuelta" de esa conversación.
+                // (No desde created_at de la conv: las conversaciones se reusan por meses
+                // y eso daba esperas de 150 días.)
                 $tomadas = ConversacionEvento::where('usuario_id', $u->id)
                     ->where('tipo', 'tomada')
                     ->whereBetween('created_at', [$from, $to])
                     ->pluck('conversacion_id', 'created_at');
                 $deltasResp = [];
                 foreach ($tomadas as $tomadaAt => $convId) {
-                    $convCreated = ConversacionWA::where('id', $convId)->value('created_at');
-                    if ($convCreated) {
-                        $deltasResp[] = (int) Carbon::parse($tomadaAt)->diffInSeconds($convCreated);
+                    $desde = ConversacionEvento::where('conversacion_id', $convId)
+                        ->where('tipo', 'resuelta')
+                        ->where('created_at', '<', $tomadaAt)
+                        ->max('created_at');
+                    $llegada = MensajeWA::where('conversacion_id', $convId)
+                        ->where('direccion', 'entrante')
+                        ->when($desde, fn($q) => $q->where('created_at', '>', $desde))
+                        ->where('created_at', '<=', $tomadaAt)
+                        ->min('created_at');
+                    if ($llegada) {
+                        $deltasResp[] = (int) Carbon::parse($llegada)->diffInSeconds(Carbon::parse($tomadaAt));
                     }
                 }
 
@@ -182,7 +193,7 @@ class EstadisticasController extends Controller
                         ->orderByDesc('created_at')
                         ->value('created_at');
                     if ($tomadaAt) {
-                        $deltasResol[] = (int) Carbon::parse($resueltaAt)->diffInSeconds($tomadaAt);
+                        $deltasResol[] = (int) Carbon::parse($tomadaAt)->diffInSeconds(Carbon::parse($resueltaAt));
                     }
                 }
 
